@@ -1,0 +1,36 @@
+# Backend
+bin/
+obj/
+*.user
+*.suo
+*.cache
+.vs/
+*.DotSettings
+
+# Frontend
+node_modules/
+dist/
+.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+
+# Debug
+debug_log.txt
+DbFix/
+push_log.txt
+build_output.txt
