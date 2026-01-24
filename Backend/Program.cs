@@ -1,6 +1,9 @@
 using Backend.Services;
 using Microsoft.Data.SqlClient;
 
+
+Console.WriteLine("!!! BACKEND STARTING - VERSION DEBUG !!!");
+
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://localhost:5050");
 
@@ -101,6 +104,41 @@ using (var scope = builder.Services.BuildServiceProvider().CreateScope())
     {
         Console.WriteLine($"DB Init Error: {ex.Message}");
         System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] DB Init Error: {ex.Message}\n");
+    }
+
+    try
+    {
+        var conn = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+        conn.Open();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Module Master Init Started\n");
+
+        var moduleCols = new[]
+        {
+            "ModuleHeadDisplayName NVARCHAR(200)", 
+            "ModuleHeadDisplayOrder INT DEFAULT 0", 
+            "ModuleDisplayOrder INT DEFAULT 0",
+            "SetGroupIndex INT DEFAULT 0",
+            "Description NVARCHAR(MAX)"
+        };
+
+        foreach (var colDef in moduleCols)
+        {
+            var colName = colDef.Split(' ')[0];
+            var alterCmd = $@"
+                IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ModuleMaster]') AND type in (N'U'))
+                BEGIN
+                    IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'{colName}' AND Object_ID = Object_ID(N'ModuleMaster'))
+                    BEGIN
+                        ALTER TABLE ModuleMaster ADD {colDef};
+                    END
+                END";
+            using (var cmd = new SqlCommand(alterCmd, conn)) cmd.ExecuteNonQuery();
+        }
+        
+        conn.Close();
+    }
+    catch(Exception ex) {
+         Console.WriteLine($"Module Init Error: {ex.Message}");
     }
 }
 

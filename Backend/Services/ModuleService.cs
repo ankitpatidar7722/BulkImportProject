@@ -24,6 +24,11 @@ public class ModuleService : IModuleService
             string query = "";
             
             headName = headName?.Trim() ?? "";
+
+            if (headName == "ALL")
+            {
+                return await GetAllModulesAsync();
+            }
             
             // 1. Item Masters
             if (string.Equals(headName, "Item Masters", StringComparison.OrdinalIgnoreCase) || 
@@ -136,5 +141,68 @@ public class ModuleService : IModuleService
                 } 
             };
         }
+    }
+
+    public async Task<List<ModuleDto>> GetAllModulesAsync()
+    {
+        var query = @"
+            SELECT 
+                ModuleId, ModuleName, ModuleHeadName, ModuleDisplayName,
+                ModuleHeadDisplayName, ModuleHeadDisplayOrder, ModuleDisplayOrder, SetGroupIndex
+            FROM ModuleMaster where IsDeletedTransaction=0";
+        
+        var modules = await _connection.QueryAsync<ModuleDto>(query);
+        return modules.ToList();
+    }
+
+    public async Task<int> CreateModuleAsync(ModuleDto module)
+    {
+        var query = @"
+            INSERT INTO ModuleMaster (
+                ModuleName, ModuleHeadName, ModuleDisplayName,
+                ModuleHeadDisplayName, ModuleHeadDisplayOrder, ModuleDisplayOrder, SetGroupIndex, CompanyID
+            ) VALUES (
+                @ModuleName, @ModuleHeadName, @ModuleDisplayName,
+                @ModuleHeadDisplayName, @ModuleHeadDisplayOrder, @ModuleDisplayOrder, @SetGroupIndex,2
+            );
+            SELECT CAST(SCOPE_IDENTITY() as int);";
+            
+        return await _connection.ExecuteScalarAsync<int>(query, module);
+    }
+
+    public async Task<bool> UpdateModuleAsync(ModuleDto module)
+    {
+        var query = @"
+            UPDATE ModuleMaster SET
+                ModuleName = @ModuleName,
+                ModuleHeadName = @ModuleHeadName,
+                ModuleDisplayName = @ModuleDisplayName,
+                ModuleHeadDisplayName = @ModuleHeadDisplayName,
+                ModuleHeadDisplayOrder = @ModuleHeadDisplayOrder,
+                ModuleDisplayOrder = @ModuleDisplayOrder,
+                SetGroupIndex = @SetGroupIndex
+            WHERE ModuleId = @ModuleId";
+
+        var rows = await _connection.ExecuteAsync(query, module);
+        return rows > 0;
+    }
+
+    public async Task<bool> DeleteModuleAsync(int moduleId)
+    {
+        var query = "Update ModuleMaster SET IsDeletedTransaction =1 WHERE ModuleId = @ModuleId";
+        var rows = await _connection.ExecuteAsync(query, new { ModuleId = moduleId });
+        return rows > 0;
+    }
+
+    public async Task<List<string>> GetUniqueModuleHeadsAsync()
+    {
+        var query = "SELECT DISTINCT ModuleHeadName FROM ModuleMaster WHERE ModuleHeadName IS NOT NULL ORDER BY ModuleHeadName";
+        var heads = await _connection.QueryAsync<string>(query);
+        return heads.ToList();
+    }
+
+    public async Task<IEnumerable<dynamic>> GetDebugModuleData()
+    {
+        return await _connection.QueryAsync<dynamic>("SELECT TOP 1 * FROM ModuleMaster");
     }
 }

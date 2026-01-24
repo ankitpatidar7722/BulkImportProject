@@ -12,7 +12,35 @@ export interface ModuleDto {
     moduleHeadName?: string;
     moduleDisplayName?: string;
     description?: string;
+    // New Fields
+    moduleHeadDisplayName?: string;
+    moduleHeadDisplayOrder?: number;
+    moduleDisplayOrder?: number;
+    setGroupIndex?: number;
 }
+
+export const getAllModules = async (): Promise<ModuleDto[]> => {
+    const response = await api.get('/module/GetModules?headName=ALL');
+    return response.data;
+};
+
+export const createModule = async (module: ModuleDto): Promise<number> => {
+    const response = await api.post('/module/Create', module);
+    return response.data.moduleId;
+};
+
+export const updateModule = async (module: ModuleDto): Promise<void> => {
+    await api.put('/module/Update', module);
+};
+
+export const deleteModule = async (moduleId: number): Promise<void> => {
+    await api.delete(`/module/Delete/${moduleId}`);
+};
+
+export const getModuleHeads = async (): Promise<string[]> => {
+    const response = await api.get('/module/GetHeads');
+    return response.data;
+};
 
 export interface ExcelPreviewDto {
     headers: string[];

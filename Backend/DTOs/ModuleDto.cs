@@ -7,4 +7,10 @@ public class ModuleDto
     public string? ModuleHeadName { get; set; }
     public string? ModuleDisplayName { get; set; }
     public string? Description { get; set; }
+
+    // New Fields
+    public string? ModuleHeadDisplayName { get; set; }
+    public int? ModuleHeadDisplayOrder { get; set; }
+    public int? ModuleDisplayOrder { get; set; }
+    public int? SetGroupIndex { get; set; }
 }
