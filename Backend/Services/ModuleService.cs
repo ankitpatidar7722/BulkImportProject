@@ -55,7 +55,7 @@ public class ModuleService : IModuleService
                     SELECT 
                         0 as ModuleId, 
                         LedgerGroupName as ModuleName, 
-                        LedgerGroupName as ModuleDisplayName, 
+                        LedgerGroupNameDisplay as ModuleDisplayName, 
                         'Ledger Master' as ModuleHeadName 
                     FROM LedgerGroupMaster";
             }
@@ -72,6 +72,25 @@ public class ModuleService : IModuleService
                         ToolGroupName as ModuleDisplayName, 
                         'Tool Master' as ModuleHeadName 
                     FROM ToolGroupMaster";
+            }
+            // 4. Product Group Master
+            else if (string.Equals(headName, "Product Group Master", StringComparison.OrdinalIgnoreCase) || 
+                     headName.Contains("Product Group", StringComparison.OrdinalIgnoreCase))
+            {
+                logLines.Add("Matched: Product Group Master Logic");
+                // Since this is a specialized import with its own logic, we return a virtual module definition
+                // The actual data might come from ProductHSNMaster, but for the dropdown we just need the entry.
+                // We'll return a single item that represents the module itself.
+                var productGroupModule = new ModuleDto 
+                { 
+                    ModuleId = 0, 
+                    ModuleName = "Product Group Master", 
+                    ModuleDisplayName = "Product Group Master", 
+                    ModuleHeadName = "Product Group Master" 
+                };
+                
+                await File.AppendAllLinesAsync("debug_log.txt", logLines);
+                return new List<ModuleDto> { productGroupModule };
             }
             else if (string.Equals(headName, "Masters", StringComparison.OrdinalIgnoreCase))
             {

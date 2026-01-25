@@ -112,7 +112,7 @@ const ModuleAuthority: React.FC = () => {
                 <p className="text-gray-500 dark:text-gray-400 mt-1">Manage system modules and hierarchy.</p>
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
                 <DataGrid
                     dataSource={modules}
                     showBorders={true}
@@ -254,8 +254,8 @@ const ModuleAuthority: React.FC = () => {
                             <input
                                 type="number"
                                 className={`w-full px-3 py-2 border rounded-lg ${modules.some(m => m.moduleHeadName === formData.moduleHeadName)
-                                        ? 'bg-gray-100 cursor-not-allowed'
-                                        : ''
+                                    ? 'bg-gray-100 cursor-not-allowed'
+                                    : ''
                                     }`}
                                 value={formData.setGroupIndex || ''}
                                 onChange={(e) => handleFieldChange('setGroupIndex', parseInt(e.target.value))}

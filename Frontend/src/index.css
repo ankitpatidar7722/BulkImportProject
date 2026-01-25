@@ -90,3 +90,92 @@
     @apply bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors;
   }
 }
+
+/* Light Mode Grid Header Overrides */
+.dx-datagrid-headers {
+  background-color: #0B1120 !important;
+  /* Sidebar color */
+  color: #ffffff !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.dx-datagrid-headers .dx-header-row>td {
+  background-color: #0B1120 !important;
+  /* Sidebar color */
+  color: #ffffff !important;
+}
+
+/* DevExtreme Dark Mode Overrides */
+.dark .dx-datagrid {
+  background-color: transparent !important;
+  color: #e2e8f0 !important;
+}
+
+.dark .dx-datagrid-headers {
+  background-color: #0B1120 !important;
+  /* Sidebar color */
+  border-bottom: 1px solid #374151 !important;
+  color: #e2e8f0 !important;
+}
+
+.dark .dx-datagrid-headers .dx-header-row>td {
+  background-color: #0B1120 !important;
+  /* Sidebar color */
+  color: #e2e8f0 !important;
+}
+
+.dark .dx-datagrid-rowsview {
+  background-color: transparent !important;
+}
+
+.dark .dx-data-row>td {
+  background-color: #111827 !important;
+  /* gray-900 */
+  color: #e2e8f0 !important;
+  border-bottom: 1px solid #374151 !important;
+}
+
+.dark .dx-row-alt>td {
+  background-color: #1f2937 !important;
+  /* gray-800 */
+  border-bottom: 1px solid #374151 !important;
+}
+
+.dark .dx-datagrid-lines>td {
+  border-color: #374151 !important;
+}
+
+.dark .dx-pager {
+  background-color: transparent !important;
+  color: #e2e8f0 !important;
+  border-top: 1px solid #374151 !important;
+}
+
+.dark .dx-widget {
+  color: #e2e8f0 !important;
+}
+
+/* Fix for Button Text Color in Dark Mode */
+.dark .dx-button {
+  color: #000000 !important;
+}
+
+.dark .dx-button .dx-button-content {
+  color: #000000 !important;
+}
+
+.dark .dx-button .dx-icon {
+  color: #000000 !important;
+}
+
+/* Header Filter Icons adjustments if needed */
+.dark .dx-header-filter {
+  color: #e2e8f0 !important;
+}
+
+/* Group row */
+.dark .dx-group-row {
+  background-color: #374151 !important;
+  /* gray-700 */
+  color: white !important;
+}
