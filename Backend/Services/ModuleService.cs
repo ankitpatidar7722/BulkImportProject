@@ -92,6 +92,22 @@ public class ModuleService : IModuleService
                 await File.AppendAllLinesAsync("debug_log.txt", logLines);
                 return new List<ModuleDto> { productGroupModule };
             }
+            // 5. Spare Part Master
+            else if (string.Equals(headName, "Spare Part Master", StringComparison.OrdinalIgnoreCase) || 
+                     headName.Contains("Spare Part", StringComparison.OrdinalIgnoreCase))
+            {
+                logLines.Add("Matched: Spare Part Master Logic");
+                var sparePartModule = new ModuleDto 
+                { 
+                    ModuleId = 0, 
+                    ModuleName = "Spare Part Master", 
+                    ModuleDisplayName = "Spare Part Master", 
+                    ModuleHeadName = "Spare Part Master" 
+                };
+                
+                await File.AppendAllLinesAsync("debug_log.txt", logLines);
+                return new List<ModuleDto> { sparePartModule };
+            }
             else if (string.Equals(headName, "Masters", StringComparison.OrdinalIgnoreCase))
             {
                  logLines.Add("Matched: Masters Logic (ModuleMaster)");

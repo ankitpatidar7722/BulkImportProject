@@ -1,15 +1,27 @@
 import React from 'react';
-import { Moon, Sun, User } from 'lucide-react';
+import { Moon, Sun, User, Menu } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
-const Header: React.FC = () => {
+interface HeaderProps {
+    onMenuClick: () => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     const { isDark, toggleTheme } = useTheme();
 
     return (
-        <header className="h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 left-64 z-10 transition-colors duration-200">
+        <header className="h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 left-0 md:left-64 z-10 transition-all duration-200">
             <div className="h-full px-6 flex items-center justify-between">
-                <div className="flex-1">
-                    {/* Page title or breadcrumb can go here */}
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={onMenuClick}
+                        className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 md:hidden"
+                    >
+                        <Menu className="w-6 h-6" />
+                    </button>
+                    <div className="flex-1">
+                        {/* Page title or breadcrumb can go here */}
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-4">

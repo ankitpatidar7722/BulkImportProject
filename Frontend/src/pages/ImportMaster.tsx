@@ -12,6 +12,8 @@ const ImportMaster: React.FC = () => {
     const [previewData, setPreviewData] = useState<ExcelPreviewDto | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isPreviewShown, setIsPreviewShown] = useState(false);
+    const [showErrorModal, setShowErrorModal] = useState(false);
+    const [errorList, setErrorList] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -21,6 +23,8 @@ const ImportMaster: React.FC = () => {
     // Reset preview state when file changes
     useEffect(() => {
         setIsPreviewShown(false);
+        setShowErrorModal(false);
+        setErrorList([]);
     }, [uploadedFile]);
 
     const fetchModules = async () => {
@@ -40,6 +44,8 @@ const ImportMaster: React.FC = () => {
         setSubModules([]);
         setPreviewData(null);
         setIsPreviewShown(false);
+        setShowErrorModal(false);
+        setErrorList([]);
 
         if (moduleId) {
             const module = modules.find(m => m.moduleId.toString() === moduleId);
@@ -74,6 +80,8 @@ const ImportMaster: React.FC = () => {
         setUploadedFile(file);
         setPreviewData(null);
         setIsPreviewShown(false);
+        setShowErrorModal(false);
+        setErrorList([]);
         toast.success('File uploaded successfully');
     };
 
@@ -108,6 +116,9 @@ const ImportMaster: React.FC = () => {
         }
 
         setIsLoading(true);
+        setShowErrorModal(false);
+        setErrorList([]);
+
         try {
             const selectedModuleData = modules.find(m => m.moduleId.toString() === selectedModule);
             const result = await importExcel(uploadedFile, selectedModuleData?.moduleName || '');
@@ -120,10 +131,11 @@ const ImportMaster: React.FC = () => {
                 if (fileInputRef.current) fileInputRef.current.value = '';
             } else {
                 toast.error(result.message);
-            }
 
-            if (result.errorMessages.length > 0) {
-                console.error('Import errors:', result.errorMessages);
+                if (result.errorMessages && result.errorMessages.length > 0) {
+                    setErrorList(result.errorMessages);
+                    setShowErrorModal(true);
+                }
             }
         } catch (error: any) {
             toast.error(error?.response?.data?.error || 'Failed to import data');
@@ -132,14 +144,64 @@ const ImportMaster: React.FC = () => {
         }
     };
 
+    // Error Modal Helper
+    const ErrorModal = () => {
+        if (!showErrorModal || errorList.length === 0) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col border border-gray-200 dark:border-gray-700">
+                    <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                                <span className="text-xl">⚠️</span>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Import Validation Errors</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Found {errorList.length} issues in the file</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setShowErrorModal(false)}
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        >
+                            <span className="text-xl">×</span>
+                        </button>
+                    </div>
+
+                    <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-gray-50/50 dark:bg-[#020617]/30">
+                        <ul className="space-y-3">
+                            {errorList.map((err, idx) => (
+                                <li key={idx} className="flex items-start gap-3 p-3 bg-white dark:bg-[#0f172a] rounded-lg border border-red-100 dark:border-red-900/30 shadow-sm">
+                                    <span className="text-red-500 mt-0.5">•</span>
+                                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium font-mono">{err}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1e293b] rounded-b-xl flex justify-end">
+                        <button
+                            onClick={() => setShowErrorModal(false)}
+                            className="px-6 py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium rounded-lg hover:opacity-90 transition-opacity"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
-        <div className="p-8 space-y-8 bg-gray-50 dark:bg-[#020617] min-h-screen transition-colors duration-200">
+        <div className="p-4 md:p-8 space-y-6 md:space-y-8 bg-gray-50 dark:bg-[#020617] min-h-screen transition-colors duration-200">
+            <ErrorModal />
             <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Master Import</h1>
                 <p className="text-gray-500 dark:text-gray-400 mt-1">Upload and import master data tables into the system.</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
                 {/* Column 1: Select Module */}
                 <div className="bg-white dark:bg-[#0f172a] rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 h-fit transition-colors duration-200">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">1. Select Module</h2>

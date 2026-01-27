@@ -1,4 +1,5 @@
 
+import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from './context/ThemeContext';
@@ -10,14 +11,16 @@ import CompanyMaster from './pages/CompanyMaster';
 import ModuleAuthority from './pages/ModuleAuthority';
 
 function App() {
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
     return (
         <ThemeProvider>
             <Router>
                 <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-                    <Sidebar />
-                    <div className="flex-1 flex flex-col ml-64">
-                        <Header />
-                        <main className="flex-1 overflow-y-auto mt-16 custom-scrollbar">
+                    <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+                    <div className="flex-1 flex flex-col ml-0 md:ml-64 transition-all duration-300 ease-in-out">
+                        <Header onMenuClick={() => setIsSidebarOpen(true)} />
+                        <main className="flex-1 overflow-y-auto mt-16 custom-scrollbar p-4 md:p-6">
                             <Routes>
                                 <Route path="/" element={<Dashboard />} />
                                 <Route path="/import-master" element={<ImportMaster />} />

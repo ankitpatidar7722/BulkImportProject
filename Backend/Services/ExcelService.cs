@@ -79,6 +79,14 @@ public class ExcelService : IExcelService
             return await ImportProductGroupMasterAsync(fileStream);
         }
 
+        if (tableName.Equals("Spare Part Master", StringComparison.OrdinalIgnoreCase) ||
+            tableName.Equals("SparePartMaster", StringComparison.OrdinalIgnoreCase) ||
+            tableName.Equals("SparePartMaster.aspx", StringComparison.OrdinalIgnoreCase) ||
+            tableName.Contains("Spare Part", StringComparison.OrdinalIgnoreCase))
+        {
+            return await ImportSparePartMasterAsync(fileStream, 2); // Default user 2 as per existing code
+        }
+
         var result = new ImportResultDto();
         
         try
@@ -185,7 +193,6 @@ public class ExcelService : IExcelService
             }
 
             result.TotalRows = worksheet.Dimension.Rows - 1;
-            int importedCount = 0;
             int errorCount = 0;
             var errorMessages = new List<string>();
 
@@ -203,18 +210,30 @@ public class ExcelService : IExcelService
             // Helper to get value securely
             string GetValue(string colName, int rowIdx)
             {
-                // Try exact match first, then case-insensitive
                 var colIndex = headerMap.ContainsKey(colName) ? headerMap[colName] : 
                                headerMap.FirstOrDefault(k => k.Key.Equals(colName, StringComparison.OrdinalIgnoreCase)).Value;
                 
-                if (colIndex == 0) return null; // Column not found
-                
+                if (colIndex == 0) return null;
                 return worksheet.Cells[rowIdx, colIndex].Value?.ToString()?.Trim();
             }
 
-            // Loop rows
+            // ==========================================
+            // PHASE 1: Validation
+            // ==========================================
+            var insertList = new List<DynamicParameters>();
+            var rowsToProcess = new List<int>();
+            
+            // To track unique names within the file itself
+            var fileDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Pre-fetch existing DisplayNames to minimize DB calls (optional but better for bulk)
+            // Or just check per row. For safety and stricter transactional check, checking per row is fine 
+            // but since we are doing "all or nothing", fetching all existing names first might be faster if dataset is small.
+            // However, let's stick to the current logic pattern but run it purely for validation first.
+
             for (int row = 2; row <= worksheet.Dimension.Rows; row++)
             {
+                bool rowHasError = false;
                 try 
                 {
                     // 0. Check for Empty Row
@@ -234,7 +253,7 @@ public class ExcelService : IExcelService
                     var groupName = GetValue("Group Name", row);
                     var hsnCode = GetValue("HSN Code", row);
                     var displayName = GetValue("Display Name", row);
-                    var productType = GetValue("ProductType", row); // Maps to ProductCategory
+                    var productType = GetValue("ProductType", row); 
                     var gst = GetValue("GST %", row);
                     var cgst = GetValue("CGST %", row);
                     var sgst = GetValue("SGST %", row);
@@ -251,13 +270,20 @@ public class ExcelService : IExcelService
                     if (string.IsNullOrEmpty(productType))
                         throw new Exception("Product Category is required.");
 
-                    // Check Unique Display Name
+                    // Check for duplicate in THIS file
+                    if (fileDisplayNames.Contains(displayName))
+                        throw new Exception($"Duplicate Display Name '{displayName}' found within the uploaded file.");
+                    
+                    fileDisplayNames.Add(displayName);
+
+                    // Check Unique Display Name in DB
+                    await EnsureConnectionOpenAsync();
                     var existingName = await _connection.ExecuteScalarAsync<int>(
-                        "SELECT COUNT(1) FROM ProductHSNMaster WHERE DisplayName = @DisplayName", 
+                        "SELECT COUNT(1) FROM ProductHSNMaster WHERE DisplayName = @DisplayName AND IsDeletedTransaction = 0", 
                         new { DisplayName = displayName });
 
                     if (existingName > 0)
-                        throw new Exception($"Display Name '{displayName}' already exists.");
+                        throw new Exception($"Display Name '{displayName}' already exists in the database.");
 
                     // 3. Dynamic Lookup for ItemGroupID
                     int? itemGroupId = null;
@@ -265,6 +291,7 @@ public class ExcelService : IExcelService
                     {
                         if (!string.IsNullOrEmpty(itemGroupName))
                         {
+                            await EnsureConnectionOpenAsync();
                             itemGroupId = await _connection.QueryFirstOrDefaultAsync<int?>(
                                 "SELECT ItemGroupID FROM ItemGroupMaster WHERE ItemGroupName = @ItemGroupName",
                                 new { ItemGroupName = itemGroupName });
@@ -274,7 +301,7 @@ public class ExcelService : IExcelService
                         }
                     }
 
-                    // 4. Prepare Data for Insert
+                    // 4. Prepare Data for Later Insert
                     var insertParams = new DynamicParameters();
                     insertParams.Add("@ProductHSNName", groupName);
                     insertParams.Add("@HSNCode", hsnCode ?? "");
@@ -290,7 +317,7 @@ public class ExcelService : IExcelService
                     insertParams.Add("@IGSTTaxPercentage", decimal.TryParse(igst?.Replace("%",""), out var dIgst) ? dIgst : 0);
                     insertParams.Add("@TallyProductHSNName", "");
                     insertParams.Add("@TallyGUID", 0);
-                    insertParams.Add("@ItemGroupID", itemGroupId); // Can be null
+                    insertParams.Add("@ItemGroupID", itemGroupId);
                     insertParams.Add("@UserID", 2);
                     insertParams.Add("@ModifiedDate", DateTime.Now);
                     insertParams.Add("@CreatedBy", 2);
@@ -301,8 +328,31 @@ public class ExcelService : IExcelService
                     insertParams.Add("@IsDeletedTransaction", 0);
                     insertParams.Add("@FYear", "2025-2026");
 
-                    // 5. Insert
-             string insertQuery = @"
+                    insertList.Add(insertParams);
+                }
+                catch (Exception ex)
+                {
+                    rowHasError = true;
+                    errorCount++;
+                    var errorMsg = $"Row {row}: {ex.Message}";
+                    errorMessages.Add(errorMsg);
+                }
+            }
+
+            // ==========================================
+            // PHASE 2: Execution (Only if no errors)
+            // ==========================================
+            result.ErrorRows = errorCount;
+            result.ErrorMessages = errorMessages;
+
+            if (errorCount == 0 && insertList.Any())
+            {
+                await EnsureConnectionOpenAsync();
+
+                using var transaction = _connection.BeginTransaction();
+                try
+                {
+                     string insertQuery = @"
                         INSERT INTO ProductHSNMaster (
                             ProductHSNName, HSNCode, UnderProductHSNID, GroupLevel, CompanyID, 
                             DisplayName, TariffNo, ProductCategory, GSTTaxPercentage, 
@@ -319,49 +369,44 @@ public class ExcelService : IExcelService
                             @DeletedBy, @DeletedDate, @IsDeletedTransaction, @FYear
                         )";
 
-                    await _connection.ExecuteAsync(insertQuery, insertParams);
-                    importedCount++;
+                    foreach (var paramsObj in insertList)
+                    {
+                        await _connection.ExecuteAsync(insertQuery, paramsObj, transaction: transaction);
+                    }
+
+                    transaction.Commit();
+                    
+                    result.Success = true;
+                    result.ImportedRows = insertList.Count;
+                    result.Message = $"Successfully imported {insertList.Count} rows into Product Group Master.";
                 }
                 catch (Exception ex)
                 {
-                    errorCount++;
-                    var errorMsg = $"Row {row}: {ex.Message}";
-                    errorMessages.Add(errorMsg);
+                    transaction.Rollback();
+                    result.Success = false;
+                    result.Message = $"Transaction Failed: {ex.Message}";
+                    result.ErrorMessages.Add($"Critical Transaction Error: {ex.Message}");
                     
-                    // Debug: Log first 5 errors to file to help diagnose
-                    if (errorCount <= 5)
-                    {
-                        try 
-                        {
-                            File.AppendAllText("import_debug.log", $"{DateTime.Now}: {errorMsg}{Environment.NewLine}");
-                        }
-                        catch {}
-                    }
+                    try { File.AppendAllText("import_debug.log", $"{DateTime.Now}: Transaction Rolled back. {ex.Message}{Environment.NewLine}"); } catch {}
                 }
             }
-
-            result.Success = errorCount == 0;
-            result.ImportedRows = importedCount;
-            result.ErrorRows = errorCount;
-            result.ErrorMessages = errorMessages;
-            
-            if (result.Success)
-                result.Message = $"Successfully imported {importedCount} rows into Product Group Master.";
+            else if (errorCount > 0)
+            {
+                result.Success = false;
+                result.ImportedRows = 0;
+                var firstError = errorMessages.FirstOrDefault() ?? "Unknown error";
+                result.Message = $"Validation Failed. {errorCount} errors found. No data inserted. First Error: {firstError}";
+                
+                try { File.AppendAllText("import_debug.log", $"{DateTime.Now}: Validation Failed. {errorCount} errors.{Environment.NewLine}"); } catch {}
+            }
             else
             {
-                var firstError = errorMessages.FirstOrDefault() ?? "Unknown error";
-                result.Message = $"Import failed. Errors: {errorCount}. First Error: {firstError}";
-                
-                if (errorCount > 0)
-                {
-                     try 
-                     {
-                        File.AppendAllText("import_debug.log", $"{DateTime.Now}: Total Errors: {errorCount}. First few errors: {string.Join(", ", errorMessages.Take(3))}{Environment.NewLine}");
-                     }
-                     catch {}
-                }
+                // No errors but no data (maybe all empty rows?)
+                result.Success = true;
+                result.ImportedRows = 0;
+                result.Message = "No valid data found to import.";
             }
-                
+
             return result;
         }
         catch (Exception ex)
@@ -369,6 +414,293 @@ public class ExcelService : IExcelService
             result.Success = false;
             result.ErrorMessages.Add($"Critical Import Error: {ex.Message}");
             return result;
+        }
+    }
+
+    private async Task<ImportResultDto> ImportSparePartMasterAsync(Stream fileStream, int createdBy)
+    {
+        var result = new ImportResultDto();
+        try
+        {
+            using var package = new ExcelPackage(fileStream);
+            var worksheet = package.Workbook.Worksheets[0];
+
+            if (worksheet.Dimension == null)
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("The Excel file is empty.");
+                return result;
+            }
+
+            result.TotalRows = worksheet.Dimension.Rows - 1;
+            int errorCount = 0;
+            var errorMessages = new List<string>();
+
+            // Get Headers mapping
+            var headerMap = new Dictionary<string, int>();
+            for (int col = 1; col <= worksheet.Dimension.Columns; col++)
+            {
+                var header = worksheet.Cells[1, col].Value?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(header))
+                {
+                    headerMap[header] = col;
+                }
+            }
+
+            string GetValue(string colName, int rowIdx)
+            {
+                var colIndex = headerMap.ContainsKey(colName) ? headerMap[colName] : 
+                               headerMap.FirstOrDefault(k => k.Key.Equals(colName, StringComparison.OrdinalIgnoreCase)).Value;
+                
+                if (colIndex == 0) return null;
+                return worksheet.Cells[rowIdx, colIndex].Value?.ToString()?.Trim();
+            }
+
+            // ==========================================
+            // PHASE 1: Validation
+            // ==========================================
+            var validRows = new List<Dictionary<string, object>>();
+            // Track duplicates in file: Combination of Name + Group
+            var fileDuplicateCheck = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Fetch Lookups
+            // ProductHSNID Lookup (HSNGroup -> ID) mapping to ProductHSNName in DB
+            var hsnLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                await EnsureConnectionOpenAsync();
+                var hsnList = await _connection.QueryAsync<(int Id, string Name)>("SELECT ProductHSNID, ProductHSNName FROM ProductHSNMaster WHERE IsDeletedTransaction = 0");
+                foreach (var hsn in hsnList)
+                {
+                    if (hsn.Name != null && !hsnLookup.ContainsKey(hsn.Name))
+                        hsnLookup.Add(hsn.Name, hsn.Id);
+                }
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("Failed to fetch Product HSN Master data: " + ex.Message);
+                return result;
+            }
+
+            // Fetch Existing Spare Parts for Duplicate Check (Name + Group + Type)
+            var existingSpareParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var spList = await _connection.QueryAsync<(string Name, string Group, string Type)>("SELECT SparePartName, SparePartGroup, SparePartType FROM SparePartMaster WHERE IsDeletedTransaction = 0");
+                foreach (var sp in spList)
+                {
+                    if (sp.Name != null && sp.Group != null) 
+                        existingSpareParts.Add($"{sp.Name}|{sp.Group}|{sp.Type ?? ""}");
+                }
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("Failed to fetch existing Spare Parts (Check if 'SparePartGroup' or 'SparePartType' columns exist): " + ex.Message);
+                return result;
+            }
+
+            for (int row = 2; row <= worksheet.Dimension.Rows; row++)
+            {
+                bool rowHasError = false;
+                // Check empty row
+                bool isRowEmpty = true;
+                for (int c = 1; c <= worksheet.Dimension.Columns; c++)
+                {
+                    if (!string.IsNullOrWhiteSpace(worksheet.Cells[row, c].Value?.ToString()))
+                    {
+                        isRowEmpty = false;
+                        break;
+                    }
+                }
+                if (isRowEmpty) continue;
+
+                var sparePartName = GetValue("SparePartName", row) ?? GetValue("Spare Part Name", row);
+                var sparePartGroup = GetValue("SparePartGroup", row) ?? GetValue("Spare Part Group", row);
+                var sparePartType = GetValue("SparePartType", row) ?? GetValue("Spare Part Type", row);
+                var hsnCode = GetValue("HSNCode", row) ?? GetValue("HSN Code", row);
+                var unit = GetValue("Unit", row);
+                var rateStr = GetValue("Rate", row);
+                
+                // New Columns Mapping
+                var hsnGroup = GetValue("HSNGroup", row) ?? GetValue("HSN Group", row);
+                var supplierReference = GetValue("SupplierReference", row) ?? GetValue("Supplier Reference", row);
+                var stockRefCode = GetValue("StockRefCode", row) ?? GetValue("Stock Ref Code", row);
+                var poQtyStr = GetValue("PurchaseOrderQuantity", row) ?? GetValue("Purchase Order Quantity", row);
+
+                // Safe parsing
+                decimal rate = 0;
+                if (!string.IsNullOrEmpty(rateStr) && decimal.TryParse(rateStr, out var r)) rate = r;
+                
+                decimal purchaseOrderQuantity = 0;
+                if (!string.IsNullOrEmpty(poQtyStr) && decimal.TryParse(poQtyStr, out var poq)) purchaseOrderQuantity = poq;
+
+                var rowErrors = new List<string>();
+
+                // Required Fields Validation
+                if (string.IsNullOrEmpty(sparePartName))
+                    rowErrors.Add($"Row {row}: SparePartName is required.");
+                
+                if (string.IsNullOrEmpty(sparePartGroup))
+                    rowErrors.Add($"Row {row}: SparePartGroup is required.");
+                
+                if (string.IsNullOrEmpty(hsnGroup)) // Changed from HSNCode to HSNGroup as requirement implies lookup by group
+                    rowErrors.Add($"Row {row}: HSNGroup is required.");
+                
+                if (string.IsNullOrEmpty(unit))
+                    rowErrors.Add($"Row {row}: Unit is required.");
+
+                // Combination Duplicate Validation (Name + Group + Type)
+                if (!string.IsNullOrEmpty(sparePartName) && !string.IsNullOrEmpty(sparePartGroup))
+                {
+                    string compositeKey = $"{sparePartName}|{sparePartGroup}|{sparePartType ?? ""}";
+
+                    if (existingSpareParts.Contains(compositeKey))
+                        rowErrors.Add($"Duplicate SparePartName + SparePartGroup + SparePartType '{sparePartName} - {sparePartGroup} - {sparePartType}' already exists in database.");
+                    
+                    if (fileDuplicateCheck.Contains(compositeKey))
+                        rowErrors.Add($"Duplicate SparePartName + SparePartGroup + SparePartType '{sparePartName} - {sparePartGroup} - {sparePartType}' found in file.");
+                    else
+                        fileDuplicateCheck.Add(compositeKey);
+                }
+
+                // ProductHSNID Lookup using HSNGroup
+                int productHSNID = 0;
+                if (!string.IsNullOrEmpty(hsnGroup))
+                {
+                    if (hsnLookup.TryGetValue(hsnGroup, out int id))
+                        productHSNID = id;
+                    else
+                        rowErrors.Add($"Row {row}: HSN Group '{hsnGroup}' not found in ProductHSNMaster.");
+                }
+                else
+                {
+                   // Fallback or just error if HSNGroup is strictly required for ID
+                   // rowErrors.Add($"Row {row}: HSN Group is required to determine ProductHSNID.");
+                }
+
+                if (rowErrors.Any())
+                {
+                    rowHasError = true;
+                    errorCount++;
+                    errorMessages.AddRange(rowErrors);
+                }
+                else
+                {
+                    var validRow = new Dictionary<string, object>();
+                    validRow["SparePartName"] = sparePartName;
+                    validRow["SparePartGroup"] = sparePartGroup;
+                    validRow["SparePartType"] = sparePartType;
+                    validRow["Unit"] = unit;
+                    validRow["ProductHSNID"] = productHSNID;
+                    validRow["Rate"] = rate;
+                    validRow["HSNGroup"] = hsnGroup;
+                    validRow["SupplierReference"] = supplierReference;
+                    validRow["StockRefCode"] = stockRefCode;
+                    validRow["PurchaseOrderQuantity"] = purchaseOrderQuantity;
+                    validRows.Add(validRow);
+                }
+            }
+
+            if (errorCount > 0)
+            {
+                result.Success = false;
+                result.ErrorRows = errorCount;
+                result.ErrorMessages = errorMessages;
+                result.Message = $"Validation Failed with {errorCount} errors. No data imported.";
+                return result;
+            }
+
+             if (!validRows.Any())
+            {
+                result.Success = true;
+                result.Message = "No valid data found to import.";
+                return result;
+            }
+
+            // ==========================================
+            // PHASE 2: Execution
+            // ==========================================
+            await EnsureConnectionOpenAsync();
+            using var transaction = _connection.BeginTransaction();
+            try
+            {
+                // Get Max Code
+                int currentMaxCode = await _connection.ExecuteScalarAsync<int?>("SELECT MAX(MaxSparePartCode) FROM SparePartMaster WHERE IsDeletedTransaction = 0", transaction: transaction) ?? 0;
+
+                string insertSql = @"
+                    INSERT INTO SparePartMaster 
+                    (SparePartName, SparePartCode, MaxSparePartCode, ProductHSNID, SparePartGroup, SparePartType, Unit, Rate, 
+                     HSNGroup, SupplierReference, StockRefCode, PurchaseOrderQuantity,
+                     VoucherPrefix, CompanyID, UserID,
+                     VoucherDate, CreatedBy, CreatedDate, IsDeletedTransaction)
+                    VALUES 
+                    (@SparePartName, @SparePartCode, @MaxSparePartCode, @ProductHSNID, @SparePartGroup, @SparePartType, @Unit, @Rate, 
+                     @HSNGroup, @SupplierReference, @StockRefCode, @PurchaseOrderQuantity,
+                     @VoucherPrefix, @CompanyID, @UserID,
+                     @VoucherDate, @CreatedBy, @CreatedDate, 0)";
+
+                foreach (var row in validRows)
+                {
+                    currentMaxCode++;
+                    string sparePartCode = "SPM" + currentMaxCode.ToString().PadLeft(5, '0');
+
+                    await _connection.ExecuteAsync(insertSql, new {
+                        SparePartName = row["SparePartName"],
+                        SparePartCode = sparePartCode,
+                        MaxSparePartCode = currentMaxCode,
+                        ProductHSNID = row["ProductHSNID"],
+                        SparePartGroup = row["SparePartGroup"],
+                        SparePartType = row["SparePartType"],
+                        Unit = row["Unit"],
+                        Rate = row["Rate"],
+                        HSNGroup = row["HSNGroup"],
+                        SupplierReference = row["SupplierReference"],
+                        StockRefCode = row["StockRefCode"],
+                        PurchaseOrderQuantity = row["PurchaseOrderQuantity"],
+                        VoucherPrefix = "SPM",
+                        CompanyID = 2,
+                        UserID = 2,
+                        VoucherDate = DateTime.Now,
+                        CreatedBy = createdBy,
+                        CreatedDate = DateTime.Now
+                    }, transaction: transaction);
+                }
+
+                transaction.Commit();
+                result.Success = true;
+                result.ImportedRows = validRows.Count;
+                result.Message = $"Successfully imported {validRows.Count} Spare Parts.";
+            }
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+                result.Success = false;
+                 result.ErrorMessages.Add("Database Error: " + ex.Message);
+                 result.Message = "Database error during import. Ensure columns 'SparePartGroup', 'SparePartType' and 'Unit' exist.";
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.ErrorMessages.Add($"Critical Error: {ex.Message}");
+            return result;
+        }
+    }
+
+    private async Task EnsureConnectionOpenAsync()
+    {
+        if (_connection.State == System.Data.ConnectionState.Broken)
+        {
+            _connection.Close();
+        }
+        
+        if (_connection.State != System.Data.ConnectionState.Open)
+        {
+             await _connection.OpenAsync();
         }
     }
 
