@@ -37,12 +37,17 @@ public class CompanyController : ControllerBase
     }
 
     [HttpPut]
-    public async Task<IActionResult> UpdateCompany([FromBody] CompanyDto company)
+    public async Task<IActionResult> UpdateCompany([FromBody] CompanyDto? company)
     {
-        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Update Request Received for ID: {company?.CompanyId}\n");
-        try 
+        if (company == null)
         {
-            Console.WriteLine($"[DEBUG] Updating Company: {company?.CompanyId} - {company?.CompanyName}");
+            return BadRequest(new { error = "Company data is required" });
+        }
+
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Update Request Received for ID: {company.CompanyId}\n");
+        try
+        {
+            Console.WriteLine($"[DEBUG] Updating Company: {company.CompanyId} - {company.CompanyName}");
             var result = await _companyService.UpdateCompanyAsync(company);
             if (result)
             {

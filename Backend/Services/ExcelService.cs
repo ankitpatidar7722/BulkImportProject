@@ -18,7 +18,12 @@ public class ExcelService : IExcelService
     {
         try
         {
-            using var package = new ExcelPackage(fileStream);
+            // EPPlus requires a seekable stream. Copy to MemoryStream to ensure it's seekable and at position 0
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0; // Reset position to beginning
+            
+            using var package = new ExcelPackage(memoryStream);
             var worksheet = package.Workbook.Worksheets[0]; // Get first worksheet
 
             if (worksheet.Dimension == null)
@@ -55,6 +60,14 @@ public class ExcelService : IExcelService
         }
         catch (Exception ex)
         {
+            // Check if this is likely an old .xls format issue
+            if (ex.Message.Contains("not a valid Package file") || 
+                ex.Message.Contains("BIFF") || 
+                ex.Message.Contains("encrypted"))
+            {
+                throw new Exception("This file appears to be in the old Excel format (.xls). Please convert it to the newer .xlsx format and try again. EPPlus library only supports .xlsx files.");
+            }
+            
             throw new Exception($"Error reading Excel file: {ex.Message}", ex);
         }
     }
@@ -87,11 +100,30 @@ public class ExcelService : IExcelService
             return await ImportSparePartMasterAsync(fileStream, 2); // Default user 2 as per existing code
         }
 
+        // New Logic for Ledger Master (Clients/Suppliers)
+        if (tableName.Equals("Clients", StringComparison.OrdinalIgnoreCase) || 
+            tableName.Equals("Suppliers", StringComparison.OrdinalIgnoreCase) ||
+            tableName.Equals("LedgerMaster", StringComparison.OrdinalIgnoreCase))
+        {
+            // Determine Group ID (Hardcoded for now as per requirement, or lookup)
+            int groupId = 0; // Default
+            if (tableName.Equals("Clients", StringComparison.OrdinalIgnoreCase)) groupId = 1;
+            else if (tableName.Equals("Suppliers", StringComparison.OrdinalIgnoreCase)) groupId = 2;
+            else groupId = 1; // Fallback? Or maybe throw error? Let's assume 1.
+
+            return await ImportLedgerMasterAsync(fileStream, tableName, groupId);
+        }
+
         var result = new ImportResultDto();
         
         try
         {
-            using var package = new ExcelPackage(fileStream);
+            // EPPlus requires a seekable stream. Copy to MemoryStream to ensure it's seekable and at position 0
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+            
+            using var package = new ExcelPackage(memoryStream);
             var worksheet = package.Workbook.Worksheets[0];
 
             if (worksheet.Dimension == null)
@@ -182,7 +214,12 @@ public class ExcelService : IExcelService
         var result = new ImportResultDto();
         try
         {
-            using var package = new ExcelPackage(fileStream);
+            // EPPlus requires a seekable stream. Copy to MemoryStream to ensure it's seekable and at position 0
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+            
+            using var package = new ExcelPackage(memoryStream);
             var worksheet = package.Workbook.Worksheets[0];
 
             if (worksheet.Dimension == null)
@@ -208,13 +245,22 @@ public class ExcelService : IExcelService
             }
 
             // Helper to get value securely
-            string GetValue(string colName, int rowIdx)
+            string? GetValue(string colName, int rowIdx)
             {
                 var colIndex = headerMap.ContainsKey(colName) ? headerMap[colName] : 
                                headerMap.FirstOrDefault(k => k.Key.Equals(colName, StringComparison.OrdinalIgnoreCase)).Value;
                 
                 if (colIndex == 0) return null;
-                return worksheet.Cells[rowIdx, colIndex].Value?.ToString()?.Trim();
+                
+                // Get the cell value and handle DBNull explicitly
+                var cellValue = worksheet.Cells[rowIdx, colIndex].Value;
+                
+                // Convert DBNull to null
+                if (cellValue == null || cellValue == DBNull.Value)
+                    return null;
+                
+                var stringValue = cellValue.ToString()?.Trim();
+                return string.IsNullOrEmpty(stringValue) ? null : stringValue;
             }
 
             // ==========================================
@@ -222,19 +268,27 @@ public class ExcelService : IExcelService
             // ==========================================
             var insertList = new List<DynamicParameters>();
             var rowsToProcess = new List<int>();
-            
+
             // To track unique names within the file itself
             var fileDisplayNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // Pre-fetch existing DisplayNames to minimize DB calls (optional but better for bulk)
-            // Or just check per row. For safety and stricter transactional check, checking per row is fine 
-            // but since we are doing "all or nothing", fetching all existing names first might be faster if dataset is small.
-            // However, let's stick to the current logic pattern but run it purely for validation first.
+            // Fetch existing DisplayNames from database for duplicate check
+            await EnsureConnectionOpenAsync();
+            string fetchExistingQuery = @"
+                SELECT LTRIM(RTRIM(DisplayName)) AS DisplayName
+                FROM ProductHSNMaster
+                WHERE IsDeletedTransaction = 0
+                    AND DisplayName IS NOT NULL
+                    AND DisplayName <> ''";
+
+            var existingDisplayNames = await _connection.QueryAsync<string>(fetchExistingQuery);
+            var dbDisplayNames = new HashSet<string>(
+                existingDisplayNames.Where(n => !string.IsNullOrWhiteSpace(n)),
+                StringComparer.OrdinalIgnoreCase);
 
             for (int row = 2; row <= worksheet.Dimension.Rows; row++)
             {
-                bool rowHasError = false;
-                try 
+                try
                 {
                     // 0. Check for Empty Row
                     bool isRowEmpty = true;
@@ -253,37 +307,44 @@ public class ExcelService : IExcelService
                     var groupName = GetValue("Group Name", row);
                     var hsnCode = GetValue("HSN Code", row);
                     var displayName = GetValue("Display Name", row);
-                    var productType = GetValue("ProductType", row); 
+                    var productType = GetValue("ProductType", row);
                     var gst = GetValue("GST %", row);
                     var cgst = GetValue("CGST %", row);
                     var sgst = GetValue("SGST %", row);
                     var igst = GetValue("IGST %", row);
                     var itemGroupName = GetValue("ItemGroupName", row) ?? GetValue("Item Group Name", row);
 
-                    // 2. Validations
-                    if (string.IsNullOrEmpty(displayName))
-                        throw new Exception("Display Name is required.");
+                    // 2. DUPLICATE VALIDATION: Check DisplayName
+                    if (!string.IsNullOrWhiteSpace(displayName))
+                    {
+                        var displayNameTrimmed = displayName.Trim();
 
-                    if (string.IsNullOrEmpty(hsnCode))
-                        throw new Exception("HSN Code is required.");
+                        // Check for duplicate within Excel file
+                        if (fileDisplayNames.Contains(displayNameTrimmed))
+                        {
+                            errorCount++;
+                            result.DuplicateRows++;
+                            errorMessages.Add($"Row {row}: Duplicate DisplayName '{displayNameTrimmed}' found within Excel file.");
+                            continue;
+                        }
 
-                    if (string.IsNullOrEmpty(productType))
-                        throw new Exception("Product Category is required.");
+                        // Check for duplicate in database
+                        if (dbDisplayNames.Contains(displayNameTrimmed))
+                        {
+                            errorCount++;
+                            result.DuplicateRows++;
+                            errorMessages.Add($"Row {row}: Duplicate DisplayName '{displayNameTrimmed}' already exists in database.");
+                            continue;
+                        }
 
-                    // Check for duplicate in THIS file
-                    if (fileDisplayNames.Contains(displayName))
-                        throw new Exception($"Duplicate Display Name '{displayName}' found within the uploaded file.");
-                    
-                    fileDisplayNames.Add(displayName);
+                        // Add to Excel tracking set
+                        fileDisplayNames.Add(displayNameTrimmed);
+                    }
 
-                    // Check Unique Display Name in DB
-                    await EnsureConnectionOpenAsync();
-                    var existingName = await _connection.ExecuteScalarAsync<int>(
-                        "SELECT COUNT(1) FROM ProductHSNMaster WHERE DisplayName = @DisplayName AND IsDeletedTransaction = 0", 
-                        new { DisplayName = displayName });
-
-                    if (existingName > 0)
-                        throw new Exception($"Display Name '{displayName}' already exists in the database.");
+                    // Default to empty strings to avoid null issues
+                    displayName = displayName ?? "";
+                    hsnCode = hsnCode ?? "";
+                    productType = productType ?? "";
 
                     // 3. Dynamic Lookup for ItemGroupID
                     int? itemGroupId = null;
@@ -332,7 +393,6 @@ public class ExcelService : IExcelService
                 }
                 catch (Exception ex)
                 {
-                    rowHasError = true;
                     errorCount++;
                     var errorMsg = $"Row {row}: {ex.Message}";
                     errorMessages.Add(errorMsg);
@@ -375,10 +435,20 @@ public class ExcelService : IExcelService
                     }
 
                     transaction.Commit();
-                    
+
                     result.Success = true;
                     result.ImportedRows = insertList.Count;
-                    result.Message = $"Successfully imported {insertList.Count} rows into Product Group Master.";
+
+                    // Build success message with duplicate/error info
+                    var messageBuilder = new System.Text.StringBuilder();
+                    messageBuilder.Append($"Successfully imported {insertList.Count} record(s) into Product Group Master.");
+
+                    if (result.DuplicateRows > 0)
+                    {
+                        messageBuilder.Append($" Skipped: {result.DuplicateRows} duplicate(s).");
+                    }
+
+                    result.Message = messageBuilder.ToString();
                 }
                 catch (Exception ex)
                 {
@@ -386,7 +456,7 @@ public class ExcelService : IExcelService
                     result.Success = false;
                     result.Message = $"Transaction Failed: {ex.Message}";
                     result.ErrorMessages.Add($"Critical Transaction Error: {ex.Message}");
-                    
+
                     try { File.AppendAllText("import_debug.log", $"{DateTime.Now}: Transaction Rolled back. {ex.Message}{Environment.NewLine}"); } catch {}
                 }
             }
@@ -394,9 +464,12 @@ public class ExcelService : IExcelService
             {
                 result.Success = false;
                 result.ImportedRows = 0;
-                var firstError = errorMessages.FirstOrDefault() ?? "Unknown error";
-                result.Message = $"Validation Failed. {errorCount} errors found. No data inserted. First Error: {firstError}";
-                
+                result.ErrorRows = errorCount - result.DuplicateRows;
+
+                result.Message = result.DuplicateRows > 0
+                    ? $"Import failed. {result.DuplicateRows} duplicate(s) found, {result.ErrorRows} validation error(s). No data inserted."
+                    : $"Validation failed with {errorCount} error(s). No data inserted.";
+
                 try { File.AppendAllText("import_debug.log", $"{DateTime.Now}: Validation Failed. {errorCount} errors.{Environment.NewLine}"); } catch {}
             }
             else
@@ -422,7 +495,12 @@ public class ExcelService : IExcelService
         var result = new ImportResultDto();
         try
         {
-            using var package = new ExcelPackage(fileStream);
+            // EPPlus requires a seekable stream. Copy to MemoryStream to ensure it's seekable and at position 0
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+
+            using var package = new ExcelPackage(memoryStream);
             var worksheet = package.Workbook.Worksheets[0];
 
             if (worksheet.Dimension == null)
@@ -434,6 +512,7 @@ public class ExcelService : IExcelService
 
             result.TotalRows = worksheet.Dimension.Rows - 1;
             int errorCount = 0;
+            int duplicateCount = 0;
             var errorMessages = new List<string>();
 
             // Get Headers mapping
@@ -447,20 +526,29 @@ public class ExcelService : IExcelService
                 }
             }
 
-            string GetValue(string colName, int rowIdx)
+            string? GetValue(string colName, int rowIdx)
             {
                 var colIndex = headerMap.ContainsKey(colName) ? headerMap[colName] : 
                                headerMap.FirstOrDefault(k => k.Key.Equals(colName, StringComparison.OrdinalIgnoreCase)).Value;
                 
                 if (colIndex == 0) return null;
-                return worksheet.Cells[rowIdx, colIndex].Value?.ToString()?.Trim();
+                
+                // Get the cell value and handle DBNull explicitly
+                var cellValue = worksheet.Cells[rowIdx, colIndex].Value;
+                
+                // Convert DBNull to null
+                if (cellValue == null || cellValue == DBNull.Value)
+                    return null;
+                
+                var stringValue = cellValue.ToString()?.Trim();
+                return string.IsNullOrEmpty(stringValue) ? null : stringValue;
             }
 
             // ==========================================
             // PHASE 1: Validation
             // ==========================================
             var validRows = new List<Dictionary<string, object>>();
-            // Track duplicates in file: Combination of Name + Group
+            // Track duplicates in file: Combination of Name + Group + Type
             var fileDuplicateCheck = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             // Fetch Lookups
@@ -487,23 +575,26 @@ public class ExcelService : IExcelService
             var existingSpareParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                var spList = await _connection.QueryAsync<(string Name, string Group, string Type)>("SELECT SparePartName, SparePartGroup, SparePartType FROM SparePartMaster WHERE IsDeletedTransaction = 0");
+                var spList = await _connection.QueryAsync<(string Name, string Group, string Type)>(
+                    "SELECT SparePartName, SparePartGroup, SparePartType FROM SparePartMaster WHERE IsDeletedTransaction = 0");
                 foreach (var sp in spList)
                 {
-                    if (sp.Name != null && sp.Group != null) 
-                        existingSpareParts.Add($"{sp.Name}|{sp.Group}|{sp.Type ?? ""}");
+                    if (!string.IsNullOrEmpty(sp.Name) && !string.IsNullOrEmpty(sp.Group) && !string.IsNullOrEmpty(sp.Type))
+                    {
+                        string compositeKey = $"{sp.Name.Trim()}|{sp.Group.Trim()}|{sp.Type.Trim()}";
+                        existingSpareParts.Add(compositeKey);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 result.Success = false;
-                result.ErrorMessages.Add("Failed to fetch existing Spare Parts (Check if 'SparePartGroup' or 'SparePartType' columns exist): " + ex.Message);
+                result.ErrorMessages.Add("Failed to fetch existing Spare Parts: " + ex.Message);
                 return result;
             }
 
             for (int row = 2; row <= worksheet.Dimension.Rows; row++)
             {
-                bool rowHasError = false;
                 // Check empty row
                 bool isRowEmpty = true;
                 for (int c = 1; c <= worksheet.Dimension.Columns; c++)
@@ -537,82 +628,111 @@ public class ExcelService : IExcelService
                 if (!string.IsNullOrEmpty(poQtyStr) && decimal.TryParse(poQtyStr, out var poq)) purchaseOrderQuantity = poq;
 
                 var rowErrors = new List<string>();
+                bool isDuplicate = false;
 
-                // Required Fields Validation
+                // ==========================================
+                // REQUIRED FIELD VALIDATION
+                // ==========================================
                 if (string.IsNullOrEmpty(sparePartName))
-                    rowErrors.Add($"Row {row}: SparePartName is required.");
-                
+                    rowErrors.Add($"Row {row} [SparePartName={sparePartName ?? "NULL"}, SparePartGroup={sparePartGroup ?? "NULL"}]: SparePartName is required.");
+
                 if (string.IsNullOrEmpty(sparePartGroup))
-                    rowErrors.Add($"Row {row}: SparePartGroup is required.");
-                
-                if (string.IsNullOrEmpty(hsnGroup)) // Changed from HSNCode to HSNGroup as requirement implies lookup by group
-                    rowErrors.Add($"Row {row}: HSNGroup is required.");
-                
+                    rowErrors.Add($"Row {row} [SparePartName={sparePartName ?? "NULL"}, SparePartGroup={sparePartGroup ?? "NULL"}]: SparePartGroup is required.");
+
+                if (string.IsNullOrEmpty(sparePartType))
+                    rowErrors.Add($"Row {row} [SparePartName={sparePartName ?? "NULL"}, SparePartGroup={sparePartGroup ?? "NULL"}]: SparePartType is required.");
+
+                if (string.IsNullOrEmpty(hsnCode))
+                    rowErrors.Add($"Row {row} [SparePartName={sparePartName ?? "NULL"}, SparePartGroup={sparePartGroup ?? "NULL"}]: HSNCode is required.");
+
                 if (string.IsNullOrEmpty(unit))
-                    rowErrors.Add($"Row {row}: Unit is required.");
+                    rowErrors.Add($"Row {row} [SparePartName={sparePartName ?? "NULL"}, SparePartGroup={sparePartGroup ?? "NULL"}]: Unit is required.");
 
-                // Combination Duplicate Validation (Name + Group + Type)
-                if (!string.IsNullOrEmpty(sparePartName) && !string.IsNullOrEmpty(sparePartGroup))
+                // ==========================================
+                // COMBINATION DUPLICATE VALIDATION
+                // ==========================================
+                // Validate: (SparePartName + SparePartGroup + SparePartType)
+                if (!string.IsNullOrEmpty(sparePartName) && !string.IsNullOrEmpty(sparePartGroup) && !string.IsNullOrEmpty(sparePartType))
                 {
-                    string compositeKey = $"{sparePartName}|{sparePartGroup}|{sparePartType ?? ""}";
+                    string compositeKey = $"{sparePartName.Trim()}|{sparePartGroup.Trim()}|{sparePartType.Trim()}";
 
+                    // Check in database
                     if (existingSpareParts.Contains(compositeKey))
-                        rowErrors.Add($"Duplicate SparePartName + SparePartGroup + SparePartType '{sparePartName} - {sparePartGroup} - {sparePartType}' already exists in database.");
-                    
+                    {
+                        isDuplicate = true;
+                        duplicateCount++;
+                        rowErrors.Add($"Row {row} [SparePartName={sparePartName}, SparePartGroup={sparePartGroup}]: Duplicate SparePartName + SparePartGroup + SparePartType already exists in database.");
+                    }
+
+                    // Check inside Excel batch
                     if (fileDuplicateCheck.Contains(compositeKey))
-                        rowErrors.Add($"Duplicate SparePartName + SparePartGroup + SparePartType '{sparePartName} - {sparePartGroup} - {sparePartType}' found in file.");
+                    {
+                        isDuplicate = true;
+                        if (!rowErrors.Any(e => e.Contains("Duplicate"))) // Don't double-count duplicates
+                            duplicateCount++;
+                        rowErrors.Add($"Row {row} [SparePartName={sparePartName}, SparePartGroup={sparePartGroup}]: Duplicate SparePartName + SparePartGroup + SparePartType found within Excel file.");
+                    }
                     else
+                    {
                         fileDuplicateCheck.Add(compositeKey);
+                    }
                 }
 
-                // ProductHSNID Lookup using HSNGroup
+                // ProductHSNID Lookup using HSNGroup (Optional - for ProductHSNID foreign key)
                 int productHSNID = 0;
                 if (!string.IsNullOrEmpty(hsnGroup))
                 {
                     if (hsnLookup.TryGetValue(hsnGroup, out int id))
                         productHSNID = id;
-                    else
-                        rowErrors.Add($"Row {row}: HSN Group '{hsnGroup}' not found in ProductHSNMaster.");
-                }
-                else
-                {
-                   // Fallback or just error if HSNGroup is strictly required for ID
-                   // rowErrors.Add($"Row {row}: HSN Group is required to determine ProductHSNID.");
+                    // Don't error if HSNGroup not found - it's optional for lookup
                 }
 
+                // ==========================================
+                // VALIDATION RESULT HANDLING
+                // ==========================================
                 if (rowErrors.Any())
                 {
-                    rowHasError = true;
-                    errorCount++;
+                    if (!isDuplicate) // Only increment errorCount for non-duplicate errors
+                        errorCount++;
                     errorMessages.AddRange(rowErrors);
+                    continue; // Skip this row - do not add to validRows
                 }
-                else
-                {
-                    var validRow = new Dictionary<string, object>();
-                    validRow["SparePartName"] = sparePartName;
-                    validRow["SparePartGroup"] = sparePartGroup;
-                    validRow["SparePartType"] = sparePartType;
-                    validRow["Unit"] = unit;
-                    validRow["ProductHSNID"] = productHSNID;
-                    validRow["Rate"] = rate;
-                    validRow["HSNGroup"] = hsnGroup;
-                    validRow["SupplierReference"] = supplierReference;
-                    validRow["StockRefCode"] = stockRefCode;
-                    validRow["PurchaseOrderQuantity"] = purchaseOrderQuantity;
-                    validRows.Add(validRow);
-                }
+
+                // Row is valid - add to import batch
+                var validRow = new Dictionary<string, object>();
+                validRow["SparePartName"] = sparePartName ?? "";
+                validRow["SparePartGroup"] = sparePartGroup ?? "";
+                validRow["SparePartType"] = sparePartType ?? "";
+                validRow["HSNCode"] = hsnCode ?? "";
+                validRow["Unit"] = unit ?? "";
+                validRow["ProductHSNID"] = productHSNID;
+                validRow["Rate"] = rate;
+                validRow["HSNGroup"] = hsnGroup ?? "";
+                validRow["SupplierReference"] = supplierReference ?? "";
+                validRow["StockRefCode"] = stockRefCode ?? "";
+                validRow["PurchaseOrderQuantity"] = purchaseOrderQuantity;
+                validRows.Add(validRow);
             }
 
-            if (errorCount > 0)
+            // Check if there are any validation errors or duplicates
+            if (errorMessages.Any())
             {
                 result.Success = false;
                 result.ErrorRows = errorCount;
+                result.DuplicateRows = duplicateCount;
                 result.ErrorMessages = errorMessages;
-                result.Message = $"Validation Failed with {errorCount} errors. No data imported.";
+
+                var messageParts = new List<string>();
+                if (duplicateCount > 0)
+                    messageParts.Add($"{duplicateCount} duplicate(s)");
+                if (errorCount > 0)
+                    messageParts.Add($"{errorCount} validation error(s)");
+
+                result.Message = $"Validation failed: {string.Join(", ", messageParts)}. No data imported.";
                 return result;
             }
 
-             if (!validRows.Any())
+            if (!validRows.Any())
             {
                 result.Success = true;
                 result.Message = "No valid data found to import.";
@@ -630,13 +750,13 @@ public class ExcelService : IExcelService
                 int currentMaxCode = await _connection.ExecuteScalarAsync<int?>("SELECT MAX(MaxSparePartCode) FROM SparePartMaster WHERE IsDeletedTransaction = 0", transaction: transaction) ?? 0;
 
                 string insertSql = @"
-                    INSERT INTO SparePartMaster 
-                    (SparePartName, SparePartCode, MaxSparePartCode, ProductHSNID, SparePartGroup, SparePartType, Unit, Rate, 
+                    INSERT INTO SparePartMaster
+                    (SparePartName, SparePartCode, MaxSparePartCode, ProductHSNID, SparePartGroup, SparePartType, HSNCode, Unit, Rate,
                      HSNGroup, SupplierReference, StockRefCode, PurchaseOrderQuantity,
                      VoucherPrefix, CompanyID, UserID,
                      VoucherDate, CreatedBy, CreatedDate, IsDeletedTransaction)
-                    VALUES 
-                    (@SparePartName, @SparePartCode, @MaxSparePartCode, @ProductHSNID, @SparePartGroup, @SparePartType, @Unit, @Rate, 
+                    VALUES
+                    (@SparePartName, @SparePartCode, @MaxSparePartCode, @ProductHSNID, @SparePartGroup, @SparePartType, @HSNCode, @Unit, @Rate,
                      @HSNGroup, @SupplierReference, @StockRefCode, @PurchaseOrderQuantity,
                      @VoucherPrefix, @CompanyID, @UserID,
                      @VoucherDate, @CreatedBy, @CreatedDate, 0)";
@@ -653,6 +773,7 @@ public class ExcelService : IExcelService
                         ProductHSNID = row["ProductHSNID"],
                         SparePartGroup = row["SparePartGroup"],
                         SparePartType = row["SparePartType"],
+                        HSNCode = row["HSNCode"],
                         Unit = row["Unit"],
                         Rate = row["Rate"],
                         HSNGroup = row["HSNGroup"],
@@ -677,8 +798,8 @@ public class ExcelService : IExcelService
             {
                 transaction.Rollback();
                 result.Success = false;
-                 result.ErrorMessages.Add("Database Error: " + ex.Message);
-                 result.Message = "Database error during import. Ensure columns 'SparePartGroup', 'SparePartType' and 'Unit' exist.";
+                result.ErrorMessages.Add("Database Error: " + ex.Message);
+                result.Message = "Database error during import: " + ex.Message;
             }
 
             return result;
@@ -787,5 +908,1199 @@ public class ExcelService : IExcelService
         var query = $"INSERT INTO [{tableName}] ({columns}) VALUES ({paramString})";
         
         await _connection.ExecuteAsync(query, parameters);
+    }
+
+    private async Task<ImportResultDto> ImportLedgerMasterAsync(Stream fileStream, string moduleName, int ledgerGroupId)
+    {
+        var result = new ImportResultDto();
+        try
+        {
+            // EPPlus requires a seekable stream. Copy to MemoryStream to ensure it's seekable and at position 0
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+            
+            using var package = new ExcelPackage(memoryStream);
+            var worksheet = package.Workbook.Worksheets[0];
+
+            if (worksheet.Dimension == null)
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("The Excel file is empty.");
+                return result;
+            }
+
+            result.TotalRows = worksheet.Dimension.Rows - 1;
+
+            // 1. Map Headers
+            var headerMap = new Dictionary<string, int>();
+            for (int col = 1; col <= worksheet.Dimension.Columns; col++)
+            {
+                var header = worksheet.Cells[1, col].Value?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(header))
+                {
+                    headerMap[header] = col;
+                }
+            }
+
+            string? GetValue(string colName, int rowIdx)
+            {
+                var colIndex = headerMap.ContainsKey(colName) ? headerMap[colName] : 
+                               headerMap.FirstOrDefault(k => k.Key.Equals(colName, StringComparison.OrdinalIgnoreCase)).Value;
+                
+                if (colIndex == 0) return null;
+                
+                // Get the cell value and handle DBNull explicitly
+                var cellValue = worksheet.Cells[rowIdx, colIndex].Value;
+                
+                // Convert DBNull to null
+                if (cellValue == null || cellValue == DBNull.Value)
+                    return null;
+                
+                var stringValue = cellValue.ToString()?.Trim();
+                return string.IsNullOrEmpty(stringValue) ? null : stringValue;
+            }
+
+            // 2. Prepare Data
+            var validRows = new List<Dictionary<string, object?>>();
+
+            for (int row = 2; row <= worksheet.Dimension.Rows; row++)
+            {
+                bool isRowEmpty = true;
+                for (int c = 1; c <= worksheet.Dimension.Columns; c++)
+                {
+                    if (!string.IsNullOrWhiteSpace(worksheet.Cells[row, c].Value?.ToString()))
+                    {
+                        isRowEmpty = false;
+                        break;
+                    }
+                }
+                if (isRowEmpty) continue;
+
+                // Get LedgerName - NO VALIDATION, accept any value including null
+                var ledgerName = GetValue("LedgerName", row) ?? GetValue("Ledger Name", row) ?? GetValue("Name", row) ?? "";
+
+                // Construct Row Data
+                var rowData = new Dictionary<string, object?>();
+                
+                // Add all columns dynamic mapping
+                foreach(var kvp in headerMap)
+                {
+                    var cellValue = GetValue(kvp.Key, row);
+                    // Convert null or empty string to DBNull for database, 
+                    // but store as null in dictionary to avoid DBNull parameter errors
+                    rowData[kvp.Key] = cellValue; // GetValue already returns null for empty cells
+                }
+                // Ensure LedgerName is standard
+                rowData["LedgerName"] = ledgerName;
+
+                validRows.Add(rowData);
+            }
+
+            // Skip error check - process all rows
+            // if (errorCount > 0 && !validRows.Any())
+            // {
+            //     result.Success = false;
+            //     result.ErrorMessages = errorMessages;
+            //     result.ErrorRows = errorCount;
+            //     result.Message = "Validation failed. No valid rows found.";
+            //     return result;
+            // }
+
+            // 3. Execute Import (Transactional)
+            await EnsureConnectionOpenAsync();
+            using var transaction = _connection.BeginTransaction();
+            try
+            {
+                // Get Prefix and Max No logic
+                // For now, simple logic: Get Max Ledger Code
+                // Ideally we should lookup LedgerGroupMaster for Prefix (e.g., 'CLT' or 'SUP')
+                string prefix = "LGR";
+                try 
+                {
+                    var groupPrefix = await _connection.ExecuteScalarAsync<string>(
+                        "SELECT LedgerGroupPrefix FROM LedgerGroupMaster WHERE LedgerGroupID = @GID", 
+                        new { GID = ledgerGroupId }, transaction: transaction);
+                    if (!string.IsNullOrEmpty(groupPrefix)) prefix = groupPrefix;
+                }
+                catch {} // Fallback to LGR if table/column missing
+
+                // Get current Max Number
+                var maxLedgerNoObj = await _connection.ExecuteScalarAsync<object>(
+                    "SELECT MAX(MaxLedgerNo) FROM LedgerMaster WHERE LedgerGroupID = @GID AND IsDeletedTransaction = 0",
+                    new { GID = ledgerGroupId }, transaction: transaction);
+                
+                long currentMaxNo = 0;
+                if (maxLedgerNoObj != null && long.TryParse(maxLedgerNoObj.ToString(), out var parsedMax))
+                {
+                    currentMaxNo = parsedMax;
+                }
+
+                foreach (var rowData in validRows)
+                {
+                    currentMaxNo++;
+                    var ledgerCode = $"{prefix}{currentMaxNo.ToString().PadLeft(5, '0')}";
+                    var ledgerName = rowData["LedgerName"]?.ToString() ?? "";
+
+                    // Insert Header (LedgerMaster)
+                    string insertMasterSql = @"
+                        INSERT INTO LedgerMaster (
+                            LedgerCode, MaxLedgerNo, LedgerCodePrefix, LedgerName, 
+                            LedgerGroupID, CompanyID, UserID, FYear, 
+                            ISLedgerActive, IsDeletedTransaction, CreatedDate, CreatedBy
+                        ) VALUES (
+                            @LedgerCode, @MaxLedgerNo, @LedgerCodePrefix, @LedgerName,
+                            @LedgerGroupID, @CompanyID, @UserID, @FYear,
+                            @ISLedgerActive, 0, @CreatedDate, @CreatedBy
+                        );
+                        SELECT SCOPE_IDENTITY();";
+
+                    var masterParams = new {
+                        LedgerCode = ledgerCode,
+                        MaxLedgerNo = currentMaxNo,
+                        LedgerCodePrefix = prefix,
+                        LedgerName = ledgerName,
+                        LedgerGroupID = ledgerGroupId,
+                        CompanyID = 2, // Hardcoded
+                        UserID = 2,    // Hardcoded
+                        FYear = "2025-2026",
+                        ISLedgerActive = true,
+                        CreatedDate = DateTime.Now,
+                        CreatedBy = 2
+                    };
+
+                    var ledgerIdObj = await _connection.ExecuteScalarAsync<object>(insertMasterSql, masterParams, transaction: transaction);
+                    int newLedgerId = Convert.ToInt32(ledgerIdObj);
+
+                    // Insert Details (LedgerMasterDetails)
+                    // We iterate over all keys in rowData. 
+                    // Any key that is NOT "LedgerName" is treated as a generic field.
+                    // (You might want to exclude strictly system columns if they appear in Excel, but usually Excel only has data columns)
+                    
+                    string insertDetailSql = @"
+                        INSERT INTO LedgerMasterDetails (
+                            LedgerID, LedgerGroupID, CompanyID, UserID, FYear,
+                            FieldName, FieldValue, ParentFieldName, ParentFieldValue,
+                            CreatedDate, CreatedBy, ModifiedDate, ModifiedBy
+                        ) VALUES (
+                            @LedgerID, @LedgerGroupID, @CompanyID, @UserID, @FYear,
+                            @FieldName, @FieldValue, @ParentFieldName, @ParentFieldValue,
+                            @CreatedDate, @CreatedBy, @CreatedDate, @CreatedBy
+                        )";
+
+                    foreach (var key in rowData.Keys)
+                    {
+                        var val = rowData[key]?.ToString(); // Can be null
+                        
+                        // Insert every column as a detail, including Name if desired, or skip Name? 
+                        // The VB code seems to insert everything in details too (objIMDRecord loop).
+                        // Let's insert everything.
+                        
+                        await _connection.ExecuteAsync(insertDetailSql, new {
+                            LedgerID = newLedgerId,
+                            LedgerGroupID = ledgerGroupId,
+                            CompanyID = 2,
+                            UserID = 2,
+                            FYear = "2025-2026",
+                            FieldName = key,             // The Excel Header Name
+                            FieldValue = val ?? (object)DBNull.Value,  // Use DBNull.Value for null values
+                            ParentFieldName = key,       // Legacy often maps ParentFieldName = FieldName
+                            ParentFieldValue = val ?? (object)DBNull.Value,
+                            CreatedDate = DateTime.Now,
+                            CreatedBy = 2
+                        }, transaction: transaction);
+                    }
+                    
+                    // Explicit Insert for ISLedgerActive in Details (as per legacy code)
+                    await _connection.ExecuteAsync(insertDetailSql, new {
+                        LedgerID = newLedgerId,
+                        LedgerGroupID = ledgerGroupId,
+                        CompanyID = 2,
+                        UserID = 2,
+                        FYear = "2025-2026",
+                        FieldName = "ISLedgerActive",
+                        FieldValue = "True",
+                        ParentFieldName = "ISLedgerActive",
+                        ParentFieldValue = "True",
+                        CreatedDate = DateTime.Now,
+                        CreatedBy = 2
+                    }, transaction: transaction);
+                }
+
+                transaction.Commit();
+                result.Success = true;
+                result.ImportedRows = validRows.Count;
+                result.Message = $"Successfully imported {validRows.Count} Ledgers into Group {ledgerGroupId} ({moduleName}).";
+            }
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+                result.Success = false;
+                result.Message = $"Database Error: {ex.Message}";
+                result.ErrorMessages.Add(ex.Message);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.ErrorMessages.Add($"System Error: {ex.Message}");
+            return result;
+        }
+    }
+
+    public async Task<List<LedgerGroupDto>> GetLedgerGroupsAsync()
+    {
+        try
+        {
+            await EnsureConnectionOpenAsync();
+
+            // Query based on the old VB code - fetches ledger groups
+            string query = @"
+                SELECT DISTINCT
+                    LGM.LedgerGroupID,
+                    LGM.LedgerGroupName,
+                    LGM.LedgerGroupNameDisplay,
+                    LGM.LedgerGroupNameID
+                FROM LedgerGroupMaster AS LGM
+                WHERE LGM.IsDeletedTransaction = 0
+                    AND LGM.CompanyID = 2
+                ORDER BY LGM.LedgerGroupID";
+
+            var result = await _connection.QueryAsync<LedgerGroupDto>(query);
+            return result.ToList();
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Failed to fetch ledger groups: {ex.Message}", ex);
+        }
+    }
+
+    public async Task<List<MasterColumnDto>> GetMasterColumnsAsync(int ledgerGroupId)
+    {
+        try
+        {
+            await EnsureConnectionOpenAsync();
+
+            // First, check what columns exist in LedgerGroupMaster
+            string checkColumnsQuery = @"
+                SELECT COLUMN_NAME
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = 'LedgerGroupMaster'
+                AND COLUMN_NAME IN ('SelectQuery', 'TableName', 'LedgerGroupName')";
+
+            var availableColumns = await _connection.QueryAsync<string>(checkColumnsQuery);
+            var columnsList = availableColumns.ToList();
+
+            // Build dynamic query based on available columns
+            var selectParts = new List<string> { "LedgerGroupID" };
+            if (columnsList.Contains("SelectQuery")) selectParts.Add("SelectQuery");
+            if (columnsList.Contains("TableName")) selectParts.Add("TableName");
+            if (columnsList.Contains("LedgerGroupName")) selectParts.Add("LedgerGroupName");
+
+            string queryForLedgerGroup = $@"
+                SELECT {string.Join(", ", selectParts)}
+                FROM LedgerGroupMaster
+                WHERE CompanyID = 2
+                    AND LedgerGroupID = @LedgerGroupId
+                    AND ISNULL(IsDeletedTransaction, 0) <> 1";
+
+            var ledgerGroupData = await _connection.QueryFirstOrDefaultAsync<dynamic>(
+                queryForLedgerGroup,
+                new { LedgerGroupId = ledgerGroupId });
+
+            if (ledgerGroupData == null)
+            {
+                throw new Exception($"Ledger Group with ID {ledgerGroupId} not found");
+            }
+
+            var dict = ledgerGroupData as IDictionary<string, object>;
+            string? selectQuery = dict != null && dict.ContainsKey("SelectQuery") ? dict["SelectQuery"]?.ToString() : null;
+            string tableName = dict != null && dict.ContainsKey("TableName") ? dict["TableName"]?.ToString() ?? "LedgerMaster" : "LedgerMaster";
+            string ledgerGroupName = dict != null && dict.ContainsKey("LedgerGroupName") ? dict["LedgerGroupName"]?.ToString() ?? "" : "";
+
+            // If SelectQuery is null or empty, try to query LedgerMasterDetails directly
+            if (string.IsNullOrEmpty(selectQuery))
+            {
+                // First, try to get default schema based on Ledger Group Name
+                var defaultColumns = GetDefaultLedgerColumns(ledgerGroupName);
+                if (defaultColumns.Any())
+                {
+                    return defaultColumns;
+                }
+
+                // Fallback: Get distinct field names from existing LedgerMasterDetails for this group
+                string fallbackQuery = @"
+                    SELECT DISTINCT
+                        FieldName,
+                        'string' as DataType,
+                        CAST(0 AS BIT) as IsRequired
+                    FROM LedgerMasterDetails
+                    WHERE LedgerGroupID = @LedgerGroupId
+                        AND CompanyID = 2
+                    ORDER BY FieldName";
+
+                var fallbackColumns = await _connection.QueryAsync<dynamic>(fallbackQuery, new { LedgerGroupId = ledgerGroupId });
+
+                if (fallbackColumns != null && fallbackColumns.Any())
+                {
+                    var fallbackResult = new List<MasterColumnDto>();
+                    int fallbackSequence = 1;
+
+                    foreach (var col in fallbackColumns)
+                    {
+                        var colDict = col as IDictionary<string, object>;
+                        if (colDict != null && colDict.ContainsKey("FieldName"))
+                        {
+                            fallbackResult.Add(new MasterColumnDto
+                            {
+                                FieldName = colDict["FieldName"]?.ToString() ?? "",
+                                DataType = "string",
+                                IsRequired = false,
+                                SequenceNo = fallbackSequence++
+                            });
+                        }
+                    }
+
+                    // If we found columns from existing data, return them
+                    if (fallbackResult.Any())
+                    {
+                        return fallbackResult;
+                    }
+                }
+
+                // If still no columns, check if stored procedure exists
+                string checkProcQuery = @"
+                    SELECT COUNT(*)
+                    FROM sys.objects
+                    WHERE type = 'P' AND name = 'GetLedgerMasterData'";
+
+                var procExists = await _connection.ExecuteScalarAsync<int>(checkProcQuery);
+
+                if (procExists > 0)
+                {
+                    selectQuery = "GetLedgerMasterData";
+                }
+                else
+                {
+                    // No stored procedure and no SelectQuery - return empty list
+                    return new List<MasterColumnDto>();
+                }
+            }
+
+            // Prepare parameters for the stored procedure or query
+            var parameters = new DynamicParameters();
+            parameters.Add("@TblName", tableName);
+            parameters.Add("@CompanyID", 2);
+            parameters.Add("@LedgerGroupID", ledgerGroupId);
+
+            // Execute the query/stored procedure
+            IEnumerable<dynamic> columns;
+            try
+            {
+                // Check if it's a stored procedure call
+                bool isStoredProc = !selectQuery!.Trim().ToUpper().StartsWith("SELECT");
+
+                if (isStoredProc)
+                {
+                    columns = await _connection.QueryAsync<dynamic>(
+                        selectQuery,
+                        parameters,
+                        commandType: System.Data.CommandType.StoredProcedure);
+                }
+                else
+                {
+                    columns = await _connection.QueryAsync<dynamic>(selectQuery, parameters);
+                }
+
+                // If no columns returned, return empty list
+                if (columns == null || !columns.Any())
+                {
+                    return new List<MasterColumnDto>();
+                }
+            }
+            catch (Exception)
+            {
+                // If execution fails, return empty list instead of throwing
+                return new List<MasterColumnDto>();
+            }
+
+            var result = new List<MasterColumnDto>();
+            int sequence = 1;
+
+            foreach (var col in columns)
+            {
+                var colDict = col as IDictionary<string, object>;
+                if (colDict != null && colDict.ContainsKey("FieldName"))
+                {
+                    result.Add(new MasterColumnDto
+                    {
+                        FieldName = colDict["FieldName"]?.ToString() ?? "",
+                        DataType = colDict.ContainsKey("DataType") ? colDict["DataType"]?.ToString() ?? "string" : "string",
+                        IsRequired = colDict.ContainsKey("IsRequired") && Convert.ToBoolean(colDict["IsRequired"]),
+                        SequenceNo = sequence++
+                    });
+                }
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            // Log detailed error
+            var errorMsg = $"Failed to fetch master columns for LedgerGroupID {ledgerGroupId}: {ex.Message}";
+            if (ex.InnerException != null)
+            {
+                errorMsg += $" Inner: {ex.InnerException.Message}";
+            }
+            throw new Exception(errorMsg, ex);
+        }
+    }
+
+    private List<MasterColumnDto> GetDefaultLedgerColumns(string ledgerGroupName)
+    {
+        // Provide default column schemas for common ledger groups
+        var columns = new List<MasterColumnDto>();
+
+        // Normalize the ledger group name for comparison
+        var normalizedName = ledgerGroupName?.Trim().ToLower() ?? "";
+
+        // Common columns for all ledger types
+        var commonColumns = new[]
+        {
+            new { Name = "LedgerName", Required = true, Seq = 1 },
+            new { Name = "LedgerDescription", Required = false, Seq = 2 },
+            new { Name = "Address", Required = false, Seq = 3 },
+            new { Name = "City", Required = false, Seq = 4 },
+            new { Name = "State", Required = false, Seq = 5 },
+            new { Name = "Country", Required = false, Seq = 6 },
+            new { Name = "PinCode", Required = false, Seq = 7 },
+            new { Name = "Phone", Required = false, Seq = 8 },
+            new { Name = "Email", Required = false, Seq = 9 },
+            new { Name = "GSTNo", Required = false, Seq = 10 },
+            new { Name = "PANNO", Required = false, Seq = 11 }
+        };
+
+        // Consignee specific
+        if (normalizedName.Contains("consignee"))
+        {
+            int seq = 1;
+            columns.Add(new MasterColumnDto { FieldName = "LedgerName", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ClientName", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ConsigneeCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ContactPerson", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "City", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "State", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Country", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PinCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Phone", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Mobile", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Email", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "GSTNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PANNO", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            return columns;
+        }
+
+        // Suppliers/Vendors specific
+        if (normalizedName.Contains("supplier") || normalizedName.Contains("vendor"))
+        {
+            int seq = 1;
+            columns.Add(new MasterColumnDto { FieldName = "LedgerName", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "SupplierCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ContactPerson", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "City", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "State", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Country", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PinCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Phone", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Mobile", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Email", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "GSTNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PANNO", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PaymentTerms", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "CreditDays", DataType = "number", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "BankName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "AccountNumber", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "IFSCCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            return columns;
+        }
+
+        // Customers specific
+        if (normalizedName.Contains("customer") || normalizedName.Contains("client"))
+        {
+            int seq = 1;
+            columns.Add(new MasterColumnDto { FieldName = "LedgerName", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "CustomerCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ContactPerson", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "City", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "State", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Country", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PinCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Phone", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Mobile", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Email", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "GSTNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PANNO", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "CreditLimit", DataType = "number", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "CreditDays", DataType = "number", IsRequired = false, SequenceNo = seq++ });
+            return columns;
+        }
+
+        // Default generic ledger columns for any other type
+        if (!string.IsNullOrEmpty(normalizedName))
+        {
+            foreach (var col in commonColumns)
+            {
+                columns.Add(new MasterColumnDto
+                {
+                    FieldName = col.Name,
+                    DataType = "string",
+                    IsRequired = col.Required,
+                    SequenceNo = col.Seq
+                });
+            }
+            return columns;
+        }
+
+        // Return empty if no ledger group name provided
+        return new List<MasterColumnDto>();
+    }
+
+    public async Task<ImportResultDto> ImportLedgerMasterWithValidationAsync(Stream fileStream, int ledgerGroupId)
+    {
+        var result = new ImportResultDto();
+        try
+        {
+            // 1. Get Master Columns for validation
+            var masterColumns = await GetMasterColumnsAsync(ledgerGroupId);
+
+            // 2. Get Ledger Group Details
+            await EnsureConnectionOpenAsync();
+            var ledgerGroup = await _connection.QueryFirstOrDefaultAsync<LedgerGroupDto>(
+                "SELECT LedgerGroupID, LedgerGroupName FROM LedgerGroupMaster WHERE LedgerGroupID = @Id AND IsDeletedTransaction = 0",
+                new { Id = ledgerGroupId });
+
+            if (ledgerGroup == null)
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("Invalid Ledger Group ID.");
+                return result;
+            }
+
+            // 3. Read and Validate Excel
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+
+            using var package = new ExcelPackage(memoryStream);
+            var worksheet = package.Workbook.Worksheets[0];
+
+            if (worksheet.Dimension == null)
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("The Excel file is empty.");
+                return result;
+            }
+
+            result.TotalRows = worksheet.Dimension.Rows - 1;
+
+            // 4. Map Headers
+            var headerMap = new Dictionary<string, int>();
+            for (int col = 1; col <= worksheet.Dimension.Columns; col++)
+            {
+                var header = worksheet.Cells[1, col].Value?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(header))
+                {
+                    headerMap[header] = col;
+                }
+            }
+
+            // Helper to get value
+            string? GetValue(string colName, int rowIdx)
+            {
+                var colIndex = headerMap.ContainsKey(colName) ? headerMap[colName] :
+                               headerMap.FirstOrDefault(k => k.Key.Equals(colName, StringComparison.OrdinalIgnoreCase)).Value;
+
+                if (colIndex == 0) return null;
+
+                var cellValue = worksheet.Cells[rowIdx, colIndex].Value;
+                if (cellValue == null || cellValue == DBNull.Value)
+                    return null;
+
+                var stringValue = cellValue.ToString()?.Trim();
+                return string.IsNullOrEmpty(stringValue) ? null : stringValue;
+            }
+
+            // 5. Validate Required Columns (only if masterColumns is defined)
+            var missingColumns = new List<string>();
+            if (masterColumns.Any())
+            {
+                foreach (var masterCol in masterColumns.Where(c => c.IsRequired))
+                {
+                    if (!headerMap.ContainsKey(masterCol.FieldName))
+                    {
+                        missingColumns.Add(masterCol.FieldName);
+                    }
+                }
+
+                if (missingColumns.Any())
+                {
+                    result.Success = false;
+                    result.ErrorMessages.Add($"Missing required columns: {string.Join(", ", missingColumns)}");
+                    return result;
+                }
+            }
+
+            // 6. Process Rows with Duplicate Validation
+            var validRows = new List<Dictionary<string, object?>>();
+            var errorMessages = new List<string>();
+            var excelCompositeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // ==========================================
+            // CONSIGNEE-SPECIFIC: Build Client Lookup Cache
+            // ==========================================
+            // LedgerGroupID = 4 for Consignee
+            // LedgerGroupID = 1 for Clients
+            bool isConsigneeImport = (ledgerGroupId == 4);
+            Dictionary<string, int> clientLookupCache = null;
+
+            if (isConsigneeImport)
+            {
+                // Fetch all clients from LedgerMaster (LedgerGroupID = 1) for lookup
+                string clientLookupQuery = @"
+                    SELECT LedgerID, LedgerName
+                    FROM LedgerMaster
+                    WHERE LedgerGroupID = 1
+                        AND CompanyID = 2
+                        AND IsDeletedTransaction = 0
+                        AND LedgerName IS NOT NULL";
+
+                var clients = await _connection.QueryAsync<(int LedgerID, string LedgerName)>(clientLookupQuery);
+                clientLookupCache = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var client in clients)
+                {
+                    if (!string.IsNullOrEmpty(client.LedgerName))
+                    {
+                        // Use trimmed LedgerName as key for case-insensitive lookup
+                        clientLookupCache[client.LedgerName.Trim()] = client.LedgerID;
+                    }
+                }
+            }
+
+            // Fetch existing keys from database for duplicate check
+            string duplicateCheckQuery;
+
+            if (isConsigneeImport)
+            {
+                // CONSIGNEE: Use LedgerName + ClientName (from RefClientID lookup)
+                duplicateCheckQuery = @"
+                    SELECT
+                        LTRIM(RTRIM(ISNULL(L.LedgerName, ''))) + '|' + LTRIM(RTRIM(ISNULL(C.LedgerName, ''))) AS CompositeKey
+                    FROM LedgerMaster L
+                    LEFT JOIN LedgerMaster C ON L.RefClientID = C.LedgerID
+                    WHERE L.LedgerGroupID = @LedgerGroupId
+                        AND L.CompanyID = 2
+                        AND L.IsDeletedTransaction = 0
+                        AND L.LedgerName IS NOT NULL
+                        AND LTRIM(RTRIM(L.LedgerName)) <> ''";
+            }
+            else
+            {
+                // OTHER LEDGER GROUPS: Use LedgerName + GSTNo + PANNO (or just LedgerName if GST/PAN empty)
+                duplicateCheckQuery = @"
+                    SELECT
+                        CASE
+                            WHEN LTRIM(RTRIM(ISNULL(GSTNo, ''))) <> '' OR LTRIM(RTRIM(ISNULL(PANNO, ''))) <> ''
+                            THEN LTRIM(RTRIM(ISNULL(LedgerName, ''))) + '|' + LTRIM(RTRIM(ISNULL(GSTNo, ''))) + '|' + LTRIM(RTRIM(ISNULL(PANNO, '')))
+                            ELSE LTRIM(RTRIM(ISNULL(LedgerName, '')))
+                        END AS CompositeKey
+                    FROM LedgerMaster
+                    WHERE LedgerGroupID = @LedgerGroupId
+                        AND CompanyID = 2
+                        AND IsDeletedTransaction = 0
+                        AND LedgerName IS NOT NULL
+                        AND LTRIM(RTRIM(LedgerName)) <> ''";
+            }
+
+            var existingCompositeKeys = await _connection.QueryAsync<string>(
+                duplicateCheckQuery,
+                new { LedgerGroupId = ledgerGroupId });
+            var dbCompositeKeys = new HashSet<string>(
+                existingCompositeKeys.Where(k => !string.IsNullOrWhiteSpace(k)),
+                StringComparer.OrdinalIgnoreCase);
+
+            for (int row = 2; row <= worksheet.Dimension.Rows; row++)
+            {
+                // Check empty row
+                bool isRowEmpty = true;
+                for (int c = 1; c <= worksheet.Dimension.Columns; c++)
+                {
+                    if (!string.IsNullOrWhiteSpace(worksheet.Cells[row, c].Value?.ToString()))
+                    {
+                        isRowEmpty = false;
+                        break;
+                    }
+                }
+                if (isRowEmpty) continue;
+
+                // Construct Row Data
+                var rowData = new Dictionary<string, object?>();
+                var rowErrors = new List<string>();
+
+                if (masterColumns.Any())
+                {
+                    // Use master column definitions if available
+                    foreach (var masterCol in masterColumns)
+                    {
+                        var value = GetValue(masterCol.FieldName, row);
+
+                        // Validate required fields
+                        if (masterCol.IsRequired && string.IsNullOrEmpty(value))
+                        {
+                            rowErrors.Add($"Row {row}: {masterCol.FieldName} is required.");
+                        }
+
+                        rowData[masterCol.FieldName] = value;
+                    }
+                }
+                else
+                {
+                    // No master columns defined - use all Excel columns
+                    foreach (var header in headerMap.Keys)
+                    {
+                        var value = GetValue(header, row);
+                        rowData[header] = value;
+                    }
+                }
+
+                // ==========================================
+                // CONSIGNEE-SPECIFIC: ClientName Validation & Lookup
+                // ==========================================
+                if (isConsigneeImport)
+                {
+                    // Get ClientName from Excel
+                    var clientName = GetFieldValue(rowData, "ClientName")?.Trim();
+
+                    // Validation: ClientName is required for Consignee
+                    if (string.IsNullOrEmpty(clientName))
+                    {
+                        rowErrors.Add($"Row {row}: ClientName is required for Consignee import.");
+                    }
+                    else
+                    {
+                        // Lookup: Find ClientName in Client Master (LedgerGroupID = 1)
+                        if (clientLookupCache != null && clientLookupCache.TryGetValue(clientName, out int refClientId))
+                        {
+                            // SUCCESS: Store RefClientID for later use in INSERT
+                            rowData["RefClientID"] = refClientId;
+                        }
+                        else
+                        {
+                            // FAILURE: ClientName not found in Client Master
+                            rowErrors.Add($"Row {row}: ClientName '{clientName}' not found in Client Master (LedgerGroupID = 1).");
+                        }
+                    }
+                }
+
+                // If there are row-specific errors, add them and skip this row
+                if (rowErrors.Any())
+                {
+                    errorMessages.AddRange(rowErrors);
+                    continue;
+                }
+
+                // ==========================================
+                // DUPLICATE VALIDATION
+                // ==========================================
+                var ledgerName = GetFieldValue(rowData, "LedgerName")?.Trim() ?? "";
+
+                // Skip duplicate validation if LedgerName is empty
+                if (!string.IsNullOrEmpty(ledgerName))
+                {
+                    string compositeKey;
+                    string duplicateContext;
+
+                    if (isConsigneeImport)
+                    {
+                        // CONSIGNEE: Use LedgerName + ClientName as composite key
+                        var clientName = GetFieldValue(rowData, "ClientName")?.Trim() ?? "";
+                        compositeKey = $"{ledgerName}|{clientName}";
+                        duplicateContext = $"LedgerName='{ledgerName}', ClientName='{clientName}'";
+                    }
+                    else
+                    {
+                        // OTHER LEDGER GROUPS: Use LedgerName + GSTNo + PANNO
+                        var gstNo = GetFieldValue(rowData, "GSTNo")?.Trim() ?? "";
+                        var panNo = GetFieldValue(rowData, "PANNO")?.Trim() ?? "";
+                        bool hasGstOrPan = !string.IsNullOrEmpty(gstNo) || !string.IsNullOrEmpty(panNo);
+
+                        if (hasGstOrPan)
+                        {
+                            // Use full composite key when GST or PAN is available
+                            compositeKey = $"{ledgerName}|{gstNo}|{panNo}";
+                            duplicateContext = $"LedgerName='{ledgerName}', GSTNo='{gstNo}', PANNO='{panNo}'";
+                        }
+                        else
+                        {
+                            // When both GST and PAN are empty, only check LedgerName
+                            compositeKey = ledgerName;
+                            duplicateContext = $"LedgerName='{ledgerName}'";
+                        }
+                    }
+
+                    // Check for duplicate within Excel file
+                    if (excelCompositeKeys.Contains(compositeKey))
+                    {
+                        errorMessages.Add($"Row {row}: Duplicate found within Excel file. {duplicateContext} combination already exists.");
+                        result.DuplicateRows++;
+                        continue;
+                    }
+
+                    // Check for duplicate in database
+                    if (dbCompositeKeys.Contains(compositeKey))
+                    {
+                        errorMessages.Add($"Row {row}: Duplicate found in database. {duplicateContext} combination already exists.");
+                        result.DuplicateRows++;
+                        continue;
+                    }
+
+                    // Add to Excel composite keys set
+                    excelCompositeKeys.Add(compositeKey);
+                }
+
+                validRows.Add(rowData);
+            }
+
+            // Helper function to get field value with case-insensitive key matching
+            string? GetFieldValue(Dictionary<string, object?> data, string fieldName)
+            {
+                var key = data.Keys.FirstOrDefault(k => k.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+                return key != null ? data[key]?.ToString() : null;
+            }
+
+            // ==========================================
+            // VALIDATION RESULT CHECK
+            // ==========================================
+            // CRITICAL: If ANY validation errors exist, FAIL the entire import (all-or-nothing)
+            if (errorMessages.Any())
+            {
+                result.Success = false;
+                result.ErrorMessages = errorMessages;
+                result.ErrorRows = errorMessages.Count - result.DuplicateRows;
+
+                var messageParts = new List<string>();
+                if (result.DuplicateRows > 0)
+                    messageParts.Add($"{result.DuplicateRows} duplicate(s)");
+                if (result.ErrorRows > 0)
+                    messageParts.Add($"{result.ErrorRows} validation error(s)");
+
+                result.Message = $"Import failed: {string.Join(", ", messageParts)}. No data imported (all-or-nothing validation).";
+                return result;
+            }
+
+            if (!validRows.Any())
+            {
+                result.Success = true;
+                result.Message = "No valid data found to import.";
+                return result;
+            }
+
+            // 7. Execute Import (Transactional) - Similar to old VB code
+            using var transaction = _connection.BeginTransaction();
+            try
+            {
+                // Get all LedgerMaster table columns to dynamically build INSERT
+                string columnsQuery = @"
+                    SELECT COLUMN_NAME
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'LedgerMaster'
+                    AND COLUMN_NAME NOT IN ('LedgerID')
+                    ORDER BY ORDINAL_POSITION";
+
+                var ledgerMasterColumns = await _connection.QueryAsync<string>(columnsQuery, transaction: transaction);
+                var ledgerMasterColumnsList = ledgerMasterColumns.Select(c => c.ToLower()).ToList();
+
+                // Get Prefix
+                string prefix = "LGR";
+                try
+                {
+                    var groupPrefix = await _connection.ExecuteScalarAsync<string>(
+                        "SELECT LedgerGroupPrefix FROM LedgerGroupMaster WHERE LedgerGroupID = @GID",
+                        new { GID = ledgerGroupId }, transaction: transaction);
+                    if (!string.IsNullOrEmpty(groupPrefix)) prefix = groupPrefix;
+                }
+                catch {}
+
+                // Get current Max Number
+                var maxLedgerNoObj = await _connection.ExecuteScalarAsync<object>(
+                    "SELECT MAX(MaxLedgerNo) FROM LedgerMaster WHERE LedgerGroupID = @GID AND IsDeletedTransaction = 0",
+                    new { GID = ledgerGroupId }, transaction: transaction);
+
+                long currentMaxNo = 0;
+                if (maxLedgerNoObj != null && long.TryParse(maxLedgerNoObj.ToString(), out var parsedMax))
+                {
+                    currentMaxNo = parsedMax;
+                }
+
+                foreach (var rowData in validRows)
+                {
+                    currentMaxNo++;
+                    var ledgerCode = $"{prefix}{currentMaxNo.ToString().PadLeft(5, '0')}";
+
+                    // Get LedgerName from the row data
+                    var ledgerName = rowData.ContainsKey("LedgerName") ? rowData["LedgerName"]?.ToString() : "";
+                    if (string.IsNullOrEmpty(ledgerName))
+                    {
+                        // Fallback: use first field value as name
+                        ledgerName = rowData.Values.FirstOrDefault()?.ToString() ?? $"Ledger_{currentMaxNo}";
+                    }
+
+                    // Build dynamic INSERT for LedgerMaster with all matching columns
+                    var masterParams = new DynamicParameters();
+                    var insertColumns = new List<string>();
+                    var insertValues = new List<string>();
+
+                    // Add system required columns
+                    insertColumns.Add("LedgerCode");
+                    insertValues.Add("@LedgerCode");
+                    masterParams.Add("@LedgerCode", ledgerCode);
+
+                    insertColumns.Add("MaxLedgerNo");
+                    insertValues.Add("@MaxLedgerNo");
+                    masterParams.Add("@MaxLedgerNo", currentMaxNo);
+
+                    insertColumns.Add("LedgerCodePrefix");
+                    insertValues.Add("@LedgerCodePrefix");
+                    masterParams.Add("@LedgerCodePrefix", prefix);
+
+                    insertColumns.Add("LedgerGroupID");
+                    insertValues.Add("@LedgerGroupID");
+                    masterParams.Add("@LedgerGroupID", ledgerGroupId);
+
+                    insertColumns.Add("CompanyID");
+                    insertValues.Add("@CompanyID");
+                    masterParams.Add("@CompanyID", 2);
+
+                    insertColumns.Add("UserID");
+                    insertValues.Add("@UserID");
+                    masterParams.Add("@UserID", 2);
+
+                    insertColumns.Add("FYear");
+                    insertValues.Add("@FYear");
+                    masterParams.Add("@FYear", "2025-2026");
+
+                    insertColumns.Add("CreatedDate");
+                    insertValues.Add("@CreatedDate");
+                    masterParams.Add("@CreatedDate", DateTime.Now);
+
+                    insertColumns.Add("CreatedBy");
+                    insertValues.Add("@CreatedBy");
+                    masterParams.Add("@CreatedBy", 2);
+
+                    insertColumns.Add("ModifiedDate");
+                    insertValues.Add("@ModifiedDate");
+                    masterParams.Add("@ModifiedDate", DateTime.Now);
+
+                    insertColumns.Add("ModifiedBy");
+                    insertValues.Add("@ModifiedBy");
+                    masterParams.Add("@ModifiedBy", 2);
+
+                    insertColumns.Add("IsDeletedTransaction");
+                    insertValues.Add("@IsDeletedTransaction");
+                    masterParams.Add("@IsDeletedTransaction", 0);
+
+                    // Map Excel columns to LedgerMaster columns dynamically
+                    foreach (var field in rowData)
+                    {
+                        var fieldNameLower = field.Key.ToLower().Replace(" ", "");
+
+                        // Find matching column in LedgerMaster (case-insensitive, ignore spaces)
+                        var matchingColumn = ledgerMasterColumnsList.FirstOrDefault(c =>
+                            c.Replace(" ", "").Equals(fieldNameLower, StringComparison.OrdinalIgnoreCase));
+
+                        if (matchingColumn != null && !insertColumns.Any(ic => ic.Equals(matchingColumn, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            // Get the actual column name with proper casing
+                            var actualColumnName = ledgerMasterColumns.First(c =>
+                                c.ToLower() == matchingColumn);
+
+                            insertColumns.Add(actualColumnName);
+                            insertValues.Add($"@{actualColumnName}");
+                            masterParams.Add($"@{actualColumnName}", field.Value?.ToString());
+                        }
+                    }
+
+                    // Special handling for required fields if not already added
+                    if (!insertColumns.Any(c => c.Equals("LedgerName", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        insertColumns.Add("LedgerName");
+                        insertValues.Add("@LedgerName");
+                        masterParams.Add("@LedgerName", ledgerName);
+                    }
+
+                    if (!insertColumns.Any(c => c.Equals("LedgerDescription", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        insertColumns.Add("LedgerDescription");
+                        insertValues.Add("@LedgerDescription");
+                        masterParams.Add("@LedgerDescription", $"{ledgerGroup.LedgerGroupName}: {ledgerName}");
+                    }
+
+                    if (!insertColumns.Any(c => c.Equals("LedgerType", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        insertColumns.Add("LedgerType");
+                        insertValues.Add("@LedgerType");
+                        masterParams.Add("@LedgerType", ledgerGroup.LedgerGroupName);
+                    }
+
+                    if (!insertColumns.Any(c => c.Equals("ISLedgerActive", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        insertColumns.Add("ISLedgerActive");
+                        insertValues.Add("@ISLedgerActive");
+                        masterParams.Add("@ISLedgerActive", true);
+                    }
+
+                    // CONSIGNEE-SPECIFIC: Ensure RefClientID is added for Consignee imports
+                    if (isConsigneeImport && rowData.ContainsKey("RefClientID"))
+                    {
+                        if (!insertColumns.Any(c => c.Equals("RefClientID", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            // Check if RefClientID column exists in LedgerMaster
+                            if (ledgerMasterColumnsList.Any(c => c.Equals("refclientid", StringComparison.OrdinalIgnoreCase)))
+                            {
+                                insertColumns.Add("RefClientID");
+                                insertValues.Add("@RefClientID");
+                                masterParams.Add("@RefClientID", rowData["RefClientID"]);
+                            }
+                        }
+                    }
+
+                    // Build and execute dynamic INSERT
+                    string insertMasterSql = $@"
+                        INSERT INTO LedgerMaster ({string.Join(", ", insertColumns)})
+                        VALUES ({string.Join(", ", insertValues)});
+                        SELECT SCOPE_IDENTITY();";
+
+                    var ledgerIdObj = await _connection.ExecuteScalarAsync<object>(insertMasterSql, masterParams, transaction: transaction);
+                    int newLedgerId = Convert.ToInt32(ledgerIdObj);
+
+                    // Insert Details (LedgerMasterDetails) - One row per field
+                    string insertDetailSql = @"
+                        INSERT INTO LedgerMasterDetails (
+                            LedgerID, LedgerGroupID, CompanyID, UserID, FYear,
+                            FieldName, FieldValue, ParentFieldName, ParentFieldValue, ParentLedgerID,
+                            SequenceNo, CreatedDate, CreatedBy, ModifiedDate, ModifiedBy
+                        ) VALUES (
+                            @LedgerID, @LedgerGroupID, @CompanyID, @UserID, @FYear,
+                            @FieldName, @FieldValue, @ParentFieldName, @ParentFieldValue, @ParentLedgerID,
+                            @SequenceNo, @CreatedDate, @CreatedBy, @CreatedDate, @CreatedBy
+                        )";
+
+                    int sequenceNo = 1;
+
+                    if (masterColumns.Any())
+                    {
+                        // Use master column definitions
+                        foreach (var masterCol in masterColumns)
+                        {
+                            var fieldValue = rowData.ContainsKey(masterCol.FieldName) ? rowData[masterCol.FieldName]?.ToString() : "";
+
+                            // Skip empty non-required fields
+                            if (string.IsNullOrEmpty(fieldValue) && fieldValue == null)
+                            {
+                                continue;
+                            }
+
+                            await _connection.ExecuteAsync(insertDetailSql, new {
+                                LedgerID = newLedgerId,
+                                LedgerGroupID = ledgerGroupId,
+                                CompanyID = 2,
+                                UserID = 2,
+                                FYear = "2025-2026",
+                                FieldName = masterCol.FieldName,
+                                FieldValue = fieldValue ?? "",
+                                ParentFieldName = masterCol.FieldName,
+                                ParentFieldValue = fieldValue ?? "",
+                                ParentLedgerID = 0,
+                                SequenceNo = sequenceNo++,
+                                CreatedDate = DateTime.Now,
+                                CreatedBy = 2
+                            }, transaction: transaction);
+                        }
+                    }
+                    else
+                    {
+                        // No master columns - use all rowData fields
+                        foreach (var field in rowData)
+                        {
+                            var fieldValue = field.Value?.ToString();
+
+                            // Skip empty fields
+                            if (string.IsNullOrEmpty(fieldValue))
+                            {
+                                continue;
+                            }
+
+                            await _connection.ExecuteAsync(insertDetailSql, new {
+                                LedgerID = newLedgerId,
+                                LedgerGroupID = ledgerGroupId,
+                                CompanyID = 2,
+                                UserID = 2,
+                                FYear = "2025-2026",
+                                FieldName = field.Key,
+                                FieldValue = fieldValue ?? "",
+                                ParentFieldName = field.Key,
+                                ParentFieldValue = fieldValue ?? "",
+                                ParentLedgerID = 0,
+                                SequenceNo = sequenceNo++,
+                                CreatedDate = DateTime.Now,
+                                CreatedBy = 2
+                            }, transaction: transaction);
+                        }
+                    }
+                }
+
+                transaction.Commit();
+                result.Success = true;
+                result.ImportedRows = validRows.Count;
+
+                // Build success message with duplicate/error info
+                var messageBuilder = new System.Text.StringBuilder();
+                messageBuilder.Append($"Successfully imported {validRows.Count} record(s) into {ledgerGroup.LedgerGroupName}.");
+
+                if (result.DuplicateRows > 0 || result.ErrorRows > 0)
+                {
+                    messageBuilder.Append(" ");
+                    var skippedParts = new List<string>();
+                    if (result.DuplicateRows > 0)
+                        skippedParts.Add($"{result.DuplicateRows} duplicate(s)");
+                    if (result.ErrorRows > 0)
+                        skippedParts.Add($"{result.ErrorRows} error(s)");
+
+                    messageBuilder.Append($"Skipped: {string.Join(", ", skippedParts)}.");
+                }
+
+                result.Message = messageBuilder.ToString();
+            }
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+                result.Success = false;
+                result.Message = $"Database Error: {ex.Message}";
+                result.ErrorMessages.Add(ex.Message);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.ErrorMessages.Add($"System Error: {ex.Message}");
+            return result;
+        }
     }
 }

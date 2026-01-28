@@ -65,14 +65,22 @@ export const getModules = async (headName: string = 'Masters'): Promise<ModuleDt
 };
 
 export const previewExcel = async (file: File): Promise<ExcelPreviewDto> => {
+    console.log('[API] previewExcel called with file:', file.name, file.type, file.size);
     const formData = new FormData();
     formData.append('file', file);
+
+    console.log('[API] Sending POST to /excel/Preview');
+    console.log('[API] FormData entries:', Array.from(formData.entries()));
 
     const response = await api.post('/excel/Preview', formData, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
     });
+
+    console.log('[API] Response received:', response.status, response.statusText);
+    console.log('[API] Response data:', response.data);
+
     return response.data;
 };
 
@@ -88,7 +96,41 @@ export const importExcel = async (file: File, tableName: string): Promise<Import
     return response.data;
 };
 
+export interface LedgerGroupDto {
+    ledgerGroupID: number;
+    ledgerGroupName: string;
+    ledgerGroupNameDisplay: string;
+    ledgerGroupNameID?: number;
+}
 
+export interface MasterColumnDto {
+    fieldName: string;
+    dataType: string;
+    isRequired: boolean;
+    sequenceNo: number;
+}
+
+export const getLedgerGroups = async (): Promise<LedgerGroupDto[]> => {
+    const response = await api.get('/excel/LedgerGroups');
+    return response.data;
+};
+
+export const getMasterColumns = async (ledgerGroupId: number): Promise<MasterColumnDto[]> => {
+    const response = await api.get(`/excel/MasterColumns/${ledgerGroupId}`);
+    return response.data;
+};
+
+export const importLedger = async (file: File, ledgerGroupId: number): Promise<ImportResultDto> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await api.post(`/excel/ImportLedger?ledgerGroupId=${ledgerGroupId}`, formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+    return response.data;
+};
 
 export interface CompanyDto {
     companyId: number;

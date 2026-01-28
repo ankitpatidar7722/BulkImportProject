@@ -1,7 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getModules, previewExcel, importExcel, ModuleDto, ExcelPreviewDto } from '../services/api';
+import {
+    getModules,
+    previewExcel,
+    importExcel,
+    getLedgerGroups,
+    getMasterColumns,
+    importLedger,
+    ModuleDto,
+    ExcelPreviewDto,
+    LedgerGroupDto,
+    MasterColumnDto
+} from '../services/api';
 
 const ImportMaster: React.FC = () => {
     const [modules, setModules] = useState<ModuleDto[]>([]);
@@ -16,16 +27,11 @@ const ImportMaster: React.FC = () => {
     const [errorList, setErrorList] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
-        fetchModules();
-    }, []);
-
-    // Reset preview state when file changes
-    useEffect(() => {
-        setIsPreviewShown(false);
-        setShowErrorModal(false);
-        setErrorList([]);
-    }, [uploadedFile]);
+    // Ledger-specific states
+    const [ledgerGroups, setLedgerGroups] = useState<LedgerGroupDto[]>([]);
+    const [selectedLedgerGroup, setSelectedLedgerGroup] = useState<number>(0);
+    const [masterColumns, setMasterColumns] = useState<MasterColumnDto[]>([]);
+    const [isLedgerMode, setIsLedgerMode] = useState(false);
 
     const fetchModules = async () => {
         try {
@@ -37,6 +43,28 @@ const ImportMaster: React.FC = () => {
         }
     };
 
+    const fetchLedgerGroups = async () => {
+        try {
+            const data = await getLedgerGroups();
+            console.log('Fetched Ledger Groups:', data);
+            setLedgerGroups(data);
+        } catch (error: any) {
+            console.error('Failed to fetch ledger groups', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchModules();
+        fetchLedgerGroups();
+    }, []);
+
+    // Reset preview state when file changes
+    useEffect(() => {
+        setIsPreviewShown(false);
+        setShowErrorModal(false);
+        setErrorList([]);
+    }, [uploadedFile]);
+
     const handleModuleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
         const moduleId = e.target.value;
         setSelectedModule(moduleId);
@@ -47,8 +75,17 @@ const ImportMaster: React.FC = () => {
         setShowErrorModal(false);
         setErrorList([]);
 
+        // Check if Ledger Master is selected
+        const module = modules.find(m => m.moduleId.toString() === moduleId);
+        if (module && (module.moduleName === 'LedgerMaster' || module.moduleDisplayName?.includes('Ledger'))) {
+            setIsLedgerMode(true);
+            setSelectedLedgerGroup(0);
+            setMasterColumns([]);
+        } else {
+            setIsLedgerMode(false);
+        }
+
         if (moduleId) {
-            const module = modules.find(m => m.moduleId.toString() === moduleId);
             if (module) {
                 try {
                     const lookupName = module.moduleDisplayName || module.moduleName;
@@ -67,13 +104,40 @@ const ImportMaster: React.FC = () => {
         }
     };
 
+    const handleLedgerGroupChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const groupId = parseInt(e.target.value);
+        setSelectedLedgerGroup(groupId);
+        setPreviewData(null);
+        setIsPreviewShown(false);
+        setMasterColumns([]);
+
+        if (groupId > 0) {
+            try {
+                const columns = await getMasterColumns(groupId);
+                console.log('Master Columns:', columns);
+                setMasterColumns(columns);
+                if (columns.length > 0) {
+                    toast.success(`Loaded ${columns.length} column definitions`);
+                } else {
+                    toast('No column definitions found. You can import any Excel columns.', { icon: 'ℹ️' });
+                }
+            } catch (error: any) {
+                console.error('Failed to fetch master columns', error);
+                // Don't show error - just allow import with any columns
+                setMasterColumns([]);
+                toast('No column definitions found. You can import any Excel columns.', { icon: 'ℹ️' });
+            }
+        }
+    };
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
         const extension = file.name.toLowerCase();
-        if (!extension.endsWith('.xlsx') && !extension.endsWith('.xls')) {
-            toast.error('Only Excel files (.xlsx, .xls) are allowed');
+        if (!extension.endsWith('.xlsx')) {
+            toast.error('Only .xlsx Excel files are supported. Please convert old .xls files to .xlsx format.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
 
@@ -86,21 +150,30 @@ const ImportMaster: React.FC = () => {
     };
 
     const handleShowPreview = async () => {
+        console.log('[Preview] Starting preview...');
         if (!uploadedFile) {
+            console.error('[Preview] No file uploaded');
             toast.error('Please upload a file first');
             return;
         }
 
+        console.log('[Preview] File:', uploadedFile.name, 'Size:', uploadedFile.size);
         setIsLoading(true);
         try {
+            console.log('[Preview] Calling previewExcel API...');
             const data = await previewExcel(uploadedFile);
+            console.log('[Preview] API response:', data);
             setPreviewData(data);
             setIsPreviewShown(true);
             toast.success('Preview loaded successfully');
         } catch (error: any) {
+            console.error('[Preview] Error:', error);
+            console.error('[Preview] Error response:', error?.response);
+            console.error('[Preview] Error data:', error?.response?.data);
             toast.error(error?.response?.data?.error || 'Failed to load preview');
         } finally {
             setIsLoading(false);
+            console.log('[Preview] Loading complete');
         }
     };
 
@@ -110,37 +183,73 @@ const ImportMaster: React.FC = () => {
             return;
         }
 
-        if (!selectedModule) {
-            toast.error('Please select a module');
-            return;
-        }
-
-        setIsLoading(true);
-        setShowErrorModal(false);
-        setErrorList([]);
-
-        try {
-            const selectedModuleData = modules.find(m => m.moduleId.toString() === selectedModule);
-            const result = await importExcel(uploadedFile, selectedModuleData?.moduleName || '');
-
-            if (result.success) {
-                toast.success(result.message);
-                setUploadedFile(null);
-                setPreviewData(null);
-                setIsPreviewShown(false);
-                if (fileInputRef.current) fileInputRef.current.value = '';
-            } else {
-                toast.error(result.message);
-
-                if (result.errorMessages && result.errorMessages.length > 0) {
-                    setErrorList(result.errorMessages);
-                    setShowErrorModal(true);
-                }
+        if (isLedgerMode) {
+            // Ledger import mode
+            if (selectedLedgerGroup <= 0) {
+                toast.error('Please select a Ledger Group');
+                return;
             }
-        } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to import data');
-        } finally {
-            setIsLoading(false);
+
+            setIsLoading(true);
+            setShowErrorModal(false);
+            setErrorList([]);
+
+            try {
+                const result = await importLedger(uploadedFile, selectedLedgerGroup);
+
+                if (result.success) {
+                    toast.success(result.message);
+                    setUploadedFile(null);
+                    setPreviewData(null);
+                    setIsPreviewShown(false);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                } else {
+                    toast.error(result.message);
+
+                    if (result.errorMessages && result.errorMessages.length > 0) {
+                        setErrorList(result.errorMessages);
+                        setShowErrorModal(true);
+                    }
+                }
+            } catch (error: any) {
+                toast.error(error?.response?.data?.error || 'Failed to import ledger data');
+            } finally {
+                setIsLoading(false);
+            }
+        } else {
+            // Standard module import mode
+            if (!selectedModule) {
+                toast.error('Please select a module');
+                return;
+            }
+
+            setIsLoading(true);
+            setShowErrorModal(false);
+            setErrorList([]);
+
+            try {
+                const selectedModuleData = modules.find(m => m.moduleId.toString() === selectedModule);
+                const result = await importExcel(uploadedFile, selectedModuleData?.moduleName || '');
+
+                if (result.success) {
+                    toast.success(result.message);
+                    setUploadedFile(null);
+                    setPreviewData(null);
+                    setIsPreviewShown(false);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                } else {
+                    toast.error(result.message);
+
+                    if (result.errorMessages && result.errorMessages.length > 0) {
+                        setErrorList(result.errorMessages);
+                        setShowErrorModal(true);
+                    }
+                }
+            } catch (error: any) {
+                toast.error(error?.response?.data?.error || 'Failed to import data');
+            } finally {
+                setIsLoading(false);
+            }
         }
     };
 
@@ -194,44 +303,74 @@ const ImportMaster: React.FC = () => {
     };
 
     return (
-        <div className="p-4 md:p-8 space-y-6 md:space-y-8 bg-gray-50 dark:bg-[#020617] min-h-screen transition-colors duration-200">
+        <div className="p-3 md:p-4 bg-gray-50 dark:bg-[#020617] min-h-screen transition-colors duration-200">
             <ErrorModal />
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Master Import</h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">Upload and import master data tables into the system.</p>
+
+            {/* Header */}
+            <div className="mb-4">
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white">Master Import</h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Upload and import master data tables into the system.</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
-                {/* Column 1: Select Module */}
-                <div className="bg-white dark:bg-[#0f172a] rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 h-fit transition-colors duration-200">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">1. Select Module</h2>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Choose the category of data you want to import.</p>
+            {/* Main Control Card */}
+            <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    {/* Module Selection */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Module Name
+                        </label>
+                        <select
+                            className="w-full px-3 py-1.5 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm text-gray-900 dark:text-white"
+                            value={selectedModule}
+                            onChange={handleModuleChange}
+                        >
+                            <option value="">Select Module</option>
+                            {modules.map((module) => (
+                                <option key={module.moduleId} value={module.moduleId}>
+                                    {module.moduleDisplayName || module.moduleName}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
 
-                    <div className="space-y-6">
+                    {/* Conditional: Ledger Group or Sub-module Selection */}
+                    {isLedgerMode ? (
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Module Name
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Ledger Group
                             </label>
                             <select
-                                className="w-full px-4 py-2 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-gray-900 dark:text-white"
-                                value={selectedModule}
-                                onChange={handleModuleChange}
+                                className="w-full px-3 py-1.5 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm text-gray-900 dark:text-white"
+                                value={selectedLedgerGroup}
+                                onChange={handleLedgerGroupChange}
                             >
-                                <option value="">Select Module</option>
-                                {modules.map((module) => (
-                                    <option key={module.moduleId} value={module.moduleId}>
-                                        {module.moduleDisplayName || module.moduleName}
+                                <option value="0">Select Ledger Group</option>
+                                {ledgerGroups.map((group) => (
+                                    <option key={group.ledgerGroupID} value={group.ledgerGroupID}>
+                                        {group.ledgerGroupNameDisplay || group.ledgerGroupName}
                                     </option>
                                 ))}
                             </select>
+                            {selectedLedgerGroup > 0 && (
+                                masterColumns.length > 0 ? (
+                                    <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
+                                        <span>✓</span> {masterColumns.length} columns mapped
+                                    </p>
+                                ) : (
+                                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1">
+                                        <span>ℹ️</span> Ready for flexible import
+                                    </p>
+                                )
+                            )}
                         </div>
-
+                    ) : (
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                                 Sub-module Name
                             </label>
                             <select
-                                className="w-full px-4 py-2 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:bg-gray-50 dark:disabled:bg-gray-900/50 disabled:text-gray-400 dark:disabled:text-gray-600 text-gray-900 dark:text-white"
+                                className="w-full px-3 py-1.5 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:bg-gray-50 dark:disabled:bg-gray-900/50 disabled:text-gray-400 dark:disabled:text-gray-600 text-sm text-gray-900 dark:text-white"
                                 value={selectedSubModule}
                                 onChange={(e) => setSelectedSubModule(e.target.value)}
                                 disabled={!selectedModule || subModules.length === 0}
@@ -243,100 +382,157 @@ const ImportMaster: React.FC = () => {
                                     </option>
                                 ))}
                             </select>
-                            {selectedModule && subModules.length === 0 && (
-                                <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
+                            {selectedModule && subModules.length === 0 && !isLedgerMode && (
+                                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
                                     <span>⚠️</span> No sub-modules available
                                 </p>
+                            )}
+                        </div>
+                    )}
+
+                    {/* File Upload */}
+                    <div className="md:col-span-2">
+                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Excel File (.xlsx only)
+                        </label>
+                        <div className="flex gap-2">
+                            <div className="flex-1">
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".xlsx"
+                                    onChange={handleFileChange}
+                                    className="hidden"
+                                />
+                                <div
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className={`w-full px-3 py-1.5 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadedFile
+                                        ? 'border-green-500 bg-green-50/50 dark:bg-green-900/10'
+                                        : 'border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 bg-gray-50/50 dark:bg-[#020617]/50'
+                                        }`}
+                                >
+                                    {uploadedFile ? (
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{uploadedFile.name}</span>
+                                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓</span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                                            <Upload className="w-4 h-4" />
+                                            <span className="text-xs">Click to upload Excel file</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            {uploadedFile && (
+                                <>
+                                    <button
+                                        onClick={handleShowPreview}
+                                        disabled={isLoading}
+                                        className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm disabled:opacity-50 transition-colors whitespace-nowrap"
+                                    >
+                                        Preview
+                                    </button>
+                                    <button
+                                        onClick={handleImport}
+                                        disabled={isLoading || !isPreviewShown}
+                                        className="px-4 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 shadow-sm disabled:opacity-50 disabled:bg-gray-400 dark:disabled:bg-gray-800 transition-colors whitespace-nowrap"
+                                    >
+                                        Import
+                                    </button>
+                                </>
                             )}
                         </div>
                     </div>
                 </div>
 
-                {/* Column 2: Upload Data */}
-                <div className={`bg-white dark:bg-[#0f172a] rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 h-fit transition-all duration-300 ${!selectedModule ? 'opacity-60 pointer-events-none grayscale' : 'opacity-100'}`}>
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">2. Upload Data</h2>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">Upload Excel for <span className="font-medium text-blue-600 dark:text-blue-400">{selectedModule ? modules.find(m => m.moduleId.toString() === selectedModule)?.moduleDisplayName : '...'}</span>.</p>
-                        </div>
+                {/* Info Text */}
+                {!selectedModule && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-2">
+                        Please select a module to begin
+                    </p>
+                )}
 
-                        {/* Action Buttons - Top Right */}
-                        {uploadedFile && (
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={handleShowPreview}
-                                    disabled={isLoading}
-                                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 shadow-sm disabled:opacity-50 transition-colors flex items-center gap-2"
-                                >
-                                    Preview
-                                </button>
-                                <button
-                                    onClick={handleImport}
-                                    disabled={isLoading || !isPreviewShown}
-                                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 shadow-sm disabled:opacity-50 disabled:bg-gray-400 dark:disabled:bg-gray-800 transition-colors flex items-center gap-2"
-                                >
-                                    Import Data
-                                </button>
+                {/* Column Mapping Info for Ledger Mode */}
+                {isLedgerMode && selectedLedgerGroup > 0 && (
+                    masterColumns.length > 0 ? (
+                        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg">
+                            <h3 className="text-xs font-semibold text-blue-900 dark:text-blue-300 mb-2 flex items-center gap-2">
+                                <span>📋</span> Expected Excel Columns ({masterColumns.length} columns)
+                            </h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                                {masterColumns.map((col, idx) => (
+                                    <div key={idx} className="flex items-center gap-1.5 text-xs">
+                                        <span className={`${col.isRequired ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                                            {col.isRequired ? '●' : '○'}
+                                        </span>
+                                        <span className="text-gray-700 dark:text-gray-300 font-mono">{col.fieldName}</span>
+                                    </div>
+                                ))}
                             </div>
-                        )}
-                    </div>
-
-                    <div className="border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl p-10 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors bg-gray-50/50 dark:bg-[#020617]/50">
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".xlsx,.xls"
-                            onChange={handleFileChange}
-                            className="hidden"
-                        />
-                        <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <Upload className="w-8 h-8 text-blue-500 dark:text-blue-400" />
+                            <p className="text-xs text-gray-600 dark:text-gray-400 mt-2 italic">
+                                <span className="text-red-600 dark:text-red-400">●</span> Required fields
+                                <span className="ml-3 text-gray-500 dark:text-gray-400">○</span> Optional fields
+                            </p>
                         </div>
-
-                        <p className="text-blue-600 dark:text-blue-400 font-medium mb-1 cursor-pointer hover:underline" onClick={() => fileInputRef.current?.click()}>
-                            Click to upload <span className="text-gray-500 dark:text-gray-400 no-underline">or drag and drop</span>
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mb-6">
-                            Excel files (.xlsx, .xls) up to 50MB
-                        </p>
-
-                        {uploadedFile && (
-                            <div className="bg-white dark:bg-[#1e293b] border border-gray-200 dark:border-gray-700 p-3 rounded-lg flex items-center justify-between shadow-sm max-w-sm mx-auto">
-                                <span className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">{uploadedFile.name}</span>
-                                <span className="text-xs text-green-600 dark:text-green-400 font-medium bg-green-50 dark:bg-green-900/30 px-2 py-1 rounded">Ready</span>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                    ) : (
+                        <div className="mt-4 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900 rounded-lg">
+                            <h3 className="text-xs font-semibold text-green-900 dark:text-green-300 mb-2 flex items-center gap-2">
+                                <span>ℹ️</span> Flexible Import Mode
+                            </h3>
+                            <p className="text-xs text-green-700 dark:text-green-300">
+                                No column definitions configured for this Ledger Group. You can import Excel files with any column structure.
+                                All columns from your Excel file will be imported.
+                            </p>
+                        </div>
+                    )
+                )}
             </div>
 
             {/* Excel Preview Table */}
-            {
-                previewData && (
-                    <div className="bg-white dark:bg-[#0f172a] rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 animate-fade-in mt-8 transition-colors duration-200">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Excel Preview</h2>
-                            <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-[#1e293b] px-3 py-1 rounded-full">
-                                {previewData.totalRows} rows • {previewData.totalColumns} columns
-                            </div>
+            {previewData && (
+                <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 transition-colors duration-200">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Excel Preview</h2>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-[#1e293b] px-2 py-1 rounded-full">
+                            {previewData.totalRows} rows • {previewData.totalColumns} columns
                         </div>
+                    </div>
 
-                        <div className="overflow-auto rounded-lg border border-gray-200 dark:border-gray-700 max-h-[600px] custom-scrollbar">
-                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 relative">
+                    {/* Fixed Height Scrollable Container */}
+                    <div className="relative border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden" style={{ height: '450px' }}>
+                        <div className="excel-scroll-container absolute inset-0 overflow-auto scroll-smooth">
+                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-xs">
                                 <thead className="bg-gray-50 dark:bg-[#1e293b] sticky top-0 z-10 shadow-sm">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16 bg-gray-50 dark:bg-[#1e293b] sticky top-0 z-10">#</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-12 bg-gray-50 dark:bg-[#1e293b] border-r border-gray-200 dark:border-gray-700 sticky left-0 z-20">
+                                            #
+                                        </th>
                                         {previewData.headers.map((header, index) => (
-                                            <th key={index} className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-[#1e293b] sticky top-0 z-10">{header}</th>
+                                            <th
+                                                key={index}
+                                                className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-[#1e293b] whitespace-nowrap"
+                                            >
+                                                {header}
+                                            </th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white dark:bg-[#0f172a] divide-y divide-gray-200 dark:divide-gray-800">
                                     {previewData.rows.map((row, rowIndex) => (
                                         <tr key={rowIndex} className="hover:bg-gray-50 dark:hover:bg-[#1e293b] transition-colors">
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400 dark:text-gray-500 font-mono">{rowIndex + 1}</td>
+                                            <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-400 dark:text-gray-500 font-mono bg-gray-50/50 dark:bg-[#1e293b]/50 border-r border-gray-200 dark:border-gray-700 sticky left-0 z-10">
+                                                {rowIndex + 1}
+                                            </td>
                                             {row.map((cell, cellIndex) => (
-                                                <td key={cellIndex} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{cell?.toString() || ''}</td>
+                                                <td
+                                                    key={cellIndex}
+                                                    className="px-3 py-2 whitespace-nowrap text-xs text-gray-700 dark:text-gray-300"
+                                                >
+                                                    {cell?.toString() || ''}
+                                                </td>
                                             ))}
                                         </tr>
                                     ))}
@@ -344,8 +540,13 @@ const ImportMaster: React.FC = () => {
                             </table>
                         </div>
                     </div>
-                )
-            }
+
+                    {/* Scroll Hint */}
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
+                        Scroll horizontally and vertically to view all data
+                    </p>
+                </div>
+            )}
         </div>
     );
 };

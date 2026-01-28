@@ -36,7 +36,9 @@ builder.Services.AddScoped<ICompanyService, CompanyService>();
 OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;
 
 // Ensure Company Object Exists (Auto-Migration)
+#pragma warning disable ASP0000 // Disable warning for BuildServiceProvider in startup code
 using (var scope = builder.Services.BuildServiceProvider().CreateScope())
+#pragma warning restore ASP0000
 {
     try
     {
@@ -139,6 +141,93 @@ using (var scope = builder.Services.BuildServiceProvider().CreateScope())
     }
     catch(Exception ex) {
          Console.WriteLine($"Module Init Error: {ex.Message}");
+    }
+
+    // SparePartMaster Schema Migration
+    try
+    {
+        var conn = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+        conn.Open();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePartMaster Init Started\n");
+
+        // Check if SparePartMaster table exists
+        var tableExistsCmd = "SELECT COUNT(*) FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[SparePartMaster]') AND type in (N'U')";
+        using (var cmd = new SqlCommand(tableExistsCmd, conn))
+        {
+            int tableExists = (int)cmd.ExecuteScalar();
+            if (tableExists > 0)
+            {
+                // Add required columns for import functionality
+                var sparePartCols = new[]
+                {
+                    "HSNCode NVARCHAR(50) NULL",
+                    "HSNGroup NVARCHAR(100) NULL",
+                    "SupplierReference NVARCHAR(100) NULL",
+                    "StockRefCode NVARCHAR(50) NULL",
+                    "PurchaseOrderQuantity DECIMAL(18, 2) DEFAULT 0 NULL",
+                    "SparePartGroup NVARCHAR(100) NULL",
+                    "SparePartType NVARCHAR(100) NULL"
+                };
+
+                foreach (var colDef in sparePartCols)
+                {
+                    var colName = colDef.Split(' ')[0];
+                    var alterCmd = $@"
+                        IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'{colName}' AND Object_ID = Object_ID(N'SparePartMaster'))
+                        BEGIN
+                            ALTER TABLE SparePartMaster ADD {colDef};
+                        END";
+                    using (var cmd2 = new SqlCommand(alterCmd, conn))
+                    {
+                        cmd2.ExecuteNonQuery();
+                    }
+                }
+                System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePartMaster columns check/add completed\n");
+            }
+        }
+
+        conn.Close();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePartMaster Init Completed\n");
+    }
+    catch(Exception ex) {
+         Console.WriteLine($"SparePartMaster Init Error: {ex.Message}");
+         System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePartMaster Init Error: {ex.Message}\n");
+    }
+
+    // LedgerMaster Schema Migration (Consignee support)
+    try
+    {
+        var conn = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+        conn.Open();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] LedgerMaster Init Started\n");
+
+        // Check if LedgerMaster table exists
+        var tableExistsCmd = "SELECT COUNT(*) FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[LedgerMaster]') AND type in (N'U')";
+        using (var cmd = new SqlCommand(tableExistsCmd, conn))
+        {
+            int tableExists = (int)cmd.ExecuteScalar();
+            if (tableExists > 0)
+            {
+                // Add RefClientID column for Consignee support
+                var alterCmd = @"
+                    IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'RefClientID' AND Object_ID = Object_ID(N'LedgerMaster'))
+                    BEGIN
+                        ALTER TABLE LedgerMaster ADD RefClientID INT NULL;
+                    END";
+                using (var cmd2 = new SqlCommand(alterCmd, conn))
+                {
+                    cmd2.ExecuteNonQuery();
+                }
+                System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] LedgerMaster RefClientID column check/add completed\n");
+            }
+        }
+
+        conn.Close();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] LedgerMaster Init Completed\n");
+    }
+    catch(Exception ex) {
+         Console.WriteLine($"LedgerMaster Init Error: {ex.Message}");
+         System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] LedgerMaster Init Error: {ex.Message}\n");
     }
 }
 

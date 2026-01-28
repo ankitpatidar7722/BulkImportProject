@@ -30,6 +30,35 @@
     @apply bg-gray-500 dark:bg-gray-400;
   }
 
+  /* Excel Preview Scrollbar */
+  .excel-scroll-container::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .excel-scroll-container::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .excel-scroll-container::-webkit-scrollbar-thumb {
+    background: rgb(156, 163, 175);
+    border-radius: 4px;
+  }
+
+  .excel-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: rgb(107, 114, 128);
+  }
+
+  .excel-scroll-container::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Firefox scrollbar styling */
+  .excel-scroll-container {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(156, 163, 175) transparent;
+  }
+
   /* Card styles */
   .card {
     @apply bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-all duration-300;

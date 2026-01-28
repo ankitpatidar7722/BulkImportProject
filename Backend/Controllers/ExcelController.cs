@@ -26,11 +26,11 @@ public class ExcelController : ControllerBase
                 return BadRequest(new { error = "No file uploaded." });
             }
 
-            // Validate file extension
+            // Validate file extension - EPPlus only supports .xlsx (not old .xls format)
             var extension = Path.GetExtension(file.FileName).ToLower();
-            if (extension != ".xlsx" && extension != ".xls")
+            if (extension != ".xlsx")
             {
-                return BadRequest(new { error = "Only Excel files (.xlsx, .xls) are allowed." });
+                return BadRequest(new { error = "Only .xlsx Excel files are supported. Please convert old .xls files to .xlsx format." });
             }
 
             using var stream = file.OpenReadStream();
@@ -60,21 +60,85 @@ public class ExcelController : ControllerBase
                 return BadRequest(new { error = "Table name is required." });
             }
 
-            // Validate file extension
+            // Validate file extension - EPPlus only supports .xlsx (not old .xls format)
             var extension = Path.GetExtension(file.FileName).ToLower();
-            if (extension != ".xlsx" && extension != ".xls")
+            if (extension != ".xlsx")
             {
-                return BadRequest(new { error = "Only Excel files (.xlsx, .xls) are allowed." });
+                return BadRequest(new { error = "Only .xlsx Excel files are supported. Please convert old .xls files to .xlsx format." });
             }
 
             using var stream = file.OpenReadStream();
             var result = await _excelService.ImportExcelAsync(stream, tableName);
-            
+
             return Ok(result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error importing Excel file");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("LedgerGroups")]
+    public async Task<IActionResult> GetLedgerGroups()
+    {
+        try
+        {
+            var ledgerGroups = await _excelService.GetLedgerGroupsAsync();
+            return Ok(ledgerGroups);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching ledger groups");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("MasterColumns/{ledgerGroupId}")]
+    public async Task<IActionResult> GetMasterColumns(int ledgerGroupId)
+    {
+        try
+        {
+            var columns = await _excelService.GetMasterColumnsAsync(ledgerGroupId);
+            return Ok(columns);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching master columns");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("ImportLedger")]
+    public async Task<IActionResult> ImportLedger(IFormFile file, [FromQuery] int ledgerGroupId)
+    {
+        try
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(new { error = "No file uploaded." });
+            }
+
+            if (ledgerGroupId <= 0)
+            {
+                return BadRequest(new { error = "Valid Ledger Group ID is required." });
+            }
+
+            // Validate file extension
+            var extension = Path.GetExtension(file.FileName).ToLower();
+            if (extension != ".xlsx")
+            {
+                return BadRequest(new { error = "Only .xlsx Excel files are supported." });
+            }
+
+            using var stream = file.OpenReadStream();
+            var result = await _excelService.ImportLedgerMasterWithValidationAsync(stream, ledgerGroupId);
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error importing ledger data");
             return StatusCode(500, new { error = ex.Message });
         }
     }
