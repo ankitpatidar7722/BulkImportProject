@@ -1183,6 +1183,28 @@ public class ExcelService : IExcelService
         {
             await EnsureConnectionOpenAsync();
 
+            // STEP 1: Try to get LedgerGroupName and use default columns
+            try
+            {
+                var groupName = await _connection.ExecuteScalarAsync<string>(
+                    "SELECT LedgerGroupName FROM LedgerGroupMaster WHERE LedgerGroupID = @Id AND IsDeletedTransaction = 0",
+                    new { Id = ledgerGroupId });
+
+                if (!string.IsNullOrEmpty(groupName))
+                {
+                    var defaultColumns = GetDefaultLedgerColumns(groupName);
+                    if (defaultColumns != null && defaultColumns.Any())
+                    {
+                        return defaultColumns;
+                    }
+                }
+            }
+            catch
+            {
+                // If getting default columns fails, continue to fallback logic
+            }
+
+            // STEP 2: Fallback to complex logic
             // First, check what columns exist in LedgerGroupMaster
             string checkColumnsQuery = @"
                 SELECT COLUMN_NAME
@@ -1220,17 +1242,27 @@ public class ExcelService : IExcelService
             string tableName = dict != null && dict.ContainsKey("TableName") ? dict["TableName"]?.ToString() ?? "LedgerMaster" : "LedgerMaster";
             string ledgerGroupName = dict != null && dict.ContainsKey("LedgerGroupName") ? dict["LedgerGroupName"]?.ToString() ?? "" : "";
 
-            // If SelectQuery is null or empty, try to query LedgerMasterDetails directly
+            Console.WriteLine($"[DEBUG] LedgerGroupID={ledgerGroupId}, LedgerGroupName='{ledgerGroupName}', SelectQuery={selectQuery ?? "NULL"}");
+
+            // If SelectQuery is null or empty, use default schema
             if (string.IsNullOrEmpty(selectQuery))
             {
-                // First, try to get default schema based on Ledger Group Name
+                // DEBUG: Log the ledgerGroupName
+                Console.WriteLine($"[DEBUG] GetMasterColumns - LedgerGroupID: {ledgerGroupId}, LedgerGroupName: '{ledgerGroupName}'");
+
+                // ALWAYS try to get default schema based on Ledger Group Name first
                 var defaultColumns = GetDefaultLedgerColumns(ledgerGroupName);
-                if (defaultColumns.Any())
+                Console.WriteLine($"[DEBUG] GetDefaultLedgerColumns returned {defaultColumns?.Count ?? 0} columns");
+
+                if (defaultColumns != null && defaultColumns.Any())
                 {
+                    // Return default columns immediately - don't fall back to database
+                    Console.WriteLine($"[DEBUG] Returning {defaultColumns.Count} default columns");
                     return defaultColumns;
                 }
+                Console.WriteLine("[DEBUG] No default columns found, falling back to database query");
 
-                // Fallback: Get distinct field names from existing LedgerMasterDetails for this group
+                // Fallback: Get distinct field names from existing LedgerMasterDetails for this group (only if no defaults)
                 string fallbackQuery = @"
                     SELECT DISTINCT
                         FieldName,
@@ -1320,9 +1352,11 @@ public class ExcelService : IExcelService
                     return new List<MasterColumnDto>();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // If execution fails, return empty list instead of throwing
+                // If execution fails, log and return empty list instead of throwing
+                Console.WriteLine($"[ERROR] GetMasterColumnsAsync failed: {ex.Message}");
+                Console.WriteLine($"[ERROR] Stack trace: {ex.StackTrace}");
                 return new List<MasterColumnDto>();
             }
 
@@ -1379,7 +1413,16 @@ public class ExcelService : IExcelService
             new { Name = "Phone", Required = false, Seq = 8 },
             new { Name = "Email", Required = false, Seq = 9 },
             new { Name = "GSTNo", Required = false, Seq = 10 },
-            new { Name = "PANNO", Required = false, Seq = 11 }
+            new { Name = "PANNO", Required = false, Seq = 11 },
+            new { Name = "MailingName", Required = false, Seq = 12 },
+            new { Name = "Address1", Required = false, Seq = 13 },
+            new { Name = "Address2", Required = false, Seq = 14 },
+            new { Name = "MobileNo", Required = false, Seq = 15 },
+            new { Name = "GSTApplicable", Required = false, Seq = 16 },
+            new { Name = "TelephoneNo", Required = false, Seq = 17 },
+            new { Name = "Website", Required = false, Seq = 18 },
+            new { Name = "LegalName", Required = false, Seq = 19 },
+            new { Name = "SupplyTypeCode", Required = false, Seq = 20 }
         };
 
         // Consignee specific
@@ -1400,11 +1443,51 @@ public class ExcelService : IExcelService
             columns.Add(new MasterColumnDto { FieldName = "Email", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "GSTNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "PANNO", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "MailingName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address1", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address2", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "MobileNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "GSTApplicable", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "TelephoneNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Website", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "LegalName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "SupplyTypeCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             return columns;
         }
 
-        // Suppliers/Vendors specific
-        if (normalizedName.Contains("supplier") || normalizedName.Contains("vendor"))
+        // Clients/Customers specific (includes "Sundry Debtors" accounting term)
+        if (normalizedName.Contains("debtor") || normalizedName.Contains("customer") || normalizedName.Contains("client"))
+        {
+            int seq = 1;
+            columns.Add(new MasterColumnDto { FieldName = "LedgerName", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "CustomerCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ContactPerson", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "City", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "State", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Country", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PinCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Phone", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Mobile", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Email", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "GSTNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PANNO", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "CreditLimit", DataType = "number", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "CreditDays", DataType = "number", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "MailingName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address1", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address2", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "MobileNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "GSTApplicable", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "TelephoneNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Website", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "LegalName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "SupplyTypeCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            return columns;
+        }
+
+        // Suppliers/Vendors specific (includes "Sundry Creditors" accounting term)
+        if (normalizedName.Contains("creditor") || normalizedName.Contains("supplier") || normalizedName.Contains("vendor"))
         {
             int seq = 1;
             columns.Add(new MasterColumnDto { FieldName = "LedgerName", DataType = "string", IsRequired = true, SequenceNo = seq++ });
@@ -1425,16 +1508,28 @@ public class ExcelService : IExcelService
             columns.Add(new MasterColumnDto { FieldName = "BankName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "AccountNumber", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "IFSCCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "MailingName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address1", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address2", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "MobileNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "GSTApplicable", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "TelephoneNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Website", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "LegalName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "SupplyTypeCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             return columns;
         }
 
-        // Customers specific
-        if (normalizedName.Contains("customer") || normalizedName.Contains("client"))
+        // Employee specific
+        if (normalizedName.Contains("employee"))
         {
             int seq = 1;
             columns.Add(new MasterColumnDto { FieldName = "LedgerName", DataType = "string", IsRequired = true, SequenceNo = seq++ });
-            columns.Add(new MasterColumnDto { FieldName = "CustomerCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
-            columns.Add(new MasterColumnDto { FieldName = "ContactPerson", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "EmployeeCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Designation", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "DepartmentName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "DepartmentID", DataType = "bigint", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "JoiningDate", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "Address", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "City", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "State", DataType = "string", IsRequired = false, SequenceNo = seq++ });
@@ -1443,10 +1538,11 @@ public class ExcelService : IExcelService
             columns.Add(new MasterColumnDto { FieldName = "Phone", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "Mobile", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "Email", DataType = "string", IsRequired = false, SequenceNo = seq++ });
-            columns.Add(new MasterColumnDto { FieldName = "GSTNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             columns.Add(new MasterColumnDto { FieldName = "PANNO", DataType = "string", IsRequired = false, SequenceNo = seq++ });
-            columns.Add(new MasterColumnDto { FieldName = "CreditLimit", DataType = "number", IsRequired = false, SequenceNo = seq++ });
-            columns.Add(new MasterColumnDto { FieldName = "CreditDays", DataType = "number", IsRequired = false, SequenceNo = seq++ });
+            // Add other common columns if needed
+            columns.Add(new MasterColumnDto { FieldName = "Address1", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Address2", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "MobileNo", DataType = "string", IsRequired = false, SequenceNo = seq++ });
             return columns;
         }
 
@@ -1522,20 +1618,67 @@ public class ExcelService : IExcelService
             // Helper to get value
             string? GetValue(string colName, int rowIdx)
             {
-                var colIndex = headerMap.ContainsKey(colName) ? headerMap[colName] :
-                               headerMap.FirstOrDefault(k => k.Key.Equals(colName, StringComparison.OrdinalIgnoreCase)).Value;
+                // direct match
+                if (headerMap.ContainsKey(colName)) 
+                    return GetCellValue(rowIdx, headerMap[colName]);
 
-                if (colIndex == 0) return null;
+                // case-insensitive match
+                var key = headerMap.Keys.FirstOrDefault(k => k.Equals(colName, StringComparison.OrdinalIgnoreCase));
+                if (key != null) return GetCellValue(rowIdx, headerMap[key]);
 
+                // fuzzy match (ignore spaces) e.g. "Mobile No" matches "MobileNo"
+                var fuzzyKey = headerMap.Keys.FirstOrDefault(k => k.Replace(" ", "").Equals(colName.Replace(" ", ""), StringComparison.OrdinalIgnoreCase));
+                if (fuzzyKey != null) return GetCellValue(rowIdx, headerMap[fuzzyKey]);
+
+                return null;
+            }
+
+            string? GetCellValue(int rowIdx, int colIndex)
+            {
                 var cellValue = worksheet.Cells[rowIdx, colIndex].Value;
-                if (cellValue == null || cellValue == DBNull.Value)
-                    return null;
-
+                if (cellValue == null || cellValue == DBNull.Value) return null;
                 var stringValue = cellValue.ToString()?.Trim();
                 return string.IsNullOrEmpty(stringValue) ? null : stringValue;
             }
 
+            string? SanitizeNumeric(string? input)
+            {
+                if (string.IsNullOrEmpty(input)) return null;
+                // Keep only digits
+                var numeric = new string(input.Where(char.IsDigit).ToArray());
+                return string.IsNullOrEmpty(numeric) ? null : numeric;
+            }
+
             // 5. Validate Required Columns (only if masterColumns is defined)
+            // ==========================================
+            // EMPLOYEE-SPECIFIC: Build Department Lookup Cache
+            // ==========================================
+            // Check if it's an Employee import (LedgerGroup usually named "Employee" or similar)
+            bool isEmployeeImport = ledgerGroup?.LedgerGroupName?.IndexOf("Employee", StringComparison.OrdinalIgnoreCase) >= 0;
+            Dictionary<string, int> departmentLookupCache = null;
+
+            if (isEmployeeImport)
+            {
+                try 
+                {
+                    var departments = await _connection.QueryAsync<(int DepartmentID, string DepartmentName)>(
+                        "SELECT DepartmentID, DepartmentName FROM DepartmentMaster WHERE IsDeletedTransaction = 0");
+                    
+                    departmentLookupCache = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var dep in departments)
+                    {
+                        if (!string.IsNullOrEmpty(dep.DepartmentName))
+                        {
+                            departmentLookupCache[dep.DepartmentName.Trim()] = dep.DepartmentID;
+                        }
+                    }
+                }
+                catch 
+                {
+                    // Ignore if DepartmentMaster doesn't exist or error
+                }
+            }
+
             var missingColumns = new List<string>();
             if (masterColumns.Any())
             {
@@ -1703,6 +1846,51 @@ public class ExcelService : IExcelService
                         {
                             // FAILURE: ClientName not found in Client Master
                             rowErrors.Add($"Row {row}: ClientName '{clientName}' not found in Client Master (LedgerGroupID = 1).");
+                        }
+                    }
+                }
+
+                // ==========================================
+                // EMPLOYEE-SPECIFIC: Department Name -> ID Lookup
+                // ==========================================
+                if (isEmployeeImport)
+                {
+                    // 1. Check 'DepartmentName' column first
+                    var depName = GetFieldValue(rowData, "DepartmentName")?.Trim();
+                    
+                    // 2. If empty, check if 'DepartmentID' column has text (User mistakenly put Name in ID column)
+                    if (string.IsNullOrEmpty(depName))
+                    {
+                        var rawId = GetFieldValue(rowData, "DepartmentID")?.Trim();
+                        // If rawId is NOT numeric, treat it as Name
+                        if (!string.IsNullOrEmpty(rawId) && !long.TryParse(rawId, out _))
+                        {
+                            depName = rawId;
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(depName))
+                    {
+                        if (departmentLookupCache != null && departmentLookupCache.TryGetValue(depName, out int depId))
+                        {
+                            // Found! Store as DepartmentID (for Details table)
+                            rowData["DepartmentID"] = depId;
+                        }
+                        else
+                        {
+                            // Not found in cache. 
+                            // If we tried to use ID column as Name, but it failed lookup, 
+                            // we must clear it or set it to 0 so SQL doesn't crash trying to insert text into BigInt.
+                            // But usually, we just let it fail? No, user wants it fixed.
+                            // Better: Validate it.
+                             var rawId = GetFieldValue(rowData, "DepartmentID")?.Trim();
+                             if (!string.IsNullOrEmpty(rawId) && !long.TryParse(rawId, out _))
+                             {
+                                 // It's text, and lookup failed. We CANNOT send this text to DB.
+                                 // Set to null or 0.
+                                 rowErrors.Add($"Row {row}: Department '{depName}' not found in Department Master.");
+                                 rowData["DepartmentID"] = null; // Prevent SQL error
+                             }
                         }
                     }
                 }
@@ -1929,9 +2117,24 @@ public class ExcelService : IExcelService
                             var actualColumnName = ledgerMasterColumns.First(c =>
                                 c.ToLower() == matchingColumn);
 
+                            var value = field.Value?.ToString();
+
+                            // Sanitize known numeric columns
+                            if (new[] { "MobileNo", "Phone", "Mobile", "CreditLimit", "CreditDays", "DepartmentID" }.Contains(actualColumnName, StringComparer.OrdinalIgnoreCase))
+                            {
+                                // For CreditLimit/Days allow decimals? Bigint implies integer.
+                                // If error is nvarchar -> bigint, likely MobileNo/Phone.
+                                // If CreditLimit is decimal, stripping non-digits is risky (removes decimal point).
+                                // Let's simplify: simple sanitization for Phone/Mobile
+                                if (actualColumnName.Contains("Mobile") || actualColumnName.Contains("Phone"))
+                                {
+                                    value = SanitizeNumeric(value);
+                                }
+                            }
+
                             insertColumns.Add(actualColumnName);
                             insertValues.Add($"@{actualColumnName}");
-                            masterParams.Add($"@{actualColumnName}", field.Value?.ToString());
+                            masterParams.Add($"@{actualColumnName}", value);
                         }
                     }
 

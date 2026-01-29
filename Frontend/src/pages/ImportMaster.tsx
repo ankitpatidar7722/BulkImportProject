@@ -5,13 +5,11 @@ import {
     getModules,
     previewExcel,
     importExcel,
-    getLedgerGroups,
-    getMasterColumns,
     importLedger,
     ModuleDto,
     ExcelPreviewDto,
-    LedgerGroupDto,
-    MasterColumnDto
+    MasterColumnDto,
+    getMasterColumns
 } from '../services/api';
 
 const ImportMaster: React.FC = () => {
@@ -26,12 +24,14 @@ const ImportMaster: React.FC = () => {
     const [showErrorModal, setShowErrorModal] = useState(false);
     const [errorList, setErrorList] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
 
     // Ledger-specific states
-    const [ledgerGroups, setLedgerGroups] = useState<LedgerGroupDto[]>([]);
     const [selectedLedgerGroup, setSelectedLedgerGroup] = useState<number>(0);
     const [masterColumns, setMasterColumns] = useState<MasterColumnDto[]>([]);
     const [isLedgerMode, setIsLedgerMode] = useState(false);
+    const [isFileUploadEnabled, setIsFileUploadEnabled] = useState(false);
+    const [showSubModuleDropdown, setShowSubModuleDropdown] = useState(true);
 
     const fetchModules = async () => {
         try {
@@ -43,20 +43,17 @@ const ImportMaster: React.FC = () => {
         }
     };
 
-    const fetchLedgerGroups = async () => {
-        try {
-            const data = await getLedgerGroups();
-            console.log('Fetched Ledger Groups:', data);
-            setLedgerGroups(data);
-        } catch (error: any) {
-            console.error('Failed to fetch ledger groups', error);
-        }
-    };
-
     useEffect(() => {
         fetchModules();
-        fetchLedgerGroups();
     }, []);
+
+    // Helper function to check if module requires sub-module selection
+    const requiresSubModuleSelection = (moduleName: string): boolean => {
+        const normalizedName = moduleName.toLowerCase();
+        return normalizedName.includes('ledger master') ||
+            normalizedName.includes('item master') ||
+            normalizedName.includes('tool master');
+    };
 
     // Reset preview state when file changes
     useEffect(() => {
@@ -74,6 +71,13 @@ const ImportMaster: React.FC = () => {
         setIsPreviewShown(false);
         setShowErrorModal(false);
         setErrorList([]);
+        setIsFileUploadEnabled(false); // Reset file upload button
+        setShowSubModuleDropdown(true); // Reset dropdown visibility
+
+        if (!moduleId) {
+            setIsLedgerMode(false);
+            return;
+        }
 
         // Check if Ledger Master is selected
         const module = modules.find(m => m.moduleId.toString() === moduleId);
@@ -85,21 +89,35 @@ const ImportMaster: React.FC = () => {
             setIsLedgerMode(false);
         }
 
-        if (moduleId) {
-            if (module) {
-                try {
-                    const lookupName = module.moduleDisplayName || module.moduleName;
-                    const subs = await getModules(lookupName);
+        if (module) {
+            try {
+                const lookupName = module.moduleDisplayName || module.moduleName;
+                const subs = await getModules(lookupName);
 
-                    if (subs.length === 0) {
-                        toast("Server returned 0 sub-modules", { icon: '⚠️' });
-                    }
-                    setSubModules(subs);
-                } catch (error: any) {
-                    console.error('Failed to fetch sub-modules', error);
-                    toast.error(error?.response?.data?.error || 'Failed to fetch sub-modules');
-                    setSubModules([]);
+                setSubModules(subs);
+
+                // Check if this module requires sub-module selection
+                const moduleDisplayName = module.moduleDisplayName || module.moduleName;
+                const needsSubModuleSelection = requiresSubModuleSelection(moduleDisplayName);
+
+                if (!needsSubModuleSelection && subs.length > 0) {
+                    // Auto-select the first sub-module for non-master modules
+                    setSelectedSubModule(subs[0].moduleId.toString());
+                    setIsFileUploadEnabled(true); // Enable file upload
+                    setShowSubModuleDropdown(true); // Show dropdown with auto-selected value
+                } else if (!needsSubModuleSelection && subs.length === 0) {
+                    // No sub-modules exist, hide dropdown and enable file upload directly
+                    setShowSubModuleDropdown(false);
+                    setIsFileUploadEnabled(true);
+                } else {
+                    // Modules that need sub-module selection (Item/Ledger/Tool Master)
+                    setShowSubModuleDropdown(true);
                 }
+                // For modules that need sub-module selection, keep file upload disabled until selection
+            } catch (error: any) {
+                console.error('Failed to fetch sub-modules', error);
+                toast.error(error?.response?.data?.error || 'Failed to fetch sub-modules');
+                setSubModules([]);
             }
         }
     };
@@ -112,6 +130,7 @@ const ImportMaster: React.FC = () => {
         setMasterColumns([]);
 
         if (groupId > 0) {
+            setIsFileUploadEnabled(true); // Enable file upload when ledger group is selected
             try {
                 const columns = await getMasterColumns(groupId);
                 console.log('Master Columns:', columns);
@@ -127,6 +146,8 @@ const ImportMaster: React.FC = () => {
                 setMasterColumns([]);
                 toast('No column definitions found. You can import any Excel columns.', { icon: 'ℹ️' });
             }
+        } else {
+            setIsFileUploadEnabled(false); // Disable file upload if no ledger group selected
         }
     };
 
@@ -177,7 +198,17 @@ const ImportMaster: React.FC = () => {
         }
     };
 
+    const handleImportClick = () => {
+        if (!uploadedFile) {
+            toast.error('Please upload a file first');
+            return;
+        }
+        setShowConfirmModal(true);
+    };
+
     const handleImport = async () => {
+        setShowConfirmModal(false); // Close modal
+
         if (!uploadedFile) {
             toast.error('Please upload a file first');
             return;
@@ -302,9 +333,51 @@ const ImportMaster: React.FC = () => {
         );
     };
 
+    // Confirmation Modal
+    const ConfirmationModal = () => {
+        if (!showConfirmModal) return null;
+
+        return (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full flex flex-col border border-gray-200 dark:border-gray-700">
+                    <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                                <span className="text-xl">🤔</span>
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Confirm Import</h3>
+                        </div>
+                    </div>
+
+                    <div className="p-6">
+                        <p className="text-gray-700 dark:text-gray-300">
+                            Are you sure you want to import and have verified all the fields correctly?
+                        </p>
+                    </div>
+
+                    <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#1e293b] rounded-b-xl flex justify-end gap-3">
+                        <button
+                            onClick={() => setShowConfirmModal(false)}
+                            className="px-4 py-2 bg-gray-200 dark:bg-[#0f172a] text-gray-700 dark:text-gray-300 font-medium rounded-lg hover:bg-gray-300 dark:hover:bg-gray-800 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleImport}
+                            className="px-4 py-2 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+                        >
+                            Yes, Import
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="p-3 md:p-4 bg-gray-50 dark:bg-[#020617] min-h-screen transition-colors duration-200">
             <ErrorModal />
+            <ConfirmationModal />
 
             {/* Header */}
             <div className="mb-4">
@@ -346,25 +419,14 @@ const ImportMaster: React.FC = () => {
                                 onChange={handleLedgerGroupChange}
                             >
                                 <option value="0">Select Ledger Group</option>
-                                {ledgerGroups.map((group) => (
-                                    <option key={group.ledgerGroupID} value={group.ledgerGroupID}>
-                                        {group.ledgerGroupNameDisplay || group.ledgerGroupName}
+                                {subModules.map((sub) => (
+                                    <option key={sub.moduleId} value={sub.moduleId}>
+                                        {sub.moduleDisplayName || sub.moduleName}
                                     </option>
                                 ))}
                             </select>
-                            {selectedLedgerGroup > 0 && (
-                                masterColumns.length > 0 ? (
-                                    <p className="text-xs text-green-600 dark:text-green-400 mt-1 flex items-center gap-1">
-                                        <span>✓</span> {masterColumns.length} columns mapped
-                                    </p>
-                                ) : (
-                                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1">
-                                        <span>ℹ️</span> Ready for flexible import
-                                    </p>
-                                )
-                            )}
                         </div>
-                    ) : (
+                    ) : showSubModuleDropdown ? (
                         <div>
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                                 Sub-module Name
@@ -372,7 +434,15 @@ const ImportMaster: React.FC = () => {
                             <select
                                 className="w-full px-3 py-1.5 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:bg-gray-50 dark:disabled:bg-gray-900/50 disabled:text-gray-400 dark:disabled:text-gray-600 text-sm text-gray-900 dark:text-white"
                                 value={selectedSubModule}
-                                onChange={(e) => setSelectedSubModule(e.target.value)}
+                                onChange={(e) => {
+                                    setSelectedSubModule(e.target.value);
+                                    // Enable file upload when sub-module is selected
+                                    if (e.target.value) {
+                                        setIsFileUploadEnabled(true);
+                                    } else {
+                                        setIsFileUploadEnabled(false);
+                                    }
+                                }}
                                 disabled={!selectedModule || subModules.length === 0}
                             >
                                 <option value="">Select Sub-module</option>
@@ -382,11 +452,10 @@ const ImportMaster: React.FC = () => {
                                     </option>
                                 ))}
                             </select>
-                            {selectedModule && subModules.length === 0 && !isLedgerMode && (
-                                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                                    <span>⚠️</span> No sub-modules available
-                                </p>
-                            )}
+                        </div>
+                    ) : (
+                        <div className="invisible">
+                            {/* Hidden placeholder to maintain grid layout */}
                         </div>
                     )}
 
@@ -405,10 +474,12 @@ const ImportMaster: React.FC = () => {
                                     className="hidden"
                                 />
                                 <div
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className={`w-full px-3 py-1.5 border-2 border-dashed rounded-lg cursor-pointer transition-all ${uploadedFile
-                                        ? 'border-green-500 bg-green-50/50 dark:bg-green-900/10'
-                                        : 'border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 bg-gray-50/50 dark:bg-[#020617]/50'
+                                    onClick={() => isFileUploadEnabled && fileInputRef.current?.click()}
+                                    className={`w-full px-3 py-1.5 border-2 border-dashed rounded-lg transition-all ${!isFileUploadEnabled
+                                        ? 'border-gray-200 dark:border-gray-800 bg-gray-100/50 dark:bg-gray-900/50 cursor-not-allowed opacity-60'
+                                        : uploadedFile
+                                            ? 'border-green-500 bg-green-50/50 dark:bg-green-900/10 cursor-pointer'
+                                            : 'border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 bg-gray-50/50 dark:bg-[#020617]/50 cursor-pointer'
                                         }`}
                                 >
                                     {uploadedFile ? (
@@ -419,7 +490,9 @@ const ImportMaster: React.FC = () => {
                                     ) : (
                                         <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                                             <Upload className="w-4 h-4" />
-                                            <span className="text-xs">Click to upload Excel file</span>
+                                            <span className="text-xs">
+                                                {isFileUploadEnabled ? 'Click to upload Excel file' : 'Select module first'}
+                                            </span>
                                         </div>
                                     )}
                                 </div>
@@ -436,7 +509,7 @@ const ImportMaster: React.FC = () => {
                                         Preview
                                     </button>
                                     <button
-                                        onClick={handleImport}
+                                        onClick={handleImportClick}
                                         disabled={isLoading || !isPreviewShown}
                                         className="px-4 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 shadow-sm disabled:opacity-50 disabled:bg-gray-400 dark:disabled:bg-gray-800 transition-colors whitespace-nowrap"
                                     >
@@ -455,8 +528,8 @@ const ImportMaster: React.FC = () => {
                     </p>
                 )}
 
-                {/* Column Mapping Info for Ledger Mode */}
-                {isLedgerMode && selectedLedgerGroup > 0 && (
+                {/* Column Mapping Info for Ledger Mode - HIDDEN PER USER REQUEST */}
+                {/* {isLedgerMode && selectedLedgerGroup > 0 && (
                     masterColumns.length > 0 ? (
                         <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-lg">
                             <h3 className="text-xs font-semibold text-blue-900 dark:text-blue-300 mb-2 flex items-center gap-2">
@@ -488,7 +561,7 @@ const ImportMaster: React.FC = () => {
                             </p>
                         </div>
                     )
-                )}
+                )} */}
             </div>
 
             {/* Excel Preview Table */}

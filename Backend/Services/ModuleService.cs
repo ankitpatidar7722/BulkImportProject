@@ -39,7 +39,7 @@ public class ModuleService : IModuleService
                 logLines.Add("Matched: Item Masters Logic");
                 query = @"
                     SELECT 
-                        0 as ModuleId, 
+                        ItemGroupID as ModuleId, 
                         ItemGroupName as ModuleName, 
                         ItemGroupName as ModuleDisplayName, 
                         'Item Masters' as ModuleHeadName 
@@ -53,7 +53,7 @@ public class ModuleService : IModuleService
                 logLines.Add("Matched: Ledger Master Logic");
                 query = @"
                     SELECT 
-                        0 as ModuleId, 
+                        LedgerGroupID as ModuleId, 
                         LedgerGroupName as ModuleName, 
                         LedgerGroupNameDisplay as ModuleDisplayName, 
                         'Ledger Master' as ModuleHeadName 
@@ -67,7 +67,7 @@ public class ModuleService : IModuleService
                 logLines.Add("Matched: Tool Master Logic");
                 query = @"
                     SELECT 
-                        0 as ModuleId, 
+                        ToolGroupID as ModuleId, 
                         ToolGroupName as ModuleName, 
                         ToolGroupName as ModuleDisplayName, 
                         'Tool Master' as ModuleHeadName 
@@ -123,20 +123,21 @@ public class ModuleService : IModuleService
             }
             else
             {
-                logLines.Add("Matched: NO LOGIC (Returning Debug 404)");
-                Console.WriteLine($"[ModuleService] NO MATCH FOUND for '{headName}'.");
-                var debugList = new List<ModuleDto> 
-                { 
-                    new ModuleDto 
-                    { 
-                        ModuleId = -404, 
-                        ModuleName = "Debug", 
-                        ModuleDisplayName = $"[DEBUG] Valid Logic Not Found For: '{headName}'", 
-                        ModuleHeadName = headName 
-                    } 
+                logLines.Add($"Matched: Generic Module Logic (Returning virtual sub-module for '{headName}')");
+                Console.WriteLine($"[ModuleService] Generic module handling for '{headName}' - creating virtual sub-module.");
+
+                // For all other modules, create a virtual sub-module with the same name
+                // This ensures consistent behavior across all modules
+                var genericModule = new ModuleDto
+                {
+                    ModuleId = 0,
+                    ModuleName = headName,
+                    ModuleDisplayName = headName,
+                    ModuleHeadName = headName
                 };
+
                 await File.AppendAllLinesAsync("debug_log.txt", logLines);
-                return debugList;
+                return new List<ModuleDto> { genericModule };
             }
 
             var modules = await _connection.QueryAsync<ModuleDto>(query, new { HeadName = headName });
@@ -145,13 +146,14 @@ public class ModuleService : IModuleService
 
             if (moduleList.Count == 0 && headName != "Masters")
             {
-                logLines.Add("Zero rows & Not Masters -> Injecting DEBUG Item (-1)");
-                moduleList.Add(new ModuleDto 
-                { 
-                    ModuleId = -1, 
-                    ModuleName = $"DEBUG: No Data Found in Table for '{headName}'", 
-                    ModuleDisplayName = $"[DEBUG] No Rows Found for '{headName}'. Check Database Table!", 
-                    ModuleHeadName = headName 
+                logLines.Add($"Zero rows found in database table - creating virtual sub-module for '{headName}'");
+                // Create a virtual sub-module to maintain consistent behavior
+                moduleList.Add(new ModuleDto
+                {
+                    ModuleId = 0,
+                    ModuleName = headName,
+                    ModuleDisplayName = headName,
+                    ModuleHeadName = headName
                 });
             }
 
@@ -165,16 +167,8 @@ public class ModuleService : IModuleService
             await File.AppendAllLinesAsync("debug_log.txt", logLines);
 
             Console.WriteLine($"[ModuleService] Error: {ex.Message}");
-            return new List<ModuleDto> 
-            { 
-                new ModuleDto 
-                { 
-                    ModuleId = -99, 
-                    ModuleName = "Error", 
-                    ModuleDisplayName = $"[ERROR] {ex.Message}", 
-                    ModuleHeadName = headName 
-                } 
-            };
+            // Return empty list on error - error is logged for debugging
+            return new List<ModuleDto>();
         }
     }
 
