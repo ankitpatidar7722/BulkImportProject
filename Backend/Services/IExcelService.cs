@@ -9,4 +9,9 @@ public interface IExcelService
     Task<List<LedgerGroupDto>> GetLedgerGroupsAsync();
     Task<List<MasterColumnDto>> GetMasterColumnsAsync(int ledgerGroupId);
     Task<ImportResultDto> ImportLedgerMasterWithValidationAsync(Stream fileStream, int ledgerGroupId);
+    
+    // Item Master import methods
+    Task<List<ItemGroupDto>> GetItemGroupsAsync();
+    Task<List<MasterColumnDto>> GetItemMasterColumnsAsync(int itemGroupId);
+    Task<ImportResultDto> ImportItemMasterWithValidationAsync(Stream fileStream, int itemGroupId);
 }

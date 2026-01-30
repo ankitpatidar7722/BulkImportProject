@@ -132,7 +132,42 @@ export const importLedger = async (file: File, ledgerGroupId: number): Promise<I
     return response.data;
 };
 
+// ==========================================
+// ITEM MASTER API
+// ==========================================
+
+export interface ItemGroupDto {
+    itemGroupID: number;
+    itemGroupName: string;
+    itemGroupPrefix: string;
+    itemNameFormula?: string;
+    itemDescriptionFormula?: string;
+}
+
+export const getItemGroups = async (): Promise<ItemGroupDto[]> => {
+    const response = await api.get('/excel/ItemGroups');
+    return response.data;
+};
+
+export const getItemMasterColumns = async (itemGroupId: number): Promise<MasterColumnDto[]> => {
+    const response = await api.get(`/excel/ItemMasterColumns/${itemGroupId}`);
+    return response.data;
+};
+
+export const importItemMaster = async (file: File, itemGroupId: number): Promise<ImportResultDto> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await api.post(`/excel/ImportItem?itemGroupId=${itemGroupId}`, formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+    return response.data;
+};
+
 export interface CompanyDto {
+
     companyId: number;
     companyName: string;
     address: string;

@@ -142,4 +142,73 @@ public class ExcelController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+
+    // ==========================================
+    // ITEM MASTER ENDPOINTS
+    // ==========================================
+
+    [HttpGet("ItemGroups")]
+    public async Task<IActionResult> GetItemGroups()
+    {
+        try
+        {
+            var itemGroups = await _excelService.GetItemGroupsAsync();
+            return Ok(itemGroups);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching item groups");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("ItemMasterColumns/{itemGroupId}")]
+    public async Task<IActionResult> GetItemMasterColumns(int itemGroupId)
+    {
+        try
+        {
+            var columns = await _excelService.GetItemMasterColumnsAsync(itemGroupId);
+            return Ok(columns);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching item master columns");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("ImportItem")]
+    public async Task<IActionResult> ImportItemMaster(IFormFile file, [FromQuery] int itemGroupId)
+    {
+        try
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(new { error = "No file uploaded." });
+            }
+
+            if (itemGroupId <= 0)
+            {
+                return BadRequest(new { error = "Valid Item Group ID is required." });
+            }
+
+            // Validate file extension
+            var extension = Path.GetExtension(file.FileName).ToLower();
+            if (extension != ".xlsx")
+            {
+                return BadRequest(new { error = "Only .xlsx Excel files are supported." });
+            }
+
+            using var stream = file.OpenReadStream();
+            var result = await _excelService.ImportItemMasterWithValidationAsync(stream, itemGroupId);
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error importing item data");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 }
+

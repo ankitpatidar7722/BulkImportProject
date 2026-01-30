@@ -56,6 +56,134 @@ public class ExcelService : IExcelService
                 preview.Rows.Add(rowData);
             }
 
+            // AUTO-CALCULATE fields if this appears to be Item Master
+            // Detect by checking for key columns: GSM, Quality, Width/SizeW, Length/SizeL
+            var hasGSM = preview.Headers.Any(h => h.Equals("GSM", StringComparison.OrdinalIgnoreCase));
+            var hasQuality = preview.Headers.Any(h => h.Equals("Quality", StringComparison.OrdinalIgnoreCase));
+            var hasWidth = preview.Headers.Any(h => h.Equals("Width", StringComparison.OrdinalIgnoreCase) || 
+                                                      h.Equals("SizeW", StringComparison.OrdinalIgnoreCase));
+            var hasLength = preview.Headers.Any(h => h.Equals("Length", StringComparison.OrdinalIgnoreCase) || 
+                                                       h.Equals("SizeL", StringComparison.OrdinalIgnoreCase));
+
+            if (hasGSM || hasQuality || hasWidth || hasLength)
+            {
+                // This looks like Item Master - perform calculations
+                var gsmIndex = preview.Headers.FindIndex(h => h.Equals("GSM", StringComparison.OrdinalIgnoreCase));
+                var qualityIndex = preview.Headers.FindIndex(h => h.Equals("Quality", StringComparison.OrdinalIgnoreCase));
+                var manufacturerIndex = preview.Headers.FindIndex(h => h.Equals("Manufacturer", StringComparison.OrdinalIgnoreCase) ||
+                                                                        h.Equals("Manufecturer", StringComparison.OrdinalIgnoreCase));
+                var finishIndex = preview.Headers.FindIndex(h => h.Equals("Finish", StringComparison.OrdinalIgnoreCase));
+                var widthIndex = preview.Headers.FindIndex(h => h.Equals("Width", StringComparison.OrdinalIgnoreCase) || 
+                                                                 h.Equals("SizeW", StringComparison.OrdinalIgnoreCase));
+                var lengthIndex = preview.Headers.FindIndex(h => h.Equals("Length", StringComparison.OrdinalIgnoreCase) || 
+                                                                  h.Equals("SizeL", StringComparison.OrdinalIgnoreCase));
+                var unitPerPackingIndex = preview.Headers.FindIndex(h => h.Equals("UnitPerPacking", StringComparison.OrdinalIgnoreCase));
+                
+                var caliperIndex = preview.Headers.FindIndex(h => h.Equals("Caliper", StringComparison.OrdinalIgnoreCase));
+                var itemSizeIndex = preview.Headers.FindIndex(h => h.Equals("ItemSize", StringComparison.OrdinalIgnoreCase));
+                var wtPerPackingIndex = preview.Headers.FindIndex(h => h.Equals("WtPerPacking", StringComparison.OrdinalIgnoreCase));
+                var itemNameIndex = preview.Headers.FindIndex(h => h.Equals("ItemName", StringComparison.OrdinalIgnoreCase));
+
+                foreach (var row in preview.Rows)
+                {
+                    // Calculate Caliper = GSM / 1000
+                    if (gsmIndex >= 0 && caliperIndex >= 0 && gsmIndex < row.Count)
+                    {
+                        if (decimal.TryParse(row[gsmIndex]?.ToString(), out var gsm) && gsm > 0)
+                        {
+                            if (caliperIndex >= row.Count)
+                            {
+                                // Extend row if Caliper column doesn't exist yet
+                                while (row.Count <= caliperIndex) row.Add("");
+                            }
+                            row[caliperIndex] = (gsm / 1000).ToString("0.00");
+                        }
+                    }
+
+                    // Calculate ItemSize = Width X Length MM
+                    if (widthIndex >= 0 && lengthIndex >= 0 && itemSizeIndex >= 0 &&
+                        widthIndex < row.Count && lengthIndex < row.Count)
+                    {
+                        var width = row[widthIndex]?.ToString();
+                        var length = row[lengthIndex]?.ToString();
+                        if (!string.IsNullOrEmpty(width) && !string.IsNullOrEmpty(length))
+                        {
+                            if (itemSizeIndex >= row.Count)
+                            {
+                                while (row.Count <= itemSizeIndex) row.Add("");
+                            }
+                            row[itemSizeIndex] = $"{width} X {length} MM";
+                        }
+                    }
+
+                    // Calculate WtPerPacking
+                    if (lengthIndex >= 0 && widthIndex >= 0 && gsmIndex >= 0 && 
+                        unitPerPackingIndex >= 0 && wtPerPackingIndex >= 0 &&
+                        lengthIndex < row.Count && widthIndex < row.Count && 
+                        gsmIndex < row.Count && unitPerPackingIndex < row.Count)
+                    {
+                        if (decimal.TryParse(row[lengthIndex]?.ToString(), out var len) &&
+                            decimal.TryParse(row[widthIndex]?.ToString(), out var wid) &&
+                            decimal.TryParse(row[gsmIndex]?.ToString(), out var gsm2) &&
+                            decimal.TryParse(row[unitPerPackingIndex]?.ToString(), out var unit) &&
+                            len > 0 && wid > 0 && gsm2 > 0 && unit > 0)
+                        {
+                            if (wtPerPackingIndex >= row.Count)
+                            {
+                                while (row.Count <= wtPerPackingIndex) row.Add("");
+                            }
+                            var wtPerPacking = (len * wid * gsm2 * unit) / 1000000000m;
+                            row[wtPerPackingIndex] = wtPerPacking.ToString("0.0000");
+                        }
+                    }
+
+                    // Calculate ItemName = Quality, GSM, Manufacturer, Finish, ItemSize
+                    if (itemNameIndex >= 0)
+                    {
+                        var parts = new List<string>();
+                        
+                        if (qualityIndex >= 0 && qualityIndex < row.Count)
+                        {
+                            var quality = row[qualityIndex]?.ToString();
+                            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+                        }
+                        
+                        if (gsmIndex >= 0 && gsmIndex < row.Count)
+                        {
+                            var gsmStr = row[gsmIndex]?.ToString();
+                            if (!string.IsNullOrEmpty(gsmStr)) parts.Add($"{gsmStr} GSM");
+                        }
+                        
+                        if (manufacturerIndex >= 0 && manufacturerIndex < row.Count)
+                        {
+                            var manufacturer = row[manufacturerIndex]?.ToString();
+                            if (!string.IsNullOrEmpty(manufacturer)) parts.Add(manufacturer);
+                        }
+                        
+                        if (finishIndex >= 0 && finishIndex < row.Count)
+                        {
+                            var finish = row[finishIndex]?.ToString();
+                            if (!string.IsNullOrEmpty(finish)) parts.Add(finish);
+                        }
+                        
+                        if (itemSizeIndex >= 0 && itemSizeIndex < row.Count)
+                        {
+                            var itemSize = row[itemSizeIndex]?.ToString();
+                            if (!string.IsNullOrEmpty(itemSize)) parts.Add(itemSize);
+                        }
+                        
+                        if (parts.Any())
+                        {
+                            if (itemNameIndex >= row.Count)
+                            {
+                                while (row.Count <= itemNameIndex) row.Add("");
+                            }
+                            row[itemNameIndex] = string.Join(", ", parts);
+                        }
+                    }
+                }
+            }
+
             return await Task.FromResult(preview);
         }
         catch (Exception ex)
@@ -2306,4 +2434,733 @@ public class ExcelService : IExcelService
             return result;
         }
     }
+
+    // ==========================================
+    // ITEM MASTER IMPORT METHODS
+    // ==========================================
+
+    public async Task<List<ItemGroupDto>> GetItemGroupsAsync()
+    {
+        try
+        {
+            await EnsureConnectionOpenAsync();
+
+            string query = @"
+                SELECT ItemGroupID, ItemGroupName, ItemGroupPrefix, 
+                       ItemNameFormula, ItemDescriptionFormula
+                FROM ItemGroupMaster
+                WHERE CompanyID = 2 
+                  AND IsDeletedTransaction = 0
+                ORDER BY ItemGroupName";
+
+            var itemGroups = await _connection.QueryAsync<ItemGroupDto>(query);
+            return itemGroups.ToList();
+        }
+        catch (Exception)
+        {
+            return new List<ItemGroupDto>();
+        }
+    }
+
+    public async Task<List<MasterColumnDto>> GetItemMasterColumnsAsync(int itemGroupId)
+    {
+        try
+        {
+            await EnsureConnectionOpenAsync();
+
+            // Query custom columns from ItemGroupMasterColumns (if exists)
+            string columnQuery = @"
+                SELECT FieldName, DataType, IsRequired, SequenceNo, UnitMeasurement
+                FROM ItemGroupMasterColumns
+                WHERE ItemGroupID = @ItemGroupID 
+                  AND CompanyID = 2
+                  AND IsDeletedTransaction = 0
+                ORDER BY SequenceNo";
+
+            var columns = await _connection.QueryAsync<MasterColumnDto>(columnQuery, new { ItemGroupID = itemGroupId });
+            
+            if (columns.Any())
+            {
+                return columns.ToList();
+            }
+            
+            // If no custom columns defined, return default schema
+            return GetDefaultItemColumns(itemGroupId);
+        }
+        catch (Exception)
+        {
+            // If table doesn't exist or error, return default columns
+            return GetDefaultItemColumns(itemGroupId);
+        }
+    }
+
+    private List<MasterColumnDto> GetDefaultItemColumns(int itemGroupId)
+    {
+        // Default columns for Item Master (similar to Ledger Master pattern)
+        var columns = new List<MasterColumnDto>();
+        int seq = 1;
+
+        // Common columns for all items
+        columns.Add(new MasterColumnDto { FieldName = "ItemName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "StockUnit", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "PurchaseUnit", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "EstimationUnit", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "UnitPerPacking", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "WtPerPacking", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "ConversionFactor", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "ItemSubGroupID", DataType = "int", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "ProductHSNID", DataType = "int", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "StockType", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "StockCategory", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "SizeW", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "PurchaseRate", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "StockRefCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+
+        return columns;
+    }
+
+    public async Task<ImportResultDto> ImportItemMasterWithValidationAsync(Stream fileStream, int itemGroupId)
+    {
+        var result = new ImportResultDto { Success = false };
+
+        try
+        {
+            await EnsureConnectionOpenAsync();
+
+            // Load Excel file
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+            using var package = new ExcelPackage(fileStream);
+            var worksheet = package.Workbook.Worksheets[0];
+
+            if (worksheet.Dimension == null)
+            {
+                result.ErrorMessages.Add("The Excel file is empty.");
+                return result;
+            }
+
+            // Get ItemGroup info
+            var itemGroupQuery = @"
+                SELECT ItemGroupID, ItemGroupName, ItemGroupPrefix, 
+                       ItemNameFormula, ItemDescriptionFormula
+                FROM ItemGroupMaster
+                WHERE ItemGroupID = @ItemGroupID AND CompanyID = 2 AND IsDeletedTransaction = 0";
+            
+            var itemGroup = await _connection.QueryFirstOrDefaultAsync<ItemGroupDto>(itemGroupQuery, new { ItemGroupID = itemGroupId });
+            
+            if (itemGroup == null)
+            {
+                result.ErrorMessages.Add($"ItemGroup with ID {itemGroupId} not found.");
+                return result;
+            }
+
+            // Get master columns
+            var masterColumns = await GetItemMasterColumnsAsync(itemGroupId);
+
+            // Read headers
+            var headerMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int col = 1; col <= worksheet.Dimension.Columns; col++)
+            {
+                var header = worksheet.Cells[1, col].Value?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(header))
+                {
+                    // Normalize: remove spaces
+                    var normalizedHeader = header.Replace(" ", "");
+                    headerMap[normalizedHeader] = col;
+                }
+            }
+
+            // Helper functions
+            string? GetValue(string columnName, int rowIdx)
+            {
+                var normalizedColName = columnName.Replace(" ", "");
+                var fuzzyKey = headerMap.Keys.FirstOrDefault(k => k.Replace(" ", "").Equals(normalizedColName, StringComparison.OrdinalIgnoreCase));
+                if (fuzzyKey != null) return GetCellValue(rowIdx, headerMap[fuzzyKey]);
+                return null;
+            }
+
+            string? GetCellValue(int rowIdx, int colIndex)
+            {
+                var cellValue = worksheet.Cells[rowIdx, colIndex].Value;
+                if (cellValue == null || cellValue == DBNull.Value) return null;
+                var stringValue = cellValue.ToString()?.Trim();
+                return string.IsNullOrEmpty(stringValue) ? null : stringValue;
+            }
+
+            // Validate required columns
+            var missingColumns = new List<string>();
+            if (masterColumns.Any())
+            {
+                foreach (var masterCol in masterColumns.Where(c => c.IsRequired))
+                {
+                    if (!headerMap.ContainsKey(masterCol.FieldName))
+                    {
+                        missingColumns.Add(masterCol.FieldName);
+                    }
+                }
+
+                if (missingColumns.Any())
+                {
+                    result.Success = false;
+                    result.ErrorMessages.Add($"Missing required columns: {string.Join(", ", missingColumns)}");
+                    return result;
+                }
+            }
+
+            // Process Rows
+            var validRows = new List<Dictionary<string, object?>>();
+            var errorMessages = new List<string>();
+            var excelItemNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Check duplicates in database
+            string duplicateCheckQuery = @"
+                SELECT ItemName
+                FROM ItemMaster
+                WHERE ItemGroupID = @ItemGroupID
+                  AND CompanyID = 2
+                  AND IsDeletedTransaction = 0
+                  AND ItemName IS NOT NULL";
+
+            var existingItems = await _connection.QueryAsync<string>(duplicateCheckQuery, new { ItemGroupID = itemGroupId });
+            var dbItemNames = new HashSet<string>(existingItems.Where(n => !string.IsNullOrWhiteSpace(n)), StringComparer.OrdinalIgnoreCase);
+
+            for (int row = 2; row <= worksheet.Dimension.Rows; row++)
+            {
+                // Check empty row
+                bool isRowEmpty = true;
+                for (int c = 1; c <= worksheet.Dimension.Columns; c++)
+                {
+                    if (!string.IsNullOrWhiteSpace(worksheet.Cells[row, c].Value?.ToString()))
+                    {
+                        isRowEmpty = false;
+                        break;
+                    }
+                }
+                if (isRowEmpty) continue;
+
+                var rowData = new Dictionary<string, object?>();
+                var rowErrors = new List<string>();
+
+                // ALWAYS load ALL Excel columns into rowData (not just masterColumns)
+                foreach (var header in headerMap.Keys)
+                {
+                    var value = GetValue(header, row);
+                    rowData[header] = value;
+                }
+
+                // Then validate required columns from masterColumns
+                if (masterColumns.Any())
+                {
+                    foreach (var masterCol in masterColumns)
+                    {
+                        var value = GetFieldValue(rowData, masterCol.FieldName);
+                        if (masterCol.IsRequired && string.IsNullOrEmpty(value))
+                        {
+                            rowErrors.Add($"Row {row}: {masterCol.FieldName} is required.");
+                        }
+                    }
+                }
+
+                // AUTO-CALCULATE: Caliper, ItemSize, WtPerPacking, ItemName
+                rowData = CalculateItemFields(rowData);
+
+                // AUTO-SET ItemType to Item Group Name (e.g., "Paper")
+                if (!string.IsNullOrEmpty(itemGroup.ItemGroupName))
+                {
+                    rowData["ItemType"] = itemGroup.ItemGroupName;
+                }
+
+                if (rowErrors.Any())
+                {
+                    errorMessages.AddRange(rowErrors);
+                    continue;
+                }
+
+                // Get ItemName (already auto-calculated by CalculateItemFields)
+                var itemName = GetFieldValue(rowData, "ItemName")?.Trim();
+
+                // Fallback if auto-generation failed or resulted in empty string
+                if (string.IsNullOrEmpty(itemName))
+                {
+                    itemName = $"Item_{DateTime.Now.Ticks}"; // Temporary fallback
+                    rowData["ItemName"] = itemName;
+                }
+
+                // Check duplicates
+                if (excelItemNames.Contains(itemName))
+                {
+                    errorMessages.Add($"Row {row}: Duplicate ItemName '{itemName}' found within Excel file.");
+                    result.DuplicateRows++;
+                    continue;
+                }
+
+                if (dbItemNames.Contains(itemName))
+                {
+                    errorMessages.Add($"Row {row}: ItemName '{itemName}' already exists in database.");
+                    result.DuplicateRows++;
+                    continue;
+                }
+
+                excelItemNames.Add(itemName);
+                validRows.Add(rowData);
+            }
+
+            // Helper function to get field value
+            string? GetFieldValue(Dictionary<string, object?> data, string fieldName)
+            {
+                var key = data.Keys.FirstOrDefault(k => k.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+                return key != null ? data[key]?.ToString() : null;
+            }
+
+            // Validation result check
+            if (errorMessages.Any())
+            {
+                result.Success = false;
+                result.ErrorMessages = errorMessages;
+                result.ErrorRows = errorMessages.Count - result.DuplicateRows;
+
+                var messageParts = new List<string>();
+                if (result.DuplicateRows > 0)
+                    messageParts.Add($"{result.DuplicateRows} duplicate(s)");
+                if (result.ErrorRows > 0)
+                    messageParts.Add($"{result.ErrorRows} validation error(s)");
+
+                result.Message = $"Import failed: {string.Join(", ", messageParts)}. No data imported.";
+                return result;
+            }
+
+            if (!validRows.Any())
+            {
+                result.Success = true;
+                result.Message = "No valid data found to import.";
+                return result;
+            }
+
+            // Execute Import (Transactional)
+            using var transaction = _connection.BeginTransaction();
+            try
+            {
+                // Get all ItemMaster table columns
+                string columnsQuery = @"
+                    SELECT COLUMN_NAME
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_NAME = 'ItemMaster'
+                    AND COLUMN_NAME NOT IN ('ItemID')
+                    ORDER BY ORDINAL_POSITION";
+
+                var itemMasterColumns = await _connection.QueryAsync<string>(columnsQuery, transaction: transaction);
+                var itemMasterColumnsList = itemMasterColumns.Select(c => c.ToLower()).ToList();
+
+                // Get Prefix
+                string prefix = itemGroup.ItemGroupPrefix ?? "ITM";
+
+                // Get current Max Number
+                var maxItemNoObj = await _connection.ExecuteScalarAsync<object>(
+                    "SELECT MAX(MaxItemNo) FROM ItemMaster WHERE ItemGroupID = @GID AND IsDeletedTransaction = 0",
+                    new { GID = itemGroupId }, transaction: transaction);
+
+                long currentMaxNo = 0;
+                if (maxItemNoObj != null && long.TryParse(maxItemNoObj.ToString(), out var parsedMax))
+                {
+                    currentMaxNo = parsedMax;
+                }
+
+                foreach (var rowData in validRows)
+                {
+                    currentMaxNo++;
+                    var itemCode = $"{prefix}{currentMaxNo.ToString().PadLeft(5, '0')}";
+
+                    var itemName = rowData.ContainsKey("ItemName") ? rowData["ItemName"]?.ToString() : "";
+                    if (string.IsNullOrEmpty(itemName))
+                    {
+                        itemName = $"Item_{currentMaxNo}";
+                    }
+
+                    // Generate ItemDescription from formula
+                    var itemDescription = "";
+                    if (!string.IsNullOrEmpty(itemGroup.ItemDescriptionFormula))
+                    {
+                        itemDescription = GenerateItemDescription(itemGroup.ItemDescriptionFormula, rowData, masterColumns);
+                    }
+
+                    // Build dynamic INSERT for ItemMaster
+                    var masterParams = new DynamicParameters();
+                    var insertColumns = new List<string>();
+                    var insertValues = new List<string>();
+
+                    // LOOKUP ProductHSNID based on HSNCode or ProductHSNName
+                    int? productHSNID = null;
+                    var hsnCode = rowData.ContainsKey("HSNCode") ? rowData["HSNCode"]?.ToString()?.Trim() : null;
+                    var productHSNName = rowData.ContainsKey("ProductHSNName") ? rowData["ProductHSNName"]?.ToString()?.Trim() : null;
+                    
+                    if (!string.IsNullOrEmpty(hsnCode) || !string.IsNullOrEmpty(productHSNName))
+                    {
+                        string hsnQuery = @"
+                            SELECT TOP 1 ProductHSNID 
+                            FROM ProductHSNMaster
+                            WHERE (@HSNCode IS NOT NULL AND HSNCode = @HSNCode)
+                               OR (@ProductHSNName IS NOT NULL AND ProductHSNName = @ProductHSNName)";
+                        
+                        productHSNID = await _connection.QueryFirstOrDefaultAsync<int?>(
+                            hsnQuery, 
+                            new { HSNCode = hsnCode, ProductHSNName = productHSNName },
+                            transaction: transaction
+                        );
+                        
+                        if (productHSNID.HasValue)
+                        {
+                            rowData["ProductHSNID"] = productHSNID.Value;
+                        }
+                    }
+
+                    // Add system required columns
+                    insertColumns.Add("ItemCode");
+                    insertValues.Add("@ItemCode");
+                    masterParams.Add("@ItemCode", itemCode);
+
+                    insertColumns.Add("MaxItemNo");
+                    insertValues.Add("@MaxItemNo");
+                    masterParams.Add("@MaxItemNo", currentMaxNo);
+
+                    insertColumns.Add("ItemCodePrefix");
+                    insertValues.Add("@ItemCodePrefix");
+                    masterParams.Add("@ItemCodePrefix", prefix);
+
+                    insertColumns.Add("ItemGroupID");
+                    insertValues.Add("@ItemGroupID");
+                    masterParams.Add("@ItemGroupID", itemGroupId);
+
+                    insertColumns.Add("CompanyID");
+                    insertValues.Add("@CompanyID");
+                    masterParams.Add("@CompanyID", 2);
+
+                    insertColumns.Add("UserID");
+                    insertValues.Add("@UserID");
+                    masterParams.Add("@UserID", 2);
+
+                    insertColumns.Add("FYear");
+                    insertValues.Add("@FYear");
+                    masterParams.Add("@FYear", "2025-2026");
+
+                    insertColumns.Add("CreatedDate");
+                    insertValues.Add("@CreatedDate");
+                    masterParams.Add("@CreatedDate", DateTime.Now);
+
+                    insertColumns.Add("CreatedBy");
+                    insertValues.Add("@CreatedBy");
+                    masterParams.Add("@CreatedBy", 2);
+
+                    insertColumns.Add("ModifiedDate");
+                    insertValues.Add("@ModifiedDate");
+                    masterParams.Add("@ModifiedDate", DateTime.Now);
+
+                    insertColumns.Add("ModifiedBy");
+                    insertValues.Add("@ModifiedBy");
+                    masterParams.Add("@ModifiedBy", 2);
+
+                    insertColumns.Add("IsDeletedTransaction");
+                    insertValues.Add("@IsDeletedTransaction");
+                    masterParams.Add("@IsDeletedTransaction", 0);
+
+                    // Map Excel columns to ItemMaster columns dynamically
+                    foreach (var field in rowData)
+                    {
+                        var fieldNameLower = field.Key.ToLower().Replace(" ", "");
+
+                        var matchingColumn = itemMasterColumnsList.FirstOrDefault(c =>
+                            c.Replace(" ", "").Equals(fieldNameLower, StringComparison.OrdinalIgnoreCase));
+
+                        if (matchingColumn != null && !insertColumns.Any(ic => ic.Equals(matchingColumn, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            var actualColumnName = itemMasterColumns.First(c => c.ToLower() == matchingColumn);
+                            insertColumns.Add(actualColumnName);
+                            insertValues.Add($"@{actualColumnName}");
+                            masterParams.Add($"@{actualColumnName}", field.Value?.ToString());
+                        }
+                    }
+
+                    // Ensure ItemName is added
+                    if (!insertColumns.Any(c => c.Equals("ItemName", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        insertColumns.Add("ItemName");
+                        insertValues.Add("@ItemName");
+                        masterParams.Add("@ItemName", itemName);
+                    }
+
+                    // Add ItemDescription if not already added
+                    if (!insertColumns.Any(c => c.Equals("ItemDescription", StringComparison.OrdinalIgnoreCase)) && !string.IsNullOrEmpty(itemDescription))
+                    {
+                        insertColumns.Add("ItemDescription");
+                        insertValues.Add("@ItemDescription");
+                        masterParams.Add("@ItemDescription", itemDescription);
+                    }
+
+                    // Explicitly add calculated fields if columns exist in ItemMaster table
+                    var calculatedFields = new[] { "Caliper", "ItemSize", "WtPerPacking" };
+                    foreach (var calcField in calculatedFields)
+                    {
+                        if (rowData.ContainsKey(calcField) && 
+                            itemMasterColumnsList.Any(c => c.Equals(calcField.ToLower(), StringComparison.OrdinalIgnoreCase)) &&
+                            !insertColumns.Any(ic => ic.Equals(calcField, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            var actualColumnName = itemMasterColumns.First(c => c.Equals(calcField, StringComparison.OrdinalIgnoreCase));
+                            insertColumns.Add(actualColumnName);
+                            insertValues.Add($"@{actualColumnName}");
+                            masterParams.Add($"@{actualColumnName}", rowData[calcField]?.ToString());
+                        }
+                    }
+
+                    if (!insertColumns.Any(c => c.Equals("ISItemActive", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        insertColumns.Add("ISItemActive");
+                        insertValues.Add("@ISItemActive");
+                        masterParams.Add("@ISItemActive", true);
+                    }
+
+                    // Build and execute dynamic INSERT
+                    string insertMasterSql = $@"
+                        INSERT INTO ItemMaster ({string.Join(", ", insertColumns)})
+                        VALUES ({string.Join(", ", insertValues)});
+                        SELECT SCOPE_IDENTITY();";
+
+                    var itemIdObj = await _connection.ExecuteScalarAsync<object>(insertMasterSql, masterParams, transaction: transaction);
+                    int newItemId = Convert.ToInt32(itemIdObj);
+
+                    // Insert Details (ItemMasterDetails)
+                    // Insert ALL Excel columns into ItemMasterDetails, not just predefined ones
+                    string insertDetailSql = @"
+                        INSERT INTO ItemMasterDetails (
+                            ItemID, ItemGroupID, CompanyID, UserID, FYear,
+                            FieldName, FieldValue, ParentFieldName, ParentFieldValue, ParentItemID,
+                            SequenceNo, CreatedDate, CreatedBy, ModifiedDate, ModifiedBy
+                        ) VALUES (
+                            @ItemID, @ItemGroupID, @CompanyID, @UserID, @FYear,
+                            @FieldName, @FieldValue, @ParentFieldName, @ParentFieldValue, @ParentItemID,
+                            @SequenceNo, @CreatedDate, @CreatedBy, @CreatedDate, @CreatedBy
+                        )";
+
+                    int sequenceNo = 1;
+
+                    // DEBUG: Show what's in rowData before inserting
+                    Console.WriteLine($"[DEBUG] ===== ItemID {newItemId} - rowData contains {rowData.Count} keys =====");
+                    foreach (var debugKey in rowData.Keys)
+                    {
+                        Console.WriteLine($"[DEBUG]   Key: '{debugKey}' = '{rowData[debugKey]}'");
+                    }
+
+                    // Loop through ALL Excel columns (rowData) and insert into ItemMasterDetails
+                    // NOTE: We insert ALL columns, even if they're already in ItemMaster table
+                    // This is the EAV (Entity-Attribute-Value) pattern for flexible data storage
+                    int detailsInserted = 0;
+                    foreach (var field in rowData)
+                    {
+                        var fieldValue = field.Value?.ToString() ?? "";
+
+                        // SPECIAL CASE: For ProductHSNName, insert ProductHSNID instead of the name
+                        if (field.Key.Equals("ProductHSNName", StringComparison.OrdinalIgnoreCase) && productHSNID.HasValue)
+                        {
+                            fieldValue = productHSNID.Value.ToString();
+                        }
+
+                        // Insert ALL columns into ItemMasterDetails (don't skip any)
+                        Console.WriteLine($"[DEBUG] Inserting '{field.Key}' = '{fieldValue}' into ItemMasterDetails");
+
+                        await _connection.ExecuteAsync(insertDetailSql, new {
+                            ItemID = newItemId,
+                            ItemGroupID = itemGroupId,
+                            CompanyID = 2,
+                            UserID = 2,
+                            FYear = "2025-2026",
+                            FieldName = field.Key,
+                            FieldValue = fieldValue,
+                            ParentFieldName = field.Key,
+                            ParentFieldValue = fieldValue,
+                            ParentItemID = 0,
+                            SequenceNo = sequenceNo++,
+                            CreatedDate = DateTime.Now,
+                            CreatedBy = 2
+                        }, transaction: transaction);
+                        
+                        detailsInserted++;
+                    }
+                    
+                    Console.WriteLine($"[DEBUG] Inserted {detailsInserted} records into ItemMasterDetails for ItemID {newItemId}");
+                }
+
+                transaction.Commit();
+                result.Success = true;
+                result.ImportedRows = validRows.Count;
+
+                var messageBuilder = new System.Text.StringBuilder();
+                messageBuilder.Append($"Successfully imported {validRows.Count} item(s) into {itemGroup.ItemGroupName}.");
+
+                if (result.DuplicateRows > 0 || result.ErrorRows > 0)
+                {
+                    messageBuilder.Append(" ");
+                    var skippedParts = new List<string>();
+                    if (result.DuplicateRows > 0)
+                        skippedParts.Add($"{result.DuplicateRows} duplicate(s)");
+                    if (result.ErrorRows > 0)
+                        skippedParts.Add($"{result.ErrorRows} error(s)");
+                    messageBuilder.Append($"Skipped: {string.Join(", ", skippedParts)}.");
+                }
+
+                result.Message = messageBuilder.ToString();
+            }
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+                result.Success = false;
+                result.Message = $"Database Error: {ex.Message}";
+                result.ErrorMessages.Add(ex.Message);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.ErrorMessages.Add($"System Error: {ex.Message}");
+            return result;
+        }
+    }
+
+    private string GenerateItemName(string formula, Dictionary<string, object?> rowData, List<MasterColumnDto> masterColumns)
+    {
+        // If formula is provided, use it
+        if (!string.IsNullOrEmpty(formula))
+        {
+            var result = formula;
+            
+            // Replace placeholders from rowData directly (not just masterColumns)
+            foreach (var field in rowData)
+            {
+                var fieldValue = field.Value?.ToString();
+                if (!string.IsNullOrEmpty(fieldValue))
+                {
+                    result = result.Replace($"{{{field.Key}}}", fieldValue);
+                }
+                else
+                {
+                    result = result.Replace($"{{{field.Key}}}", "");
+                }
+            }
+            
+            // Clean up extra commas and spaces
+            result = System.Text.RegularExpressions.Regex.Replace(result, @",\s*,", ",");
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"^\s*,\s*|\s*,\s*$", "");
+            result = result.Trim();
+            
+            return result;
+        }
+        
+        // Default: Generate from Quality, GSM, Manufacturer, Finish, ItemSize
+        // Format: "Art paper, 80 GSM, ITC, coated, 635 X 910 MM"
+        var parts = new List<string>();
+        
+        var quality = GetFieldValueFromDict(rowData, "Quality");
+        if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+        
+        var gsm = GetFieldValueFromDict(rowData, "GSM");
+        if (!string.IsNullOrEmpty(gsm)) parts.Add($"{gsm} GSM");
+        
+        var manufacturer = GetFieldValueFromDict(rowData, "Manufacturer");
+        if (!string.IsNullOrEmpty(manufacturer)) parts.Add(manufacturer);
+        
+        var finish = GetFieldValueFromDict(rowData, "Finish");
+        if (!string.IsNullOrEmpty(finish)) parts.Add(finish);
+        
+        var itemSize = GetFieldValueFromDict(rowData, "ItemSize");
+        if (!string.IsNullOrEmpty(itemSize)) parts.Add($"{itemSize} MM");
+        
+        return string.Join(", ", parts);
+    }
+
+    private string GenerateItemDescription(string formula, Dictionary<string, object?> rowData, List<MasterColumnDto> masterColumns)
+    {
+        // Formula format: "FieldName1:Value1, FieldName2:Value2"
+        
+        var result = formula;
+        
+        foreach (var col in masterColumns)
+        {
+            var fieldValue = GetFieldValueFromDict(rowData, col.FieldName);
+            result = result.Replace($"{{{col.FieldName}}}", fieldValue ?? "");
+        }
+        
+        result = System.Text.RegularExpressions.Regex.Replace(result, @",\s*,", ",");
+        result = System.Text.RegularExpressions.Regex.Replace(result, @"^\s*,\s*|\s*,\s*$", "");
+        result = result.Trim();
+        
+        return result;
+    }
+
+    private string? GetFieldValueFromDict(Dictionary<string, object?> data, string fieldName)
+    {
+        var key = data.Keys.FirstOrDefault(k => k.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+        return key != null ? data[key]?.ToString() : null;
+    }
+
+    private Dictionary<string, object?> CalculateItemFields(Dictionary<string, object?> rowData)
+    {
+        // Calculate Caliper = GSM / 1000
+        if (rowData.TryGetValue("GSM", out var gsmObj) && gsmObj != null)
+        {
+            if (decimal.TryParse(gsmObj.ToString(), out var gsm) && gsm > 0)
+            {
+                rowData["Caliper"] = (gsm / 1000).ToString("0.00");
+            }
+        }
+        
+        // Calculate ItemSize = SizeW X SizeL (or Width X Length)
+        var width = GetFieldValueFromDict(rowData, "SizeW") ?? GetFieldValueFromDict(rowData, "Width");
+        var length = GetFieldValueFromDict(rowData, "SizeL") ?? GetFieldValueFromDict(rowData, "Length");
+        if (!string.IsNullOrEmpty(width) && !string.IsNullOrEmpty(length))
+        {
+            rowData["ItemSize"] = $"{width} X {length}";
+        }
+        
+        // Calculate WtPerPacking = (SizeL × SizeW × GSM × UnitPerPacking) / 1000000000
+        // Try SizeL/SizeW first, then fallback to Length/Width
+        var lenVal = GetFieldValueFromDict(rowData, "SizeL") ?? GetFieldValueFromDict(rowData, "Length");
+        var widVal = GetFieldValueFromDict(rowData, "SizeW") ?? GetFieldValueFromDict(rowData, "Width");
+        var gsmVal = GetFieldValueFromDict(rowData, "GSM");
+        var unitVal = GetFieldValueFromDict(rowData, "UnitPerPacking");
+        
+        if (!string.IsNullOrEmpty(lenVal) && !string.IsNullOrEmpty(widVal) && 
+            !string.IsNullOrEmpty(gsmVal) && !string.IsNullOrEmpty(unitVal))
+        {
+            if (decimal.TryParse(lenVal, out var len) &&
+                decimal.TryParse(widVal, out var wid) &&
+                decimal.TryParse(gsmVal, out var gsm2) &&
+                decimal.TryParse(unitVal, out var unit) &&
+                len > 0 && wid > 0 && gsm2 > 0 && unit > 0)
+            {
+                var wtPerPacking = (len * wid * gsm2 * unit) / 1000000000m;
+                rowData["WtPerPacking"] = wtPerPacking.ToString("0.0000");
+            }
+        }
+        
+        // Calculate ItemName = Quality, GSM, Manufacturer, Finish, ItemSize
+        var quality = GetFieldValueFromDict(rowData, "Quality");
+        var gsmStr = GetFieldValueFromDict(rowData, "GSM");
+        var manufacturer = GetFieldValueFromDict(rowData, "Manufecturer");
+        var finish = GetFieldValueFromDict(rowData, "Finish");
+        var itemSize = GetFieldValueFromDict(rowData, "ItemSize");
+        
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+        if (!string.IsNullOrEmpty(gsmStr)) parts.Add($"{gsmStr} GSM");
+        if (!string.IsNullOrEmpty(manufacturer)) parts.Add(manufacturer);
+        if (!string.IsNullOrEmpty(finish)) parts.Add(finish);
+        if (!string.IsNullOrEmpty(itemSize)) parts.Add($"{itemSize} MM");
+        
+        if (parts.Any())
+        {
+            rowData["ItemName"] = string.Join(", ", parts);
+        }
+        
+        return rowData;
+    }
 }
+
+

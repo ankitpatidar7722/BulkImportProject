@@ -6,9 +6,13 @@ import {
     previewExcel,
     importExcel,
     importLedger,
+    importItemMaster,
+    getItemGroups,
+    getItemMasterColumns,
     ModuleDto,
     ExcelPreviewDto,
     MasterColumnDto,
+    ItemGroupDto,
     getMasterColumns
 } from '../services/api';
 
@@ -32,6 +36,11 @@ const ImportMaster: React.FC = () => {
     const [isLedgerMode, setIsLedgerMode] = useState(false);
     const [isFileUploadEnabled, setIsFileUploadEnabled] = useState(false);
     const [showSubModuleDropdown, setShowSubModuleDropdown] = useState(true);
+
+    // Item Master-specific states
+    const [selectedItemGroup, setSelectedItemGroup] = useState<number>(0);
+    const [itemGroups, setItemGroups] = useState<ItemGroupDto[]>([]);
+    const [isItemMode, setIsItemMode] = useState(false);
 
     const fetchModules = async () => {
         try {
@@ -76,17 +85,34 @@ const ImportMaster: React.FC = () => {
 
         if (!moduleId) {
             setIsLedgerMode(false);
+            setIsItemMode(false);
             return;
         }
 
-        // Check if Ledger Master is selected
+        // Check if Ledger Master or Item Master is selected
         const module = modules.find(m => m.moduleId.toString() === moduleId);
+
         if (module && (module.moduleName === 'LedgerMaster' || module.moduleDisplayName?.includes('Ledger'))) {
             setIsLedgerMode(true);
+            setIsItemMode(false);
             setSelectedLedgerGroup(0);
             setMasterColumns([]);
+        } else if (module && (module.moduleName === 'ItemMaster' || module.moduleDisplayName?.toLowerCase().includes('item'))) {
+            setIsItemMode(true);
+            setIsLedgerMode(false);
+            setSelectedItemGroup(0);
+
+            // Fetch Item Groups
+            try {
+                const groups = await getItemGroups();
+                setItemGroups(groups);
+            } catch (error: any) {
+                toast.error('Failed to fetch item groups');
+                console.error(error);
+            }
         } else {
             setIsLedgerMode(false);
+            setIsItemMode(false);
         }
 
         if (module) {
@@ -244,6 +270,39 @@ const ImportMaster: React.FC = () => {
                 }
             } catch (error: any) {
                 toast.error(error?.response?.data?.error || 'Failed to import ledger data');
+            } finally {
+                setIsLoading(false);
+            }
+        } else if (isItemMode) {
+            // Item Master import mode
+            if (selectedItemGroup <= 0) {
+                toast.error('Please select an Item Group');
+                return;
+            }
+
+            setIsLoading(true);
+            setShowErrorModal(false);
+            setErrorList([]);
+
+            try {
+                const result = await importItemMaster(uploadedFile, selectedItemGroup);
+
+                if (result.success) {
+                    toast.success(result.message);
+                    setUploadedFile(null);
+                    setPreviewData(null);
+                    setIsPreviewShown(false);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                } else {
+                    toast.error(result.message);
+
+                    if (result.errorMessages && result.errorMessages.length > 0) {
+                        setErrorList(result.errorMessages);
+                        setShowErrorModal(true);
+                    }
+                }
+            } catch (error: any) {
+                toast.error(error?.response?.data?.error || 'Failed to import item data');
             } finally {
                 setIsLoading(false);
             }
@@ -407,7 +466,7 @@ const ImportMaster: React.FC = () => {
                         </select>
                     </div>
 
-                    {/* Conditional: Ledger Group or Sub-module Selection */}
+                    {/* Conditional: Ledger Group,Item Group, or Sub-module Selection */}
                     {isLedgerMode ? (
                         <div>
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
@@ -422,6 +481,31 @@ const ImportMaster: React.FC = () => {
                                 {subModules.map((sub) => (
                                     <option key={sub.moduleId} value={sub.moduleId}>
                                         {sub.moduleDisplayName || sub.moduleName}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    ) : isItemMode ? (
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Item Group
+                            </label>
+                            <select
+                                className="w-full px-3 py-1.5 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm text-gray-900 dark:text-white"
+                                value={selectedItemGroup}
+                                onChange={(e) => {
+                                    setSelectedItemGroup(Number(e.target.value));
+                                    if (Number(e.target.value) > 0) {
+                                        setIsFileUploadEnabled(true);
+                                    } else {
+                                        setIsFileUploadEnabled(false);
+                                    }
+                                }}
+                            >
+                                <option value="0">Select Item Group</option>
+                                {itemGroups.map((group) => (
+                                    <option key={group.itemGroupID} value={group.itemGroupID}>
+                                        {group.itemGroupName}
                                     </option>
                                 ))}
                             </select>
