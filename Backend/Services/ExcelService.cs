@@ -2503,7 +2503,7 @@ public class ExcelService : IExcelService
         // Common columns for all items
         columns.Add(new MasterColumnDto { FieldName = "ItemName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
         columns.Add(new MasterColumnDto { FieldName = "StockUnit", DataType = "string", IsRequired = false, SequenceNo = seq++ });
-        columns.Add(new MasterColumnDto { FieldName = "PurchaseUnit", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+        columns.Add(new MasterColumnDto { FieldName = "PurchaseUnit", DataType = "string", IsRequired = true, SequenceNo = seq++ });
         columns.Add(new MasterColumnDto { FieldName = "EstimationUnit", DataType = "string", IsRequired = false, SequenceNo = seq++ });
         columns.Add(new MasterColumnDto { FieldName = "UnitPerPacking", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
         columns.Add(new MasterColumnDto { FieldName = "WtPerPacking", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
@@ -2667,6 +2667,60 @@ public class ExcelService : IExcelService
                 if (!string.IsNullOrEmpty(itemGroup.ItemGroupName))
                 {
                     rowData["ItemType"] = itemGroup.ItemGroupName;
+                }
+
+                // AUTO-SET PaperGroup based on item group
+                if (!string.IsNullOrEmpty(itemGroup.ItemGroupName))
+                {
+                    if (itemGroup.ItemGroupName.Equals("PAPER", StringComparison.OrdinalIgnoreCase))
+                    {
+                        rowData["PaperGroup"] = "Paper";
+                    }
+                    else if (itemGroup.ItemGroupName.Equals("REEL", StringComparison.OrdinalIgnoreCase))
+                    {
+                        rowData["PaperGroup"] = "Reel";
+                    }
+                }
+
+                // LOOKUP ItemSubGroupID based on ItemSubGroupName (for INK & Additives)
+                // Check if ItemSubGroupName exists in rowData (case-insensitive)
+                var itemSubGroupNameKey = rowData.Keys.FirstOrDefault(k => k.Equals("ItemSubGroupName", StringComparison.OrdinalIgnoreCase));
+                Console.WriteLine($"[DEBUG] Checking for ItemSubGroupName in rowData: {(itemSubGroupNameKey != null ? $"Found key '{itemSubGroupNameKey}'" : "NOT FOUND")}");
+                
+                if (itemSubGroupNameKey != null)
+                {
+                    var itemSubGroupName = rowData[itemSubGroupNameKey]?.ToString()?.Trim();
+                    Console.WriteLine($"[DEBUG] ItemSubGroupName value: '{itemSubGroupName}'");
+                    
+                    if (!string.IsNullOrEmpty(itemSubGroupName))
+                    {
+                        string subGroupQuery = @"
+                            SELECT TOP 1 ItemSubGroupID 
+                            FROM ItemSubGroupMaster
+                            WHERE LTRIM(RTRIM(ItemSubGroupName)) = LTRIM(RTRIM(@ItemSubGroupName))
+                              AND CompanyID = @CompanyID
+                              AND (IsDeletedTransaction = 0 OR IsDeletedTransaction IS NULL)";
+                        
+                        Console.WriteLine($"[DEBUG] Executing SQL: {subGroupQuery}");
+                        Console.WriteLine($"[DEBUG] Parameters: ItemSubGroupName='{itemSubGroupName}', CompanyID=2");
+                        
+                        var itemSubGroupID = await _connection.QueryFirstOrDefaultAsync<int?>(
+                            subGroupQuery,
+                            new { ItemSubGroupName = itemSubGroupName, CompanyID = 2 }
+                        );
+                        
+                        Console.WriteLine($"[DEBUG] ItemSubGroupName lookup: '{itemSubGroupName}' => ItemSubGroupID = {(itemSubGroupID.HasValue ? itemSubGroupID.Value.ToString() : "NULL")}");
+                        
+                        if (itemSubGroupID.HasValue)
+                        {
+                            rowData["ItemSubGroupID"] = itemSubGroupID.Value;
+                            Console.WriteLine($"[DEBUG] Added ItemSubGroupID = {itemSubGroupID.Value} to rowData");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[DEBUG] WARNING: No ItemSubGroupID found for ItemSubGroupName = '{itemSubGroupName}'");
+                        }
+                    }
                 }
 
                 if (rowErrors.Any())
@@ -2874,7 +2928,32 @@ public class ExcelService : IExcelService
                             var actualColumnName = itemMasterColumns.First(c => c.ToLower() == matchingColumn);
                             insertColumns.Add(actualColumnName);
                             insertValues.Add($"@{actualColumnName}");
-                            masterParams.Add($"@{actualColumnName}", field.Value?.ToString());
+                            
+                            // Preserve numeric types instead of converting to string
+                            var fieldValue = field.Value;
+                            if (fieldValue != null && !string.IsNullOrEmpty(fieldValue.ToString()))
+                            {
+                                // Try to convert to double for SQL real/float compatibility
+                                if (fieldValue is decimal || fieldValue is int || fieldValue is double || fieldValue is float)
+                                {
+                                    // Already numeric - convert to double for SQL compatibility
+                                    masterParams.Add($"@{actualColumnName}", Convert.ToDouble(fieldValue));
+                                }
+                                else if (double.TryParse(fieldValue.ToString(), out var numValue))
+                                {
+                                    // String that looks like a number - convert to double
+                                    masterParams.Add($"@{actualColumnName}", numValue);
+                                }
+                                else
+                                {
+                                    // Keep as string
+                                    masterParams.Add($"@{actualColumnName}", fieldValue.ToString());
+                                }
+                            }
+                            else
+                            {
+                                masterParams.Add($"@{actualColumnName}", null);
+                            }
                         }
                     }
 
@@ -2905,7 +2984,21 @@ public class ExcelService : IExcelService
                             var actualColumnName = itemMasterColumns.First(c => c.Equals(calcField, StringComparison.OrdinalIgnoreCase));
                             insertColumns.Add(actualColumnName);
                             insertValues.Add($"@{actualColumnName}");
-                            masterParams.Add($"@{actualColumnName}", rowData[calcField]?.ToString());
+                            
+                            // Preserve type for calculated fields (they're already double from CalculateItemFields)
+                            var calcValue = rowData[calcField];
+                            if (calcValue is double || calcValue is decimal || calcValue is int || calcValue is float)
+                            {
+                                masterParams.Add($"@{actualColumnName}", Convert.ToDouble(calcValue));
+                            }
+                            else if (calcValue != null && double.TryParse(calcValue.ToString(), out var numVal))
+                            {
+                                masterParams.Add($"@{actualColumnName}", numVal);
+                            }
+                            else
+                            {
+                                masterParams.Add($"@{actualColumnName}", calcValue?.ToString());
+                            }
                         }
                     }
 
@@ -2924,6 +3017,12 @@ public class ExcelService : IExcelService
 
                     var itemIdObj = await _connection.ExecuteScalarAsync<object>(insertMasterSql, masterParams, transaction: transaction);
                     int newItemId = Convert.ToInt32(itemIdObj);
+
+                    // Add ISItemActive to rowData so it gets inserted into ItemMasterDetails
+                    if (!rowData.ContainsKey("ISItemActive"))
+                    {
+                        rowData["ISItemActive"] = "True";
+                    }
 
                     // Insert Details (ItemMasterDetails)
                     // Insert ALL Excel columns into ItemMasterDetails, not just predefined ones
@@ -2953,16 +3052,31 @@ public class ExcelService : IExcelService
                     int detailsInserted = 0;
                     foreach (var field in rowData)
                     {
+                        // Skip HSNCode, ItemName, ItemSubGroupName, and ItemSubGroupID
+                        // ItemSubGroupName is skipped because we insert ItemSubGroupID instead (handled separately below)
+                        // ItemSubGroupID is skipped here to avoid duplicates (handled separately below)
+                        if (field.Key.Equals("HSNCode", StringComparison.OrdinalIgnoreCase) ||
+                            field.Key.Equals("ItemName", StringComparison.OrdinalIgnoreCase) ||
+                            field.Key.Equals("ItemSubGroupName", StringComparison.OrdinalIgnoreCase) ||
+                            field.Key.Equals("ItemSubGroupID", StringComparison.OrdinalIgnoreCase))
+                        {
+                            Console.WriteLine($"[DEBUG] Skipping '{field.Key}' - excluded from ItemMasterDetails");
+                            continue;
+                        }
+
                         var fieldValue = field.Value?.ToString() ?? "";
 
-                        // SPECIAL CASE: For ProductHSNName, insert ProductHSNID instead of the name
+                        // SPECIAL CASE: For ProductHSNName field, insert ProductHSNID value instead of the name
                         if (field.Key.Equals("ProductHSNName", StringComparison.OrdinalIgnoreCase) && productHSNID.HasValue)
                         {
                             fieldValue = productHSNID.Value.ToString();
+                            Console.WriteLine($"[DEBUG] Inserting '{field.Key}' = '{fieldValue}' (ProductHSNID) into ItemMasterDetails");
                         }
-
-                        // Insert ALL columns into ItemMasterDetails (don't skip any)
-                        Console.WriteLine($"[DEBUG] Inserting '{field.Key}' = '{fieldValue}' into ItemMasterDetails");
+                        else
+                        {
+                            // Insert ALL other columns into ItemMasterDetails
+                            Console.WriteLine($"[DEBUG] Inserting '{field.Key}' = '{fieldValue}' into ItemMasterDetails");
+                        }
 
                         await _connection.ExecuteAsync(insertDetailSql, new {
                             ItemID = newItemId,
@@ -2981,6 +3095,33 @@ public class ExcelService : IExcelService
                         }, transaction: transaction);
                         
                         detailsInserted++;
+                    }
+                    
+                    // SPECIAL INSERT: Add ItemSubGroupID if it was looked up from ItemSubGroupName
+                    if (rowData.ContainsKey("ItemSubGroupID"))
+                    {
+                        var itemSubGroupIDValue = rowData["ItemSubGroupID"]?.ToString() ?? "";
+                        if (!string.IsNullOrEmpty(itemSubGroupIDValue))
+                        {
+                            await _connection.ExecuteAsync(insertDetailSql, new {
+                                ItemID = newItemId,
+                                ItemGroupID = itemGroupId,
+                                CompanyID = 2,
+                                UserID = 2,
+                                FYear = "2025-2026",
+                                FieldName = "ItemSubGroupID",
+                                FieldValue = itemSubGroupIDValue,
+                                ParentFieldName = "ItemSubGroupID",
+                                ParentFieldValue = itemSubGroupIDValue,
+                                ParentItemID = 0,
+                                SequenceNo = sequenceNo++,
+                                CreatedDate = DateTime.Now,
+                                CreatedBy = 2
+                            }, transaction: transaction);
+                            
+                            detailsInserted++;
+                            Console.WriteLine($"[DEBUG] Inserted ItemSubGroupID = '{itemSubGroupIDValue}' into ItemMasterDetails");
+                        }
                     }
                     
                     Console.WriteLine($"[DEBUG] Inserted {detailsInserted} records into ItemMasterDetails for ItemID {newItemId}");
@@ -3107,7 +3248,7 @@ public class ExcelService : IExcelService
         {
             if (decimal.TryParse(gsmObj.ToString(), out var gsm) && gsm > 0)
             {
-                rowData["Caliper"] = (gsm / 1000).ToString("0.00");
+                rowData["Caliper"] = Math.Round((double)(gsm / 1000), 2);
             }
         }
         
@@ -3135,24 +3276,107 @@ public class ExcelService : IExcelService
                 decimal.TryParse(unitVal, out var unit) &&
                 len > 0 && wid > 0 && gsm2 > 0 && unit > 0)
             {
-                var wtPerPacking = (len * wid * gsm2 * unit) / 1000000000m;
-                rowData["WtPerPacking"] = wtPerPacking.ToString("0.0000");
+                var wtPerPacking = (double)((len * wid * gsm2 * unit) / 1000000000m);
+                rowData["WtPerPacking"] = Math.Round(wtPerPacking, 4);
             }
         }
         
-        // Calculate ItemName = Quality, GSM, Manufacturer, Finish, ItemSize
-        var quality = GetFieldValueFromDict(rowData, "Quality");
-        var gsmStr = GetFieldValueFromDict(rowData, "GSM");
-        var manufacturer = GetFieldValueFromDict(rowData, "Manufecturer");
-        var finish = GetFieldValueFromDict(rowData, "Finish");
-        var itemSize = GetFieldValueFromDict(rowData, "ItemSize");
+        // Calculate ItemName based on item group type
+        // Check if this is INK & Additives, Reel, or Paper
+        var itemType = GetFieldValueFromDict(rowData, "ItemType");
+        var bf = GetFieldValueFromDict(rowData, "BF");
+        
+        // Check if INK & Additives based on ItemType
+        bool isInkOrAdditives = itemType != null && 
+            (itemType.Equals("INK", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Equals("ADDITIVES", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("INK", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("ADDITIVES", StringComparison.OrdinalIgnoreCase));
+        
+        // Check if Lamination Film based on ItemType
+        bool isLaminationFilm = itemType != null &&
+            (itemType.Equals("LAMINATION FILM", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Equals("LAMINATION", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("LAMINATION", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("FILM", StringComparison.OrdinalIgnoreCase));
+        
+        // Check if Other Material based on ItemType
+        bool isOtherMaterial = itemType != null &&
+            (itemType.Equals("OTHER MATERIAL", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Equals("OTHER MATERIALS", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("OTHER MATERIAL", StringComparison.OrdinalIgnoreCase));
+        
+        bool isReel = !string.IsNullOrEmpty(bf) || 
+                      (itemType != null && itemType.Equals("REEL", StringComparison.OrdinalIgnoreCase));
         
         var parts = new List<string>();
-        if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
-        if (!string.IsNullOrEmpty(gsmStr)) parts.Add($"{gsmStr} GSM");
-        if (!string.IsNullOrEmpty(manufacturer)) parts.Add(manufacturer);
-        if (!string.IsNullOrEmpty(finish)) parts.Add(finish);
-        if (!string.IsNullOrEmpty(itemSize)) parts.Add($"{itemSize} MM");
+        
+        if (isInkOrAdditives)
+        {
+            // INK & Additives ItemName: ItemType, InkColour, PantoneCode
+            var inkColour = GetFieldValueFromDict(rowData, "InkColour");
+            var pantoneCode = GetFieldValueFromDict(rowData, "PantoneCode");
+            
+            if (!string.IsNullOrEmpty(itemType)) parts.Add(itemType);
+            if (!string.IsNullOrEmpty(inkColour)) parts.Add(inkColour);
+            if (!string.IsNullOrEmpty(pantoneCode)) parts.Add(pantoneCode);
+        }
+        else if (isLaminationFilm)
+        {
+            // Lamination Film ItemName: Quality, SizeW, Thickness, Manufacturer
+            var quality = GetFieldValueFromDict(rowData, "Quality");
+            var sizeW = GetFieldValueFromDict(rowData, "SizeW");
+            var thickness = GetFieldValueFromDict(rowData, "Thickness");
+            var manufacturer = GetFieldValueFromDict(rowData, "Manufecturer") ?? GetFieldValueFromDict(rowData, "Manufacturer");
+            
+            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+            if (!string.IsNullOrEmpty(sizeW)) parts.Add(sizeW);
+            if (!string.IsNullOrEmpty(thickness)) parts.Add(thickness);
+            if (!string.IsNullOrEmpty(manufacturer)) parts.Add(manufacturer);
+        }
+        else if (isOtherMaterial)
+        {
+            // Other Material ItemName: Quality only
+            var quality = GetFieldValueFromDict(rowData, "Quality");
+            
+            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+        }
+        else if (isReel)
+        {
+            // Reel ItemName: BF, Quality, GSM, Manufacturer, Finish, SizeW, Caliper
+            var quality = GetFieldValueFromDict(rowData, "Quality");
+            var gsmStr = GetFieldValueFromDict(rowData, "GSM");
+            var manufacturer = GetFieldValueFromDict(rowData, "Manufecturer") ?? GetFieldValueFromDict(rowData, "Manufacturer");
+            var finish = GetFieldValueFromDict(rowData, "Finish");
+            
+            if (!string.IsNullOrEmpty(bf)) parts.Add(bf);
+            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+            if (!string.IsNullOrEmpty(gsmStr)) parts.Add($"{gsmStr} GSM");
+            if (!string.IsNullOrEmpty(manufacturer)) parts.Add(manufacturer);
+            if (!string.IsNullOrEmpty(finish)) parts.Add(finish);
+            
+            var sizeW = GetFieldValueFromDict(rowData, "SizeW");
+            if (!string.IsNullOrEmpty(sizeW)) parts.Add(sizeW);
+            
+            var caliper = GetFieldValueFromDict(rowData, "Caliper");
+            if (!string.IsNullOrEmpty(caliper)) parts.Add(caliper);
+        }
+        else
+        {
+            // Paper ItemName: Quality, GSM, Manufacturer, Finish, ItemSize
+            var quality = GetFieldValueFromDict(rowData, "Quality");
+            var gsmStr = GetFieldValueFromDict(rowData, "GSM");
+            var manufacturer = GetFieldValueFromDict(rowData, "Manufecturer") ?? GetFieldValueFromDict(rowData, "Manufacturer");
+            var finish = GetFieldValueFromDict(rowData, "Finish");
+            
+            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+            if (!string.IsNullOrEmpty(gsmStr)) parts.Add($"{gsmStr} GSM");
+            if (!string.IsNullOrEmpty(manufacturer)) parts.Add(manufacturer);
+            if (!string.IsNullOrEmpty(finish)) parts.Add(finish);
+            
+            var itemSize = GetFieldValueFromDict(rowData, "ItemSize");
+            if (!string.IsNullOrEmpty(itemSize)) parts.Add($"{itemSize} MM");
+        }
         
         if (parts.Any())
         {
@@ -3162,5 +3386,3 @@ public class ExcelService : IExcelService
         return rowData;
     }
 }
-
-
