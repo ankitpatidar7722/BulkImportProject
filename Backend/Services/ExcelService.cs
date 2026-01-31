@@ -2663,8 +2663,9 @@ public class ExcelService : IExcelService
                 // AUTO-CALCULATE: Caliper, ItemSize, WtPerPacking, ItemName
                 rowData = CalculateItemFields(rowData);
 
-                // AUTO-SET ItemType to Item Group Name (e.g., "Paper")
-                if (!string.IsNullOrEmpty(itemGroup.ItemGroupName))
+                // AUTO-SET ItemType to Item Group Name (e.g., "Paper") ONLY if not already provided in Excel
+                var excelItemType = rowData.ContainsKey("ItemType") ? rowData["ItemType"]?.ToString()?.Trim() : null;
+                if (string.IsNullOrEmpty(excelItemType) && !string.IsNullOrEmpty(itemGroup.ItemGroupName))
                 {
                     rowData["ItemType"] = itemGroup.ItemGroupName;
                 }
@@ -3306,6 +3307,32 @@ public class ExcelService : IExcelService
              itemType.Equals("OTHER MATERIALS", StringComparison.OrdinalIgnoreCase) ||
              itemType.Contains("OTHER MATERIAL", StringComparison.OrdinalIgnoreCase));
         
+        // Check if Foil based on ItemType
+        bool isFoil = itemType != null &&
+            (itemType.Equals("FOIL", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("FOIL", StringComparison.OrdinalIgnoreCase));
+        
+        // Check if VARNISHES & COATINGS based on ItemType
+        bool isVarnishesOrCoatings = itemType != null &&
+            (itemType.Equals("VARNISHES", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Equals("COATINGS", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Equals("VARNISHES & COATINGS", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("VARNISH", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("COATING", StringComparison.OrdinalIgnoreCase));
+        
+        // Check if Roll based on ItemType (different from Reel)
+        bool isRoll = itemType != null &&
+            (itemType.Equals("ROLL", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("ROLL", StringComparison.OrdinalIgnoreCase));
+        
+        // Check if Shipper Carton based on ItemType
+        bool isShipperCarton = itemType != null &&
+            (itemType.Equals("SHIPPER CARTON", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Equals("SHIPPER", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Equals("CARTON", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("SHIPPER", StringComparison.OrdinalIgnoreCase) ||
+             itemType.Contains("CARTON", StringComparison.OrdinalIgnoreCase));
+        
         bool isReel = !string.IsNullOrEmpty(bf) || 
                       (itemType != null && itemType.Equals("REEL", StringComparison.OrdinalIgnoreCase));
         
@@ -3340,6 +3367,59 @@ public class ExcelService : IExcelService
             var quality = GetFieldValueFromDict(rowData, "Quality");
             
             if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+        }
+        else if (isFoil)
+        {
+            // Foil ItemName: ManufacturerItemCode, Quality, SizeW
+            var manufacturerItemCode = GetFieldValueFromDict(rowData, "ManufacturerItemCode");
+            var quality = GetFieldValueFromDict(rowData, "Quality");
+            var sizeW = GetFieldValueFromDict(rowData, "SizeW");
+            
+            if (!string.IsNullOrEmpty(manufacturerItemCode)) parts.Add(manufacturerItemCode);
+            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+            if (!string.IsNullOrEmpty(sizeW)) parts.Add(sizeW);
+        }
+        else if (isVarnishesOrCoatings)
+        {
+            // VARNISHES & COATINGS ItemName: ItemType, Quality
+            var quality = GetFieldValueFromDict(rowData, "Quality");
+            
+            if (!string.IsNullOrEmpty(itemType)) parts.Add(itemType);
+            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+        }
+        else if (isRoll)
+        {
+            // Roll ItemName: Quality, GSM, ReleaseGSM, AdhesiveGSM, Manufacturer, SizeW
+            var quality = GetFieldValueFromDict(rowData, "Quality");
+            var gsmStr = GetFieldValueFromDict(rowData, "GSM");
+            var releaseGSM = GetFieldValueFromDict(rowData, "ReleaseGSM");
+            var adhesiveGSM = GetFieldValueFromDict(rowData, "AdhesiveGSM");
+            var manufacturer = GetFieldValueFromDict(rowData, "Manufecturer") ?? GetFieldValueFromDict(rowData, "Manufacturer");
+            var sizeW = GetFieldValueFromDict(rowData, "SizeW");
+            
+            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+            if (!string.IsNullOrEmpty(gsmStr)) parts.Add(gsmStr);
+            if (!string.IsNullOrEmpty(releaseGSM)) parts.Add(releaseGSM);
+            if (!string.IsNullOrEmpty(adhesiveGSM)) parts.Add(adhesiveGSM);
+            if (!string.IsNullOrEmpty(manufacturer)) parts.Add(manufacturer);
+            if (!string.IsNullOrEmpty(sizeW)) parts.Add(sizeW);
+        }
+        else if (isShipperCarton)
+        {
+            // Shipper Carton ItemName: Quality, SizeL, SizeW, SizeH, NoOfPly, ManufacturerItemCode
+            var quality = GetFieldValueFromDict(rowData, "Quality");
+            var sizeL = GetFieldValueFromDict(rowData, "SizeL");
+            var sizeW = GetFieldValueFromDict(rowData, "SizeW");
+            var sizeH = GetFieldValueFromDict(rowData, "SizeH");
+            var noOfPly = GetFieldValueFromDict(rowData, "NoOfPly");
+            var manufacturerItemCode = GetFieldValueFromDict(rowData, "ManufacturerItemCode");
+            
+            if (!string.IsNullOrEmpty(quality)) parts.Add(quality);
+            if (!string.IsNullOrEmpty(sizeL)) parts.Add(sizeL);
+            if (!string.IsNullOrEmpty(sizeW)) parts.Add(sizeW);
+            if (!string.IsNullOrEmpty(sizeH)) parts.Add(sizeH);
+            if (!string.IsNullOrEmpty(noOfPly)) parts.Add(noOfPly);
+            if (!string.IsNullOrEmpty(manufacturerItemCode)) parts.Add(manufacturerItemCode);
         }
         else if (isReel)
         {
