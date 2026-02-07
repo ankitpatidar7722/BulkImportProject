@@ -200,7 +200,7 @@ public class ExcelService : IExcelService
         }
     }
 
-    public async Task<ImportResultDto> ImportExcelAsync(Stream fileStream, string tableName)
+    public async Task<ImportResultDto> ImportExcelAsync(Stream fileStream, string tableName, int? subModuleId = null)
     {
         // Debug: Log the incoming table name
         try 
@@ -240,6 +240,23 @@ public class ExcelService : IExcelService
             else groupId = 1; // Fallback? Or maybe throw error? Let's assume 1.
 
             return await ImportLedgerMasterAsync(fileStream, tableName, groupId);
+        }
+
+        // Tool Master routing - now with subModuleId support
+        if (tableName.Equals("Tool Master", StringComparison.OrdinalIgnoreCase) || 
+            tableName.Equals("ToolMaster", StringComparison.OrdinalIgnoreCase) ||
+            tableName.Contains("Tool", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!subModuleId.HasValue || subModuleId.Value <= 0)
+            {
+                return new ImportResultDto
+                {
+                    Success = false,
+                    ErrorMessages = new List<string> { "Tool Master import requires a valid Tool Group ID. Please select a sub-module." }
+                };
+            }
+
+            return await ImportToolMasterAsync(fileStream, "Tool Master", subModuleId.Value);
         }
 
         var result = new ImportResultDto();
@@ -2536,6 +2553,539 @@ public class ExcelService : IExcelService
                 result.Message = messageBuilder.ToString();
             }
             catch (Exception ex)
+            {
+                transaction.Rollback();
+                result.Success = false;
+                result.Message = $"Database Error: {ex.Message}";
+                result.ErrorMessages.Add(ex.Message);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.ErrorMessages.Add($"System Error: {ex.Message}");
+            return result;
+        }
+    }
+
+    // ==========================================
+    // TOOL MASTER IMPORT METHODS
+    // ==========================================
+
+    public async Task<List<ToolGroupDto>> GetToolGroupsAsync()
+    {
+        await EnsureConnectionOpenAsync();
+        
+        var query = @"
+            SELECT 
+                ToolGroupID,
+                ToolGroupName,
+                ToolGroupNameDisplay
+            FROM ToolGroupMaster
+            WHERE CompanyID = 2
+            AND ISNULL(IsDeletedTransaction, 0) = 0
+            ORDER BY ToolGroupID";
+        
+        var toolGroups = await _connection.QueryAsync<ToolGroupDto>(query);
+        return toolGroups.ToList();
+    }
+
+    private async Task<(string toolGroupPrefix, string toolGroupName, string toolNameFormula, string toolDescriptionFormula)?> GetToolGroupDetailsAsync(int toolGroupId)
+    {
+        await EnsureConnectionOpenAsync();
+        
+        var query = @"
+            SELECT 
+                ISNULL(ToolGroupPrefix, '') as ToolGroupPrefix,
+                ISNULL(ToolGroupName, '') as ToolGroupName,
+                ISNULL(ToolNameFormula, '') as ToolNameFormula,
+                ISNULL(ToolDescriptionFormula, '') as ToolDescriptionFormula
+            FROM ToolGroupMaster
+            WHERE ToolGroupID = @ToolGroupId
+            AND CompanyID = 2
+            AND ISNULL(IsDeletedTransaction, 0) = 0";
+        
+        var result = await _connection.QueryFirstOrDefaultAsync<dynamic>(query, new { ToolGroupId = toolGroupId });
+        
+        if (result == null)
+            return null;
+            
+        return (result.ToolGroupPrefix, result.ToolGroupName, result.ToolNameFormula, result.ToolDescriptionFormula);
+    }
+
+    private async Task<List<MasterColumnDto>> GetToolGroupColumnsAsync(int toolGroupId)
+    {
+        await EnsureConnectionOpenAsync();
+        
+        var query = @"
+            SELECT 
+                FieldName,
+                ISNULL(FieldDataType, 'string') as DataType,
+                CAST(ISNULL(IsRequiredFieldValidator, 0) AS BIT) as IsRequired,
+                ISNULL(FieldDrawSequence, 0) as SequenceNo,
+                ISNULL(UnitMeasurement, '') as UnitMeasurement
+            FROM ToolGroupFieldMaster
+            WHERE ToolGroupID = @ToolGroupId
+            AND CompanyID = 2
+            AND ISNULL(IsDeletedTransaction, 0) = 0
+            ORDER BY FieldDrawSequence";
+        
+        var columns = await _connection.QueryAsync(query, new { ToolGroupId = toolGroupId });
+        
+        var result = new List<MasterColumnDto>();
+        foreach (var col in columns)
+        {
+            var dict = col as IDictionary<string, object>;
+            if (dict != null)
+            {
+                result.Add(new MasterColumnDto
+                {
+                    FieldName = dict["FieldName"]?.ToString() ?? "",
+                    DataType = dict["DataType"]?.ToString() ?? "string",
+                    IsRequired = dict["IsRequired"] != null && Convert.ToBoolean(dict["IsRequired"]),
+                    SequenceNo = dict["SequenceNo"] != null ? Convert.ToInt32(dict["SequenceNo"]) : 0
+                });
+            }
+        }
+        
+        return result;
+    }
+
+    private async Task<int?> GetProductHSNIdAsync(string hsnCode, string productHSNName)
+    {
+        await EnsureConnectionOpenAsync();
+        
+        var query = @"
+            SELECT ProductHSNID 
+            FROM ProductHSNMaster
+            WHERE HSNCode = @HSNCode 
+            AND ProductHSNName = @ProductHSNName
+            AND ISNULL(IsDeletedTransaction, 0) = 0";
+        
+        var hsnId = await _connection.QueryFirstOrDefaultAsync<int?>(query, new
+        {
+            HSNCode = hsnCode,
+            ProductHSNName = productHSNName
+        });
+        
+        return hsnId;
+    }
+
+    private string GenerateDefaultFYear(DateTime createdDate)
+    {
+        // Financial year logic: April to March
+        // If current month is April (4) or later, FYear = CurrentYear-NextYear
+        // If current month is before April, FYear = PreviousYear-CurrentYear
+        
+        int currentYear = createdDate.Year;
+        int previousYear = currentYear - 1;
+        int nextYear = currentYear + 1;
+        
+        if (createdDate.Month >= 4) // April or later
+        {
+            return $"{currentYear}-{nextYear}";
+        }
+        else // January to March
+        {
+            return $"{previousYear}-{currentYear}";
+        }
+    }
+
+    public async Task<ImportResultDto> ImportToolMasterAsync(Stream fileStream, string moduleName, int toolGroupId)
+    {
+        var result = new ImportResultDto
+        {
+            Success = false,
+            Message = "",
+            ImportedRows = 0,
+            TotalRows = 0,
+            ErrorMessages = new List<string>()
+        };
+
+        try
+        {
+            // 1. Get Tool Group Details (prefix, formulas)
+            var toolGroupDetails = await GetToolGroupDetailsAsync(toolGroupId);
+            if (toolGroupDetails == null)
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("Invalid Tool Group ID.");
+                return result;
+            }
+
+            var (toolGroupPrefix, toolGroupName, toolNameFormula, toolDescriptionFormula) = toolGroupDetails.Value;
+
+            // 2. Get Tool Group Field Definitions
+            var masterColumns = await GetToolGroupColumnsAsync(toolGroupId);
+
+            if (!masterColumns.Any())
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("No field definitions found for this Tool Group.");
+                return result;
+            }
+
+            // 3. Read and Validate Excel
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+
+            using var package = new ExcelPackage(memoryStream);
+            var worksheet = package.Workbook.Worksheets[0];
+
+            if (worksheet.Dimension == null)
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("The Excel file is empty.");
+                return result;
+            }
+
+            // 4. Read Excel Headers and Data
+            var headerMap = new Dictionary<string, int>();
+            for (int col = 1; col <= worksheet.Dimension.Columns; col++)
+            {
+                var headerValue = worksheet.Cells[1, col].Value?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(headerValue))
+                {
+                    headerMap[headerValue] = col;
+                }
+            }
+
+            // Helper function to get cell value
+            string? GetValue(string columnName, int row)
+            {
+                if (headerMap.ContainsKey(columnName))
+                {
+                    return worksheet.Cells[row, headerMap[columnName]].Value?.ToString()?.Trim();
+                }
+                return null;
+            }
+
+            // 5. Process Rows
+            var validRows = new List<Dictionary<string, object?>>();
+            
+            for (int row = 2; row <= worksheet.Dimension.Rows; row++)
+            {
+                // Check if row is empty
+                bool isRowEmpty = true;
+                for (int c = 1; c <= worksheet.Dimension.Columns; c++)
+                {
+                    if (!string.IsNullOrWhiteSpace(worksheet.Cells[row, c].Value?.ToString()))
+                    {
+                        isRowEmpty = false;
+                        break;
+                    }
+                }
+                if (isRowEmpty) continue;
+
+                // Read ALL Excel columns first (to capture custom fields)
+                var rowData = new Dictionary<string, object?>();
+                foreach (var header in headerMap.Keys)
+                {
+                    var value = GetValue(header, row);
+                    rowData[header] = value;
+                }
+
+                // Validate required fields from master columns
+                var rowErrors = new List<string>();
+                foreach (var masterCol in masterColumns)
+                {
+                    // Skip fields stored in ToolMaster table OR looked up dynamically
+                    if (masterCol.FieldName.Equals("ToolRefCode", StringComparison.OrdinalIgnoreCase) ||
+                        masterCol.FieldName.Equals("ToolName", StringComparison.OrdinalIgnoreCase) ||
+                        masterCol.FieldName.Equals("ProductHSNID", StringComparison.OrdinalIgnoreCase) ||
+                        masterCol.FieldName.Equals("HSNCode", StringComparison.OrdinalIgnoreCase) ||
+                        masterCol.FieldName.Equals("ProductHSNName", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    
+                    // Normalize field name: "Ledger Name" or "ClientName" -> "LedgerName"
+                    var normalizedFieldName = masterCol.FieldName;
+                    if (masterCol.FieldName.Equals("Ledger Name", StringComparison.OrdinalIgnoreCase) ||
+                        masterCol.FieldName.Equals("ClientName", StringComparison.OrdinalIgnoreCase))
+                    {
+                        normalizedFieldName = "LedgerName";
+                    }
+                    
+                    var value = GetValue(masterCol.FieldName, row);
+                    if (masterCol.IsRequired && string.IsNullOrEmpty(value))
+                    {
+                        rowErrors.Add($"Row {row}: {normalizedFieldName} is required.");
+                    }
+                    // Update rowData with normalized field name
+                    rowData[normalizedFieldName] = value;
+                }
+
+                // NEW: Validate HSNCode and ProductHSNName are provided
+                var hsnCode = GetValue("HSNCode", row);
+                var productHSNName = GetValue("ProductHSNName", row);
+
+                if (string.IsNullOrEmpty(hsnCode))
+                {
+                    rowErrors.Add($"Row {row}: HSNCode is required.");
+                }
+                if (string.IsNullOrEmpty(productHSNName))
+                {
+                    rowErrors.Add($"Row {row}: ProductHSNName is required.");
+                }
+
+                // NEW: Lookup ProductHSNId dynamically and store for both ToolMaster and ToolMasterDetails
+                int? resolvedProductHSNId = null;
+                if (!string.IsNullOrEmpty(hsnCode) && !string.IsNullOrEmpty(productHSNName))
+                {
+                    var productHSNId = await GetProductHSNIdAsync(hsnCode, productHSNName);
+                    if (productHSNId == null)
+                    {
+                        rowErrors.Add($"Row {row}: No matching HSN found for HSNCode '{hsnCode}' and ProductHSNName '{productHSNName}'.");
+                    }
+                    else
+                    {
+                        // Store resolved ProductHSNId for ToolMaster
+                        resolvedProductHSNId = productHSNId;
+                        rowData["__RESOLVED_PRODUCTHSNID__"] = productHSNId.ToString();
+                        
+                        // Store ProductHSNID value in both ProductHSNID and ProductHSNName fields for ToolMasterDetails
+                        rowData["ProductHSNID"] = productHSNId.ToString();
+                        rowData["ProductHSNName"] = productHSNId.ToString(); // ProductHSNName field stores ProductHSNID value
+                    }
+                }
+
+                if (rowErrors.Any())
+                {
+                    result.ErrorMessages.AddRange(rowErrors);
+                    continue;
+                }
+
+                validRows.Add(rowData);
+            }
+
+            result.TotalRows = validRows.Count;
+
+            if (!validRows.Any())
+            {
+                result.Success = false;
+                result.ErrorMessages.Add("No valid rows found in the Excel file.");
+                return result;
+            }
+
+            // 6. Insert into Database
+            await EnsureConnectionOpenAsync();
+            using var transaction = _connection.BeginTransaction();
+
+            try
+            {
+                // Get max ToolCode number for this prefix
+                var maxToolNoQuery = @"
+                    SELECT ISNULL(MAX(MaxToolNo), 0) 
+                    FROM ToolMaster 
+                    WHERE Prefix = @Prefix 
+                    AND CompanyID = 2 
+                    AND ISNULL(IsDeletedTransaction, 0) = 0";
+
+                var maxToolNo = await _connection.ExecuteScalarAsync<int>(maxToolNoQuery, new { Prefix = toolGroupPrefix }, transaction: transaction);
+
+                // Generate default FYear if not provided in Excel
+                var createdDate = DateTime.Now;
+                var defaultFYear = GenerateDefaultFYear(createdDate);
+
+                foreach (var rowData in validRows)
+                {
+                    // Generate Tool Code
+                    maxToolNo++;
+                    var toolCode = $"{toolGroupPrefix}{maxToolNo:D6}";
+
+                    // Get ProductHSNID (resolved during validation using special key)
+                    var productHSNId = 0;
+                    if (rowData.ContainsKey("__RESOLVED_PRODUCTHSNID__") && int.TryParse(rowData["__RESOLVED_PRODUCTHSNID__"]?.ToString(), out var hsnId))
+                    {
+                        productHSNId = hsnId;
+                    }
+
+                    // Build ToolName dynamically based on formula
+                    var toolName = "";
+                    var toolDescription = "";
+                    
+                    if (!string.IsNullOrEmpty(toolNameFormula))
+                    {
+                        var nameBuilders = new List<string>();
+                        foreach (var masterCol in masterColumns)
+                        {
+                            if (toolNameFormula.Contains(masterCol.FieldName))
+                            {
+                                var fieldValue = rowData.ContainsKey(masterCol.FieldName) ? rowData[masterCol.FieldName]?.ToString() : "";
+                                if (!string.IsNullOrEmpty(fieldValue))
+                                {
+                                    nameBuilders.Add(fieldValue);
+                                }
+                            }
+                        }
+                        toolName = string.Join(", ", nameBuilders);
+                    }
+
+                    // Check if ToolName is provided directly in Excel
+                    if (rowData.ContainsKey("ToolName") && !string.IsNullOrEmpty(rowData["ToolName"]?.ToString()))
+                    {
+                        toolName = rowData["ToolName"]?.ToString() ?? "";
+                    }
+
+                    // Build ToolDescription dynamically based on formula
+                    if (!string.IsNullOrEmpty(toolDescriptionFormula))
+                    {
+                        var descBuilders = new List<string>();
+                        foreach (var masterCol in masterColumns)
+                        {
+                            if (toolDescriptionFormula.Contains(masterCol.FieldName))
+                            {
+                                var fieldValue = rowData.ContainsKey(masterCol.FieldName) ? rowData[masterCol.FieldName]?.ToString() : "";
+                                if (!string.IsNullOrEmpty(fieldValue))
+                                {
+                                    descBuilders.Add($"{masterCol.FieldName}:{fieldValue}");
+                                }
+                            }
+                        }
+                        toolDescription = string.Join(", ", descBuilders);
+                    }
+
+                    // Insert into ToolMaster
+                    var insertToolMasterSql = @"
+                        INSERT INTO ToolMaster (
+                            ToolGroupID, ToolCode, MaxToolNo, ToolName, ToolDescription, ToolType, Prefix,
+                            ProductHSNID, IsToolActive, CompanyID, UserID, CreatedDate, CreatedBy
+                        )
+                        VALUES (
+                            @ToolGroupID, @ToolCode, @MaxToolNo, @ToolName, @ToolDescription, @ToolType, @Prefix,
+                            @ProductHSNID, 1, 2, 2, GETDATE(), 2
+                        );
+                        SELECT CAST(SCOPE_IDENTITY() as int)";
+
+                    var newToolId = await _connection.ExecuteScalarAsync<int>(insertToolMasterSql, new
+                    {
+                        ToolGroupID = toolGroupId,
+                        ToolCode = toolCode,
+                        MaxToolNo = maxToolNo,
+                        ToolName = toolName,
+                        ToolDescription = toolDescription,
+                        ToolType = toolGroupName, // Sub-module name (e.g., "DIE", "EMBOSS")
+                        Prefix = toolGroupPrefix,
+                        ProductHSNID = productHSNId
+                    }, transaction: transaction);
+
+                    // Insert into ToolMasterDetails
+                    var insertDetailSql = @"
+                        INSERT INTO ToolMasterDetails (
+                            ToolID, ToolGroupID, CompanyID, UserID,
+                            FieldName, FieldValue, ParentFieldName, ParentFieldValue, ParentToolID,
+                            SequenceNo, CreatedDate, CreatedBy, ModifiedDate, ModifiedBy
+                        )
+                        VALUES (
+                            @ToolID, @ToolGroupID, @CompanyID, @UserID,
+                            @FieldName, @FieldValue, @ParentFieldName, @ParentFieldValue, @ParentToolID,
+                            @SequenceNo, @CreatedDate, @CreatedBy, @ModifiedDate, @ModifiedBy
+                        )";
+
+                    int sequenceNo = 1;
+                    var insertedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    // Determine FYear: use from Excel if provided, otherwise use generated default
+                    var fYear = defaultFYear;
+                    if (rowData.ContainsKey("FYear") && !string.IsNullOrEmpty(rowData["FYear"]?.ToString()))
+                    {
+                        fYear = rowData["FYear"]?.ToString() ?? defaultFYear;
+                    }
+
+                    // STEP 1: Insert master column fields
+                    foreach (var masterCol in masterColumns)
+                    {
+                        // Skip fields stored in ToolMaster table only
+                        if (masterCol.FieldName.Equals("HSNCode", StringComparison.OrdinalIgnoreCase) ||
+                            masterCol.FieldName.Equals("ToolRefCode", StringComparison.OrdinalIgnoreCase) ||
+                            masterCol.FieldName.Equals("ToolName", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        var fieldValue = rowData.ContainsKey(masterCol.FieldName) ? rowData[masterCol.FieldName]?.ToString() : "";
+
+                        // Skip empty non-required fields
+                        if (string.IsNullOrEmpty(fieldValue))
+                        {
+                            continue;
+                        }
+
+                        await _connection.ExecuteAsync(insertDetailSql, new
+                        {
+                            ToolID = newToolId,
+                            ToolGroupID = toolGroupId,
+                            CompanyID = 2,
+                            UserID = 2,
+                            FieldName = masterCol.FieldName,
+                            FieldValue = fieldValue ?? "",
+                            ParentFieldName = masterCol.FieldName,
+                            ParentFieldValue = fieldValue ?? "",
+                            ParentToolID = 0,
+                            SequenceNo = sequenceNo++,
+                            CreatedDate = DateTime.Now,
+                            CreatedBy = 2,
+                            ModifiedDate = DateTime.Now,
+                            ModifiedBy = 2
+                        }, transaction: transaction);
+
+                        insertedFields.Add(masterCol.FieldName);
+                    }
+
+                    // STEP 2: Insert any additional Excel fields not in masterColumns
+                    foreach (var field in rowData)
+                    {
+                        // Skip already inserted fields
+                        if (insertedFields.Contains(field.Key))
+                        {
+                            continue;
+                        }
+
+                        // Skip fields stored in ToolMaster table or internal keys
+                        if (field.Key.Equals("HSNCode", StringComparison.OrdinalIgnoreCase) ||
+                            field.Key.Equals("__RESOLVED_PRODUCTHSNID__", StringComparison.OrdinalIgnoreCase) ||
+                            field.Key.Equals("ToolRefCode", StringComparison.OrdinalIgnoreCase) ||
+                            field.Key.Equals("ToolName", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        var fieldValue = field.Value?.ToString();
+                        if (string.IsNullOrEmpty(fieldValue))
+                        {
+                            continue;
+                        }
+
+                        await _connection.ExecuteAsync(insertDetailSql, new
+                        {
+                            ToolID = newToolId,
+                            ToolGroupID = toolGroupId,
+                            CompanyID = 2,
+                            UserID = 2,
+                            FieldName = field.Key,
+                            FieldValue = fieldValue ?? "",
+                            ParentFieldName = field.Key,
+                            ParentFieldValue = fieldValue ?? "",
+                            ParentToolID = 0,
+                            SequenceNo = sequenceNo++,
+                            CreatedDate = DateTime.Now,
+                            CreatedBy = 2,
+                            ModifiedDate = DateTime.Now,
+                            ModifiedBy = 2
+                        }, transaction: transaction);
+                    }
+                }
+
+                transaction.Commit();
+                result.Success = true;
+                result.ImportedRows = validRows.Count;
+                result.Message = $"Successfully imported {validRows.Count} tool(s).";
+            }
+            catch (SqlException ex)
             {
                 transaction.Rollback();
                 result.Success = false;

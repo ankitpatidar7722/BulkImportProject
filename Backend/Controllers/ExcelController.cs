@@ -46,7 +46,7 @@ public class ExcelController : ControllerBase
     }
 
     [HttpPost("Import")]
-    public async Task<IActionResult> ImportExcel(IFormFile file, [FromQuery] string tableName)
+    public async Task<IActionResult> ImportExcel(IFormFile file, [FromQuery] string tableName, [FromQuery] int? subModuleId = null)
     {
         try
         {
@@ -68,7 +68,7 @@ public class ExcelController : ControllerBase
             }
 
             using var stream = file.OpenReadStream();
-            var result = await _excelService.ImportExcelAsync(stream, tableName);
+            var result = await _excelService.ImportExcelAsync(stream, tableName, subModuleId);
 
             return Ok(result);
         }
@@ -207,6 +207,59 @@ public class ExcelController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error importing item data");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    // ==========================================
+    // TOOL MASTER ENDPOINTS
+    // ==========================================
+
+    [HttpGet("ToolGroups")]
+    public async Task<IActionResult> GetToolGroups()
+    {
+        try
+        {
+            var toolGroups = await _excelService.GetToolGroupsAsync();
+            return Ok(toolGroups);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching tool groups");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("ImportTool")]
+    public async Task<IActionResult> ImportToolMaster(IFormFile file, [FromQuery] int toolGroupId)
+    {
+        try
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(new { error = "No file uploaded." });
+            }
+
+            if (toolGroupId <= 0)
+            {
+                return BadRequest(new { error = "Valid Tool Group ID is required." });
+            }
+
+            // Validate file extension
+            var extension = Path.GetExtension(file.FileName).ToLower();
+            if (extension != ".xlsx")
+            {
+                return BadRequest(new { error = "Only .xlsx Excel files are supported." });
+            }
+
+            using var stream = file.OpenReadStream();
+            var result = await _excelService.ImportToolMasterAsync(stream, "Tool Master", toolGroupId);
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error importing tool data");
             return StatusCode(500, new { error = ex.Message });
         }
     }

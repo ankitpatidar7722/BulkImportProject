@@ -84,11 +84,16 @@ export const previewExcel = async (file: File): Promise<ExcelPreviewDto> => {
     return response.data;
 };
 
-export const importExcel = async (file: File, tableName: string): Promise<ImportResultDto> => {
+export const importExcel = async (file: File, tableName: string, subModuleId?: number): Promise<ImportResultDto> => {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await api.post(`/excel/Import?tableName=${tableName}`, formData, {
+    let url = `/excel/Import?tableName=${tableName}`;
+    if (subModuleId !== undefined && subModuleId > 0) {
+        url += `&subModuleId=${subModuleId}`;
+    }
+
+    const response = await api.post(url, formData, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
@@ -167,27 +172,166 @@ export const importItemMaster = async (file: File, itemGroupId: number): Promise
 };
 
 export interface CompanyDto {
-
     companyId: number;
+    // 🏢 1. Company Basic Information
     companyName: string;
+    tallyCompanyName?: string;
+    productionUnitName?: string;
+    productionUnitAddress?: string;
     address: string;
+    address1?: string;
+    address2?: string;
+    address3?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
+    contactNO?: string;
+    mobileNO?: string;
     phone: string;
     email: string;
     website: string;
-    gstin: string;
+    concerningPerson?: string;
+    companyStartDate?: string;
     isActive: boolean;
+    lastInvoiceDate?: string;
+
+    // 🧾 2. Statutory & Tax Information
+    gstin: string;
+    pan?: string;
+    cinNo?: string;
+    iecNo?: string;
+    importExportCode?: string;
+    stateTinNo?: string;
+    msmeno?: string;
+    isSalesTax: boolean;
     isGstApplicable: boolean;
+    isVatApplicable: boolean;
     isEinvoiceApplicable: boolean;
-    isInternalApprovalRequired: boolean;
+    defaultTaxLedgerTypeName?: string;
+    taxApplicableBranchWise: boolean;
+
+    // 🏦 3. Bank & Payment Information
+    bankDetails?: string;
+    cashAgainstDocumentsBankDetails?: string;
+
+    // 🔐 4. Approval & Workflow Settings
     isRequisitionApproval: boolean;
     isPOApprovalRequired: boolean;
     isInvoiceApprovalRequired: boolean;
     isGRNApprovalRequired: boolean;
-    jobScheduleReleaseRequired: boolean;
     isSalesOrderApprovalRequired: boolean;
     isJobReleaseFeatureRequired: boolean;
-    showPlanUptoWastagePerc: boolean;
+    isInternalApprovalRequired: boolean;
     byPassCostApproval: boolean;
+    byPassInventoryForProduction: boolean;
+    jobReleasedChecklistFeature: boolean;
+    jobScheduleReleaseRequired: boolean;
+
+    // ⚙️ 5. Domain / Module Enable Settings
+    flexoDomainEnable?: boolean;
+    offsetDomainEnable?: boolean;
+    corrugationDomainEnable?: boolean;
+    rotoDomainEnable?: boolean;
+    bookPlanningFeatureEnable?: boolean;
+    rigidBoxPlanningFeatureEnable?: boolean;
+    shipperPlanningFeatureEnable?: boolean;
+    isProductCatalogCreated?: boolean;
+    isSupplierItemAllocationRequired?: boolean;
+
+    // 🧮 6. Estimation & Calculation Settings
+    costEstimationMethodType?: string;
+    estimationRoundOffDecimalPlace?: number;
+    purchaseRoundOffDecimalPlace?: number;
+    invoiceRoundOffDecimalPlace?: number;
+    estimationPerUnitCostDecimalPlace?: number;
+    roundOffImpressionValue?: number;
+    autoRoundOffNotApplicable?: boolean;
+    wtCalculateOnEstimation?: boolean;
+    showPlanUptoWastagePerc: boolean;
+    isWastageAddInPrintingRate?: boolean;
+    is_Book_Half_Form_Wastage?: boolean;
+
+    // 🖨️ 7. Printing / RDLC Settings
+    invoicePrintRDLC?: string;
+    packingSlipPrintRDLC?: string;
+    challanPrintRDLC?: string;
+    pwoPrintRDLC?: string;
+    salesReturnPrintRDLC?: string;
+    coaPrintRDLC?: string;
+    outSourceChallanRDLC?: string;
+    pwoFlexoPrintRDLC?: string;
+    pwoGangPrintRDLC?: string;
+    qcAndPackingSlip?: string;
+    itemSalesOrderBookingPrint?: string;
+    unitwisePrintoutSetting?: boolean;
+    fastInvoicePrint?: boolean;
+    fastEInvoicePrint?: boolean;
+
+    // 🏭 8. Production Configuration
+    manualProductionEntryTime?: string;
+    productionEntryBackDay?: number;
+    productionUnitID?: number;
+    generateVoucherNoByProductionUnit?: boolean;
+    materialConsumptionDetailsFlage?: boolean;
+    bufferGSMMinus?: number;
+    bufferGSMPlus?: number;
+    bufferSizeMinus?: number;
+    bufferSizePlus?: number;
+
+    // 🌐 9. API & Integration Settings
+    apiBaseURL?: string;
+    apiAuthenticationURL?: string;
+    apiClientID?: string;
+    apiClientSecretID?: string;
+    apiIntegrationRequired?: boolean;
+    indusAPIAuthToken?: string;
+    clientAPIAuthToken?: string;
+    indusAPIBaseUrl?: string;
+    clientAPIBaseUrl?: string;
+    indusTokenAuthAPI?: string;
+    clientTokenAuthAPI?: string;
+    indusMailAPIBaseUrl?: string;
+    apiBasicAuthUserName?: string;
+    apiBasicAuthPassword?: string;
+    integrationType?: string;
+    logoutPage?: string;
+    desktopConnString?: string;
+    applicationConfiguration?: string;
+    companyStaticIP?: string;
+
+    // 🕒 11. Time & System Settings
+    timeZone?: string;
+    duration?: string;
+    end_time?: string;
+    lastShownTime?: string;
+    messageShow?: boolean;
+    time?: string;
+
+    // 🔐 12. Security & OTP Settings
+    otpVerificationFeatureEnabled?: boolean;
+    otpVerificationExcludedDevices?: string;
+    multipleFYearNotRequired?: boolean;
+
+    // 🏷️ 13. Prefix & Reference Settings
+    refCompanyCode?: string;
+    refSalesOfficeCode?: string;
+    isotpRequired?: boolean;
+
+    // 💱 14. Currency Settings
+    currencyHeadName?: string;
+    currencyChildName?: string;
+    currencyCode?: string;
+    currencySymboliconRef?: string;
+
+    // 📝 15. Miscellaneous / Other Settings
+    fax?: string;
+    backupPath?: string;
+    description?: string;
+    isInvoicePrintProductWise?: boolean;
+    isInvoiceBlockFeatureRequired?: boolean;
+    purchaseTolerance?: number;
+    isDeletedTransaction: boolean;
 }
 
 export const getCompany = async (): Promise<CompanyDto> => {

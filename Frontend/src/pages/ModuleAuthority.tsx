@@ -9,13 +9,9 @@ import DataGrid, {
     Grouping,
     GroupPanel,
     Editing,
-    ColumnChooser,
-    Toolbar,
-    Item
+    ColumnChooser
 } from 'devextreme-react/data-grid';
 import { Popup } from 'devextreme-react/popup';
-import { Button } from 'devextreme-react/button';
-import { Form, SimpleItem, Label } from 'devextreme-react/form';
 import SelectBox from 'devextreme-react/select-box';
 import { getAllModules, createModule, updateModule, deleteModule, getModuleHeads, ModuleDto } from '../services/api';
 import toast from 'react-hot-toast';
@@ -57,11 +53,6 @@ const ModuleAuthority: React.FC = () => {
                 }
             }
         });
-    };
-
-    const onRowInserting = async (e: any) => {
-        // Prevent default grid insertion, handle via Popup
-        e.cancel = true;
     };
 
     // We use the grid's built-in edit button to trigger our custom popup

@@ -8,12 +8,9 @@ import {
     importLedger,
     importItemMaster,
     getItemGroups,
-    getItemMasterColumns,
     ModuleDto,
     ExcelPreviewDto,
-    MasterColumnDto,
-    ItemGroupDto,
-    getMasterColumns
+    ItemGroupDto
 } from '../services/api';
 
 const ImportMaster: React.FC = () => {
@@ -32,7 +29,6 @@ const ImportMaster: React.FC = () => {
 
     // Ledger-specific states
     const [selectedLedgerGroup, setSelectedLedgerGroup] = useState<number>(0);
-    const [masterColumns, setMasterColumns] = useState<MasterColumnDto[]>([]);
     const [isLedgerMode, setIsLedgerMode] = useState(false);
     const [isFileUploadEnabled, setIsFileUploadEnabled] = useState(false);
     const [showSubModuleDropdown, setShowSubModuleDropdown] = useState(true);
@@ -96,7 +92,6 @@ const ImportMaster: React.FC = () => {
             setIsLedgerMode(true);
             setIsItemMode(false);
             setSelectedLedgerGroup(0);
-            setMasterColumns([]);
         } else if (module && (module.moduleName === 'ItemMaster' || module.moduleDisplayName?.toLowerCase().includes('item'))) {
             setIsItemMode(true);
             setIsLedgerMode(false);
@@ -110,6 +105,10 @@ const ImportMaster: React.FC = () => {
                 toast.error('Failed to fetch item groups');
                 console.error(error);
             }
+        } else if (module && (module.moduleName === 'ToolMaster' || module.moduleDisplayName?.toLowerCase().includes('tool master'))) {
+            // Tool Master mode - use generic sub-module dropdown
+            setIsLedgerMode(false);
+            setIsItemMode(false);
         } else {
             setIsLedgerMode(false);
             setIsItemMode(false);
@@ -153,25 +152,9 @@ const ImportMaster: React.FC = () => {
         setSelectedLedgerGroup(groupId);
         setPreviewData(null);
         setIsPreviewShown(false);
-        setMasterColumns([]);
 
         if (groupId > 0) {
             setIsFileUploadEnabled(true); // Enable file upload when ledger group is selected
-            try {
-                const columns = await getMasterColumns(groupId);
-                console.log('Master Columns:', columns);
-                setMasterColumns(columns);
-                if (columns.length > 0) {
-                    toast.success(`Loaded ${columns.length} column definitions`);
-                } else {
-                    toast('No column definitions found. You can import any Excel columns.', { icon: 'ℹ️' });
-                }
-            } catch (error: any) {
-                console.error('Failed to fetch master columns', error);
-                // Don't show error - just allow import with any columns
-                setMasterColumns([]);
-                toast('No column definitions found. You can import any Excel columns.', { icon: 'ℹ️' });
-            }
         } else {
             setIsFileUploadEnabled(false); // Disable file upload if no ledger group selected
         }
@@ -319,7 +302,19 @@ const ImportMaster: React.FC = () => {
 
             try {
                 const selectedModuleData = modules.find(m => m.moduleId.toString() === selectedModule);
-                const result = await importExcel(uploadedFile, selectedModuleData?.moduleName || '');
+                const moduleName = selectedModuleData?.moduleName || '';
+
+                // Check if Tool Master and pass subModuleId
+                const isToolMaster = moduleName === 'ToolMaster' || selectedModuleData?.moduleDisplayName?.toLowerCase().includes('tool master');
+
+                if (isToolMaster && !selectedSubModule) {
+                    toast.error('Please select a Tool Group');
+                    setIsLoading(false);
+                    return;
+                }
+
+                const subModuleId = isToolMaster && selectedSubModule ? parseInt(selectedSubModule) : undefined;
+                const result = await importExcel(uploadedFile, moduleName, subModuleId);
 
                 if (result.success) {
                     toast.success(result.message);
