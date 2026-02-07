@@ -1923,9 +1923,18 @@ public class ExcelService : IExcelService
                 var rowData = new Dictionary<string, object?>();
                 var rowErrors = new List<string>();
 
+                // CRITICAL FIX: Always read ALL Excel columns first
+                // This ensures custom fields like RefCode are captured
+                foreach (var header in headerMap.Keys)
+                {
+                    var value = GetValue(header, row);
+                    rowData[header] = value;
+                }
+
+                // Then perform validation if masterColumns are defined
                 if (masterColumns.Any())
                 {
-                    // Use master column definitions if available
+                    // Validate required fields from master column definitions
                     foreach (var masterCol in masterColumns)
                     {
                         var value = GetValue(masterCol.FieldName, row);
@@ -1935,17 +1944,9 @@ public class ExcelService : IExcelService
                         {
                             rowErrors.Add($"Row {row}: {masterCol.FieldName} is required.");
                         }
-
+                        
+                        // Update rowData with validated value (in case header name differs)
                         rowData[masterCol.FieldName] = value;
-                    }
-                }
-                else
-                {
-                    // No master columns defined - use all Excel columns
-                    foreach (var header in headerMap.Keys)
-                    {
-                        var value = GetValue(header, row);
-                        rowData[header] = value;
                     }
                 }
 
@@ -2335,7 +2336,9 @@ public class ExcelService : IExcelService
 
                     if (masterColumns.Any())
                     {
-                        // Use master column definitions
+                        // STEP 1: Use master column definitions first
+                        var insertedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        
                         foreach (var masterCol in masterColumns)
                         {
                             var fieldValue = rowData.ContainsKey(masterCol.FieldName) ? rowData[masterCol.FieldName]?.ToString() : "";
@@ -2361,7 +2364,59 @@ public class ExcelService : IExcelService
                                 CreatedDate = DateTime.Now,
                                 CreatedBy = 2
                             }, transaction: transaction);
+                            
+                            // Track inserted fields
+                            insertedFields.Add(masterCol.FieldName);
                         }
+                        
+                        // STEP 2: Insert any additional fields from Excel that weren't in masterColumns
+                        // This ensures fields like RefCode, custom columns, etc. are saved
+                        Console.WriteLine($"[DEBUG] Starting STEP 2 - Processing additional Excel fields for LedgerID={newLedgerId}");
+                        Console.WriteLine($"[DEBUG] Total fields in rowData: {rowData.Count}");
+                        Console.WriteLine($"[DEBUG] Already inserted via masterColumns: {string.Join(", ", insertedFields)}");
+                        
+                        foreach (var field in rowData)
+                        {
+                            Console.WriteLine($"[DEBUG] Checking field: '{field.Key}' with value: '{field.Value}'");
+                            
+                            // Skip if already inserted via masterColumns
+                            if (insertedFields.Contains(field.Key))
+                            {
+                                Console.WriteLine($"[DEBUG] >>> Skipped '{field.Key}' - already inserted via masterColumns");
+                                continue;
+                            }
+                            
+                            var fieldValue = field.Value?.ToString();
+
+                            // Skip empty fields
+                            if (string.IsNullOrEmpty(fieldValue))
+                            {
+                                Console.WriteLine($"[DEBUG] >>> Skipped '{field.Key}' - value is null or empty");
+                                continue;
+                            }
+
+                            Console.WriteLine($"[DEBUG] >>> Inserting '{field.Key}' = '{fieldValue}' into LedgerMasterDetails");
+                            
+                            await _connection.ExecuteAsync(insertDetailSql, new {
+                                LedgerID = newLedgerId,
+                                LedgerGroupID = ledgerGroupId,
+                                CompanyID = 2,
+                                UserID = 2,
+                                FYear = "2025-2026",
+                                FieldName = field.Key,
+                                FieldValue = fieldValue ?? "",
+                                ParentFieldName = field.Key,
+                                ParentFieldValue = fieldValue ?? "",
+                                ParentLedgerID = 0,
+                                SequenceNo = sequenceNo++,
+                                CreatedDate = DateTime.Now,
+                                CreatedBy = 2
+                            }, transaction: transaction);
+                            
+                            Console.WriteLine($"[DEBUG] >>> Successfully inserted '{field.Key}'");
+                        }
+                        
+                        Console.WriteLine($"[DEBUG] Completed STEP 2 - Additional field processing");
                     }
                     else
                     {
@@ -2392,6 +2447,69 @@ public class ExcelService : IExcelService
                                 CreatedBy = 2
                             }, transaction: transaction);
                         }
+                    }
+
+                    // CRITICAL FIX: Explicitly insert ISLedgerActive into LedgerMasterDetails
+                    // This ensures ISLedgerActive is saved for ALL Ledger Groups (Clients, Suppliers, Employees, Consignees, etc.)
+                    // Legacy VB code always inserted this as a separate row with both FieldName and ParentFieldName = "ISLedgerActive"
+                    await _connection.ExecuteAsync(insertDetailSql, new {
+                        LedgerID = newLedgerId,
+                        LedgerGroupID = ledgerGroupId,
+                        CompanyID = 2,
+                        UserID = 2,
+                        FYear = "2025-2026",
+                        FieldName = "ISLedgerActive",
+                        FieldValue = "True",
+                        ParentFieldName = "ISLedgerActive",
+                        ParentFieldValue = "True",
+                        ParentLedgerID = 0,
+                        SequenceNo = sequenceNo++,
+                        CreatedDate = DateTime.Now,
+                        CreatedBy = 2
+                    }, transaction: transaction);
+
+                    // CLIENTS-SPECIFIC: Insert default fields for Clients Ledger Group (LedgerGroupID = 1)
+                    if (ledgerGroupId == 1) // Clients
+                    {
+                        // 1. GSTRegistrationType: Use user-provided value if present, otherwise default to 'Unknown'
+                        var gstRegistrationType = GetFieldValue(rowData, "GSTRegistrationType")?.Trim();
+                        if (string.IsNullOrEmpty(gstRegistrationType))
+                        {
+                            gstRegistrationType = "Unknown";
+                        }
+
+                        await _connection.ExecuteAsync(insertDetailSql, new {
+                            LedgerID = newLedgerId,
+                            LedgerGroupID = ledgerGroupId,
+                            CompanyID = 2,
+                            UserID = 2,
+                            FYear = "2025-2026",
+                            FieldName = "GSTRegistrationType",
+                            FieldValue = gstRegistrationType,
+                            ParentFieldName = "GSTRegistrationType",
+                            ParentFieldValue = gstRegistrationType,
+                            ParentLedgerID = 0,
+                            SequenceNo = sequenceNo++,
+                            CreatedDate = DateTime.Now,
+                            CreatedBy = 2
+                        }, transaction: transaction);
+
+                        // 2. PartyType: Always default to 'Not Applicable' for Clients
+                        await _connection.ExecuteAsync(insertDetailSql, new {
+                            LedgerID = newLedgerId,
+                            LedgerGroupID = ledgerGroupId,
+                            CompanyID = 2,
+                            UserID = 2,
+                            FYear = "2025-2026",
+                            FieldName = "PartyType",
+                            FieldValue = "Not Applicable",
+                            ParentFieldName = "PartyType",
+                            ParentFieldValue = "Not Applicable",
+                            ParentLedgerID = 0,
+                            SequenceNo = sequenceNo++,
+                            CreatedDate = DateTime.Now,
+                            CreatedBy = 2
+                        }, transaction: transaction);
                     }
                 }
 
