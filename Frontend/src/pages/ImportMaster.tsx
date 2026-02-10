@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
+import LedgerMasterEnhanced from '../components/LedgerMasterEnhanced';
 import {
     getModules,
     previewExcel,
@@ -638,10 +639,19 @@ const ImportMaster: React.FC = () => {
                                 No column definitions configured for this Ledger Group. You can import Excel files with any column structure.
                                 All columns from your Excel file will be imported.
                             </p>
-                        </div>
-                    )
+                    </div>
                 )} */}
             </div>
+
+            {/* Ledger Master Enhanced Component */}
+            {isLedgerMode && selectedLedgerGroup > 0 && (
+                <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
+                    <LedgerMasterEnhanced
+                        ledgerGroupId={selectedLedgerGroup}
+                        ledgerGroupName={subModules.find(s => s.moduleId === selectedLedgerGroup)?.moduleDisplayName || subModules.find(s => s.moduleId === selectedLedgerGroup)?.moduleName || 'Ledger'}
+                    />
+                </div>
+            )}
 
             {/* Excel Preview Table */}
             {previewData && (

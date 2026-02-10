@@ -12,14 +12,20 @@ import ModuleAuthority from './pages/ModuleAuthority';
 
 function App() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
     return (
         <ThemeProvider>
             <Router>
                 <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
-                    <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-                    <div className="flex-1 flex flex-col ml-0 md:ml-64 transition-all duration-300 ease-in-out">
-                        <Header onMenuClick={() => setIsSidebarOpen(true)} />
+                    <Sidebar
+                        isOpen={isSidebarOpen}
+                        onClose={() => setIsSidebarOpen(false)}
+                        isCollapsed={isSidebarCollapsed}
+                        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                    />
+                    <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} ml-0`}>
+                        <Header onMenuClick={() => setIsSidebarOpen(true)} isSidebarCollapsed={isSidebarCollapsed} />
                         <main className="flex-1 overflow-y-auto mt-16 custom-scrollbar p-4 md:p-6">
                             <Routes>
                                 <Route path="/" element={<Dashboard />} />

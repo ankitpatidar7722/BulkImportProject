@@ -5,16 +5,20 @@ import {
     Upload,
     Building2,
     ShieldCheck,
-    X
+    X,
+    ChevronsLeft,
+    ChevronsRight
 } from 'lucide-react';
 
 
 interface SidebarProps {
     isOpen: boolean;
     onClose: () => void;
+    isCollapsed: boolean;
+    onToggleCollapse: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggleCollapse }) => {
     const location = useLocation();
 
     const menuItems = [
@@ -35,23 +39,41 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             )}
 
             <aside className={`
-                w-64 bg-[#0B1120] text-white border-r border-gray-800 h-screen fixed left-0 top-0 
-                overflow-y-auto custom-scrollbar flex flex-col z-50 transition-transform duration-300 ease-in-out
+                ${isCollapsed ? 'w-20' : 'w-64'} bg-[#0B1120] text-white border-r border-gray-800 h-screen fixed left-0 top-0 
+                overflow-y-auto custom-scrollbar flex flex-col z-50 transition-all duration-300 ease-in-out
                 ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
             `}>
-                <div className="p-6 border-b border-gray-800 flex justify-between items-center">
+                {/* Header */}
+                <div className={`p-6 border-b border-gray-800 flex justify-between items-center`}>
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-green-500 rounded flex items-center justify-center font-bold text-lg text-white">
                             E
                         </div>
-                        <span className="text-xl font-bold text-white tracking-tight">ExcelJet</span>
+                        {!isCollapsed && <span className="text-xl font-bold text-white tracking-tight">ExcelJet</span>}
                     </div>
-                    {/* Close button for mobile */}
-                    <button onClick={onClose} className="md:hidden text-gray-400 hover:text-white">
-                        <X className="w-6 h-6" />
-                    </button>
+
+                    <div className="flex items-center gap-2">
+                        {/* Toggle Button - Desktop Only */}
+                        <button
+                            onClick={onToggleCollapse}
+                            className="hidden md:flex items-center justify-center w-8 h-8 rounded-md text-gray-400 hover:bg-gray-800 hover:text-white transition-all duration-200"
+                            title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+                        >
+                            {isCollapsed ? (
+                                <ChevronsRight className="w-5 h-5" />
+                            ) : (
+                                <ChevronsLeft className="w-5 h-5" />
+                            )}
+                        </button>
+
+                        {/* Close button for mobile */}
+                        <button onClick={onClose} className="md:hidden text-gray-400 hover:text-white">
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
                 </div>
 
+                {/* Navigation */}
                 <nav className="p-4 flex-1">
                     <ul className="space-y-1">
                         {menuItems.map((item) => {
@@ -63,28 +85,28 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                     <Link
                                         to={item.path}
                                         onClick={() => window.innerWidth < 768 && onClose()}
-                                        className={`flex items-center gap-3 px-4 py-3 rounded-md transition-all duration-200 group ${isActive
-                                            ? 'bg-blue-600 text-white shadow-md'
-                                            : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                        className={`flex items-center ${isCollapsed ? 'justify-center px-3' : 'gap-3 px-4'} py-3 rounded-md transition-all duration-200 group relative ${isActive
+                                                ? 'bg-blue-600 text-white shadow-md'
+                                                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                                             }`}
+                                        title={isCollapsed ? item.name : ''}
                                     >
                                         <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`} />
-                                        <span className="font-medium text-sm">{item.name}</span>
+                                        {!isCollapsed && <span className="font-medium text-sm">{item.name}</span>}
+
+                                        {/* Tooltip for collapsed state */}
+                                        {isCollapsed && (
+                                            <div className="absolute left-full ml-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+                                                {item.name}
+                                                <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-gray-800"></div>
+                                            </div>
+                                        )}
                                     </Link>
                                 </li>
                             );
                         })}
                     </ul>
                 </nav>
-
-                <div className="p-4 border-t border-gray-800">
-                    <div className="flex items-center gap-3 px-4 py-2">
-                        <div className="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-xs font-bold">
-                            9
-                        </div>
-                        <span className="text-sm font-medium text-gray-300">Sunset</span>
-                    </div>
-                </div>
             </aside>
         </>
     );

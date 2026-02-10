@@ -31,6 +31,7 @@ builder.Services.AddScoped(_ => new SqlConnection(connectionString));
 builder.Services.AddScoped<IModuleService, ModuleService>();
 builder.Services.AddScoped<IExcelService, ExcelService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
+builder.Services.AddScoped<ILedgerService, LedgerService>();
 
 // Configure EPPlus license
 OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;
@@ -228,6 +229,81 @@ using (var scope = builder.Services.BuildServiceProvider().CreateScope())
     catch(Exception ex) {
          Console.WriteLine($"LedgerMaster Init Error: {ex.Message}");
          System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] LedgerMaster Init Error: {ex.Message}\n");
+    }
+
+
+    // CountryStateMaster Schema and Seeding
+    try
+    {
+        var conn = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+        conn.Open();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] CountryStateMaster Init Started\n");
+
+        // 1. Ensure Table Exists
+        var createTableCmd = @"
+            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CountryStateMaster]') AND type in (N'U'))
+            BEGIN
+                CREATE TABLE [CountryStateMaster] (
+                    [CountryStateID] INT PRIMARY KEY IDENTITY(1,1),
+                    [Country] NVARCHAR(100) NOT NULL,
+                    [State] NVARCHAR(100) NOT NULL
+                );
+            END";
+        using (var cmd = new SqlCommand(createTableCmd, conn)) cmd.ExecuteNonQuery();
+
+        // 2. Ensure Seed Data (India + States)
+        var countCmd = "SELECT COUNT(*) FROM CountryStateMaster";
+        using (var cmd = new SqlCommand(countCmd, conn))
+        {
+            int count = (int)cmd.ExecuteScalar();
+            if (count == 0)
+            {
+                // Basic list of India states
+                var insertCmd = @"
+                    INSERT INTO [CountryStateMaster] (Country, State) VALUES 
+                    ('India', 'Andhra Pradesh'),
+                    ('India', 'Arunachal Pradesh'),
+                    ('India', 'Assam'),
+                    ('India', 'Bihar'),
+                    ('India', 'Chhattisgarh'),
+                    ('India', 'Goa'),
+                    ('India', 'Gujarat'),
+                    ('India', 'Haryana'),
+                    ('India', 'Himachal Pradesh'),
+                    ('India', 'Jharkhand'),
+                    ('India', 'Karnataka'),
+                    ('India', 'Kerala'),
+                    ('India', 'Madhya Pradesh'),
+                    ('India', 'Maharashtra'),
+                    ('India', 'Manipur'),
+                    ('India', 'Meghalaya'),
+                    ('India', 'Mizoram'),
+                    ('India', 'Nagaland'),
+                    ('India', 'Odisha'),
+                    ('India', 'Punjab'),
+                    ('India', 'Rajasthan'),
+                    ('India', 'Sikkim'),
+                    ('India', 'Tamil Nadu'),
+                    ('India', 'Telangana'),
+                    ('India', 'Tripura'),
+                    ('India', 'Uttar Pradesh'),
+                    ('India', 'Uttarakhand'),
+                    ('India', 'West Bengal'),
+                    ('India', 'Delhi'),
+                    ('India', 'Jammu and Kashmir'),
+                    ('India', 'Ladakh'),
+                    ('India', 'Puducherry');";
+                using (var iCmd = new SqlCommand(insertCmd, conn)) iCmd.ExecuteNonQuery();
+                System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] CountryStateMaster Seeded with India states\n");
+            }
+        }
+
+        conn.Close();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] CountryStateMaster Init Completed\n");
+    }
+    catch(Exception ex) {
+         Console.WriteLine($"CountryStateMaster Init Error: {ex.Message}");
+         System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] CountryStateMaster Init Error: {ex.Message}\n");
     }
 }
 

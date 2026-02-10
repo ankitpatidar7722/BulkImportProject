@@ -1,16 +1,33 @@
-import React from 'react';
-import { Moon, Sun, User, Menu } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Moon, Sun, User, Menu, Building2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { getCompany, CompanyDto } from '../services/api';
 
 interface HeaderProps {
     onMenuClick: () => void;
+    isSidebarCollapsed?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
+const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false }) => {
     const { isDark, toggleTheme } = useTheme();
+    const [companyName, setCompanyName] = useState<string>('Loading...');
+
+    useEffect(() => {
+        const fetchCompanyName = async () => {
+            try {
+                const data: CompanyDto = await getCompany();
+                setCompanyName(data.companyName || 'Company Name');
+            } catch (error) {
+                console.error('Failed to fetch company name:', error);
+                setCompanyName('ExcelJet');
+            }
+        };
+
+        fetchCompanyName();
+    }, []);
 
     return (
-        <header className="h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 left-0 md:left-64 z-10 transition-all duration-200">
+        <header className={`h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 z-10 transition-all duration-300 ${isSidebarCollapsed ? 'left-0 md:left-20' : 'left-0 md:left-64'}`}>
             <div className="h-full px-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <button
@@ -19,8 +36,15 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                     >
                         <Menu className="w-6 h-6" />
                     </button>
-                    <div className="flex-1">
-                        {/* Page title or breadcrumb can go here */}
+
+                    {/* Company Name Display */}
+                    <div className="flex items-center gap-3">
+                        <div className="hidden md:flex items-center justify-center w-8 h-8 bg-blue-600 rounded-lg">
+                            <Building2 className="w-5 h-5 text-white" />
+                        </div>
+                        <div className="hidden md:block">
+                            <h1 className="text-base font-semibold text-white">{companyName}</h1>
+                        </div>
                     </div>
                 </div>
 

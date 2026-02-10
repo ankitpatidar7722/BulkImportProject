@@ -138,6 +138,121 @@ export const importLedger = async (file: File, ledgerGroupId: number): Promise<I
 };
 
 // ==========================================
+// LEDGER MASTER ENHANCED API
+// ==========================================
+
+export interface LedgerMasterDto {
+    ledgerID?: number;
+    ledgerGroupID: number;
+    ledgerName?: string;
+    mailingName?: string;
+    address1?: string;
+    address2?: string;
+    address3?: string;
+    country?: string;
+    state?: string;
+    city?: string;
+    pincode?: string;
+    telephoneNo?: string;
+    email?: string;
+    mobileNo?: string;
+    website?: string;
+    panNo?: string;
+    gstNo?: string;
+    salesRepresentative?: string;
+    supplyTypeCode?: string;
+    gstApplicable?: boolean;
+    deliveredQtyTolerance?: number;
+    refCode?: string;
+    gstRegistrationType?: string;
+    creditDays?: number;
+    isDeletedTransaction?: boolean;
+}
+
+export enum ValidationStatus {
+    Valid = 0,
+    Duplicate = 1,
+    MissingData = 2,
+    Mismatch = 3
+}
+
+export interface CellValidation {
+    columnName: string;
+    validationMessage: string;
+    status: ValidationStatus;
+}
+
+export interface LedgerRowValidation {
+    rowIndex: number;
+    data: LedgerMasterDto;
+    cellValidations: CellValidation[];
+    rowStatus: ValidationStatus;
+    errorMessage?: string;
+}
+
+export interface ValidationSummary {
+    duplicateCount: number;
+    missingDataCount: number;
+    mismatchCount: number;
+    totalRows: number;
+    validRows: number;
+}
+
+export interface LedgerValidationResultDto {
+    rows: LedgerRowValidation[];
+    summary: ValidationSummary;
+    isValid: boolean;
+}
+
+export interface CountryStateDto {
+    country: string;
+    state: string;
+}
+
+export const getLedgersByGroup = async (ledgerGroupId: number): Promise<LedgerMasterDto[]> => {
+    const response = await api.get(`/ledger/bygroup/${ledgerGroupId}`);
+    return response.data;
+};
+
+export const getCountryStates = async (): Promise<CountryStateDto[]> => {
+    const response = await api.get('/ledger/country-states');
+    return response.data;
+};
+
+export const softDeleteLedger = async (ledgerId: number): Promise<{ message: string }> => {
+    const response = await api.delete(`/ledger/soft-delete/${ledgerId}`);
+    return response.data;
+};
+
+export const validateLedgers = async (ledgers: LedgerMasterDto[], ledgerGroupId: number): Promise<LedgerValidationResultDto> => {
+    const response = await api.post('/ledger/validate', {
+        ledgers,
+        ledgerGroupId
+    });
+    return response.data;
+};
+
+export const importLedgers = async (ledgers: LedgerMasterDto[], ledgerGroupId: number): Promise<ImportResultDto> => {
+    const response = await api.post('/ledger/import', {
+        ledgers,
+        ledgerGroupId
+    });
+    return response.data;
+};
+
+export const parseExcelToLedgers = async (file: File): Promise<LedgerMasterDto[]> => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await api.post('/excel/ParseLedgerExcel', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+    return response.data;
+}
+
+// ==========================================
 // ITEM MASTER API
 // ==========================================
 
