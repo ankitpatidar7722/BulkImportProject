@@ -166,14 +166,18 @@ export interface LedgerMasterDto {
     refCode?: string;
     gstRegistrationType?: string;
     creditDays?: number;
+    legalName?: string;
+    mailingAddress?: string;
     isDeletedTransaction?: boolean;
+    currencyCode?: string;
 }
 
 export enum ValidationStatus {
     Valid = 0,
     Duplicate = 1,
     MissingData = 2,
-    Mismatch = 3
+    Mismatch = 3,
+    InvalidContent = 4
 }
 
 export interface CellValidation {
@@ -194,6 +198,7 @@ export interface ValidationSummary {
     duplicateCount: number;
     missingDataCount: number;
     mismatchCount: number;
+    invalidContentCount: number;
     totalRows: number;
     validRows: number;
 }
@@ -209,6 +214,14 @@ export interface CountryStateDto {
     state: string;
 }
 
+export interface SalesRepresentativeDto {
+    employeeID?: number;
+    employeeName?: string;
+    // Handle potential PascalCase serialization
+    EmployeeID?: number;
+    EmployeeName?: string;
+}
+
 export const getLedgersByGroup = async (ledgerGroupId: number): Promise<LedgerMasterDto[]> => {
     const response = await api.get(`/ledger/bygroup/${ledgerGroupId}`);
     return response.data;
@@ -216,6 +229,11 @@ export const getLedgersByGroup = async (ledgerGroupId: number): Promise<LedgerMa
 
 export const getCountryStates = async (): Promise<CountryStateDto[]> => {
     const response = await api.get('/ledger/country-states');
+    return response.data;
+};
+
+export const getSalesRepresentatives = async (): Promise<SalesRepresentativeDto[]> => {
+    const response = await api.get('/ledger/sales-representatives');
     return response.data;
 };
 
@@ -236,6 +254,16 @@ export const importLedgers = async (ledgers: LedgerMasterDto[], ledgerGroupId: n
     const response = await api.post('/ledger/import', {
         ledgers,
         ledgerGroupId
+    });
+    return response.data;
+};
+
+export const clearAllLedgerData = async (ledgerGroupId: number, username: string, password: string, reason: string): Promise<any> => {
+    const response = await api.post('/ledger/clear-all-data', {
+        ledgerGroupId,
+        username,
+        password,
+        reason
     });
     return response.data;
 };

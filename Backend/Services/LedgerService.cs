@@ -38,25 +38,19 @@ public class LedgerService : ILedgerService
                 l.SupplyTypeCode,
                 CAST(l.GSTApplicable AS BIT) as GSTApplicable,
                 CASE WHEN ISNUMERIC(l.DeliveredQtyTolerance) = 1 THEN CAST(l.DeliveredQtyTolerance AS DECIMAL(18,2)) ELSE NULL END as DeliveredQtyTolerance,
-                CAST(ISNULL(l.IsDeletedTransaction, 0) AS BIT) as IsDeletedTransaction
+                CAST(ISNULL(l.IsDeletedTransaction, 0) AS BIT) as IsDeletedTransaction,
+                (SELECT TOP 1 FieldValue FROM LedgerMasterDetails WHERE LedgerID = l.LedgerID AND FieldName = 'GSTRegistrationType' AND (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0) AND FieldValue IS NOT NULL ORDER BY LedgerDetailsID DESC) as GSTRegistrationType,
+                (SELECT TOP 1 FieldValue FROM LedgerMasterDetails WHERE LedgerID = l.LedgerID AND FieldName = 'RefCode' AND (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0) AND FieldValue IS NOT NULL ORDER BY LedgerDetailsID DESC) as RefCode,
+                (SELECT TOP 1 CASE WHEN ISNUMERIC(FieldValue) = 1 THEN CAST(FieldValue AS INT) ELSE NULL END FROM LedgerMasterDetails WHERE LedgerID = l.LedgerID AND FieldName = 'CreditDays' AND (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0) AND FieldValue IS NOT NULL ORDER BY LedgerDetailsID DESC) as CreditDays,
+                (SELECT TOP 1 FieldValue FROM LedgerMasterDetails WHERE LedgerID = l.LedgerID AND FieldName = 'CurrencyCode' AND (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0) AND FieldValue IS NOT NULL ORDER BY LedgerDetailsID DESC) as CurrencyCode,
+                l.LegalName,
+                l.MailingAddress
             FROM LedgerMaster l
             LEFT JOIN (
-                SELECT LedgerID, LedgerName 
-                FROM LedgerMaster 
-                WHERE ISNULL(IsDeletedTransaction,0) <> 1
-                AND LedgerGroupID IN (
-                    SELECT DISTINCT LedgerGroupID 
-                    FROM LedgerGroupMaster 
-                    WHERE CompanyID = 2 AND LedgerGroupNameID = 27
-                )
-                AND LedgerID IN (
-                    SELECT DISTINCT LedgerID 
-                    FROM LedgerMasterDetails 
-                    WHERE CompanyID = 2 
-                    AND FieldName = 'Designation' 
-                    AND FieldValue = 'JOB COORDINATOR' 
-                    AND IsDeletedTransaction = 0
-                )
+                SELECT LM.LedgerID, LM.LedgerName 
+                FROM LedgerMaster AS LM 
+                INNER JOIN LedgerGroupMaster AS LG ON LG.LedgerGroupID=LM.LedgerGroupID AND LG.CompanyID=LM.CompanyID 
+                WHERE LG.LedgerGroupNameID=27 AND LM.DepartmentID=-50  And ISNULL(LM.IsDeletedTransaction, 0) <> 1 AND LM.CompanyID=2
             ) sr ON l.RefSalesRepresentativeID = sr.LedgerID
             WHERE l.LedgerGroupID = @LedgerGroupId 
             AND (l.IsDeletedTransaction IS NULL OR l.IsDeletedTransaction = 0)
@@ -87,6 +81,13 @@ public class LedgerService : ILedgerService
             }
         };
 
+        // Get Ledger Group Name to check for Supplier
+        var ledgerGroupName = await _connection.ExecuteScalarAsync<string>(
+            "SELECT LedgerGroupName FROM LedgerGroupMaster WHERE LedgerGroupID = @LedgerGroupId",
+            new { LedgerGroupId = ledgerGroupId });
+        
+        bool isSupplier = ledgerGroupName?.ToLower().Contains("supplier") == true;
+
         // Get existing ledgers from database for duplicate check
         var existingLedgers = await GetLedgersByGroupAsync(ledgerGroupId);
 
@@ -94,7 +95,12 @@ public class LedgerService : ILedgerService
         var validCountryStates = await GetCountryStatesAsync();
 
         // Required fields
-        var requiredFields = new[] { "LedgerName", "MailingName", "Address1", "Country", "State", "City", "MobileNo", "GSTNo" };
+        var requiredList = new List<string> { "LedgerName", "MailingName", "Address1", "Country", "State", "City", "MobileNo", "GSTNo" };
+        if (isSupplier)
+        {
+            requiredList.Add("CurrencyCode");
+        }
+        var requiredFields = requiredList.ToArray();
 
         for (int i = 0; i < ledgers.Count; i++)
         {
@@ -131,16 +137,26 @@ public class LedgerService : ILedgerService
             }
 
             // 2. Check for duplicates (RED) - LedgerName + Address1 + GSTNo
-            var isDuplicate = existingLedgers.Any(e =>
-                string.Equals(e.LedgerName, ledger.LedgerName, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(e.Address1, ledger.Address1, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(e.GSTNo, ledger.GSTNo, StringComparison.OrdinalIgnoreCase));
+            // Helper for composite comparison
+            bool IsDuplicate(LedgerMasterDto a, LedgerMasterDto b)
+            {
+                var nameA = a.LedgerName?.Trim() ?? "";
+                var addrA = a.Address1?.Trim() ?? "";
+                var gstA = a.GSTNo?.Trim() ?? "";
+
+                var nameB = b.LedgerName?.Trim() ?? "";
+                var addrB = b.Address1?.Trim() ?? "";
+                var gstB = b.GSTNo?.Trim() ?? "";
+
+                return string.Equals(nameA, nameB, StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(addrA, addrB, StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(gstA, gstB, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var isDuplicate = existingLedgers.Any(e => IsDuplicate(e, ledger));
 
             // Also check within the current batch
-            var duplicateInBatch = ledgers.Take(i).Any(l =>
-                string.Equals(l.LedgerName, ledger.LedgerName, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(l.Address1, ledger.Address1, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(l.GSTNo, ledger.GSTNo, StringComparison.OrdinalIgnoreCase));
+            var duplicateInBatch = ledgers.Take(i).Any(l => IsDuplicate(l, ledger));
 
             if (isDuplicate || duplicateInBatch)
             {
@@ -148,7 +164,7 @@ public class LedgerService : ILedgerService
                 rowValidation.ErrorMessage = "Duplicate record found";
             }
 
-            // 3. Check Country/State mismatch (YELLOW)
+             // 3. Check Country/State mismatch (YELLOW)
             if (!string.IsNullOrWhiteSpace(ledger.Country) && !string.IsNullOrWhiteSpace(ledger.State))
             {
                 var isValidCountryState = validCountryStates.Any(cs =>
@@ -179,6 +195,32 @@ public class LedgerService : ILedgerService
                 }
             }
 
+            // 4. Check for Special Characters (InvalidContent)
+            bool hasInvalidContent = false;
+            var stringProperties = typeof(LedgerMasterDto)
+                .GetProperties()
+                .Where(p => p.PropertyType == typeof(string));
+
+            foreach (var prop in stringProperties)
+            {
+                var val = prop.GetValue(ledger) as string;
+                if (!string.IsNullOrEmpty(val) && (val.Contains('\'') || val.Contains('\"') ))
+                {
+                     // Skip specific fields if necessary, currently checking all string fields
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = prop.Name,
+                        ValidationMessage = "Special characters are found in this row and column.",
+                        Status = ValidationStatus.InvalidContent
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                        rowValidation.RowStatus = ValidationStatus.InvalidContent;
+                    
+                    hasInvalidContent = true;
+                }
+            }
+
             // Count this row only once for each issue type
             if (rowValidation.RowStatus == ValidationStatus.Duplicate)
                 result.Summary.DuplicateCount++;
@@ -186,6 +228,8 @@ public class LedgerService : ILedgerService
                 result.Summary.MissingDataCount++;
             else if (hasMismatch)
                 result.Summary.MismatchCount++;
+            else if (hasInvalidContent)
+                result.Summary.InvalidContentCount++;
 
             result.Rows.Add(rowValidation);
         }
@@ -193,7 +237,8 @@ public class LedgerService : ILedgerService
         result.Summary.ValidRows = result.Rows.Count(r => r.RowStatus == ValidationStatus.Valid);
         result.IsValid = result.Summary.DuplicateCount == 0 && 
                         result.Summary.MissingDataCount == 0 && 
-                        result.Summary.MismatchCount == 0;
+                        result.Summary.MismatchCount == 0 &&
+                        result.Summary.InvalidContentCount == 0;
 
         return result;
     }
@@ -233,28 +278,30 @@ public class LedgerService : ILedgerService
                     LedgerGroupID, LedgerName, MailingName, Address1, Address2, Address3,
                     Country, State, City, Pincode, TelephoneNo, Email, MobileNo, Website,
                     PANNo, GSTNo, RefSalesRepresentativeID, SupplyTypeCode, GSTApplicable,
-                    DeliveredQtyTolerance, IsDeletedTransaction, CompanyID, UserID, FYear,
-                    CreatedDate, CreatedBy, ISLedgerActive
+                    Distance, DeliveredQtyTolerance, IsDeletedTransaction, CompanyID, UserID, FYear,
+                    CreatedDate, CreatedBy, ISLedgerActive, LegalName, MailingAddress
                 ) VALUES (
                     @LedgerCode, @MaxLedgerNo, @LedgerCodePrefix,
                     @LedgerGroupID, @LedgerName, @MailingName, @Address1, @Address2, @Address3,
                     @Country, @State, @City, @Pincode, @TelephoneNo, @Email, @MobileNo, @Website,
                     @PANNo, @GSTNo, @RefSalesRepresentativeID, @SupplyTypeCode, @GSTApplicable,
-                    @DeliveredQtyTolerance, 0, 2, 2, '2025-2026',
-                    GETDATE(), 2, 1
+                    @Distance, @DeliveredQtyTolerance, 0, 2, 2, '2025-2026',
+                    GETDATE(), 2, 1, @LegalName, @MailingAddress
                 );
-                SELECT SCOPE_IDENTITY();";
+                SELECT CAST(SCOPE_IDENTITY() as int);";
 
             // Prepare Insert SQL for LedgerMasterDetails
             var insertDetailSql = @"
                 INSERT INTO LedgerMasterDetails (
                     LedgerID, LedgerGroupID, CompanyID, UserID, FYear,
                     FieldName, FieldValue, ParentFieldName, ParentFieldValue,
-                    CreatedDate, CreatedBy, ModifiedDate, ModifiedBy
+                    CreatedDate, CreatedBy, ModifiedDate, ModifiedBy,
+                    SequenceNo, FieldID
                 ) VALUES (
                     @LedgerID, @LedgerGroupID, @CompanyID, @UserID, @FYear,
                     @FieldName, @FieldValue, @ParentFieldName, @ParentFieldValue,
-                    GETDATE(), @CreatedBy, GETDATE(), @CreatedBy
+                    GETDATE(), @CreatedBy, GETDATE(), @CreatedBy,
+                    @SequenceNo, @FieldID
                 )";
 
             foreach (var ledger in ledgers)
@@ -267,27 +314,23 @@ public class LedgerService : ILedgerService
                 if (!string.IsNullOrWhiteSpace(ledger.SalesRepresentative))
                 {
                     salesRepId = await _connection.ExecuteScalarAsync<int?>(
-                        @"SELECT LedgerID 
-                          FROM LedgerMaster 
-                          WHERE LedgerName = @Name 
-                          AND ISNULL(IsDeletedTransaction,0) <> 1
-                          AND LedgerGroupID IN (
-                              SELECT DISTINCT LedgerGroupID 
-                              FROM LedgerGroupMaster 
-                              WHERE CompanyID = 2 AND LedgerGroupNameID = 27
-                          )
-                          AND LedgerID IN (
-                              SELECT DISTINCT LedgerID 
-                              FROM LedgerMasterDetails 
-                              WHERE CompanyID = 2 
-                              AND FieldName = 'Designation' 
-                              AND FieldValue = 'JOB COORDINATOR' 
-                              AND IsDeletedTransaction = 0
-                          )",
+                        @"SELECT LM.LedgerID 
+                          FROM LedgerMaster AS LM 
+                          INNER JOIN LedgerGroupMaster AS LG ON LG.LedgerGroupID=LM.LedgerGroupID AND LG.CompanyID=LM.CompanyID 
+                          WHERE LM.LedgerName = @Name 
+                          AND LG.LedgerGroupNameID=27 
+                          AND LM.DepartmentID=-50  
+                          AND ISNULL(LM.IsDeletedTransaction, 0) <> 1 
+                          AND LM.CompanyID=2",
                         new { Name = ledger.SalesRepresentative },
                         transaction: transaction
                     );
                 }
+
+                // Apply Defaults
+                string supplyTypeCode = !string.IsNullOrWhiteSpace(ledger.SupplyTypeCode) ? ledger.SupplyTypeCode : "B2B";
+                bool gstApplicable = ledger.GSTApplicable ?? true;
+                string legalName = !string.IsNullOrWhiteSpace(ledger.MailingName) ? ledger.MailingName : (ledger.LedgerName ?? ""); // LegalName = MailingName
                 
                 // INSERT INTO LedgerMaster
                 var ledgerIdObj = await _connection.ExecuteScalarAsync<object>(insertMasterSql, new
@@ -297,67 +340,81 @@ public class LedgerService : ILedgerService
                     LedgerCodePrefix = prefix,
                     ledger.LedgerGroupID,
                     ledger.LedgerName,
-                    ledger.MailingName,
-                    ledger.Address1,
-                    ledger.Address2,
-                    ledger.Address3,
-                    ledger.Country,
-                    ledger.State,
-                    ledger.City,
-                    ledger.Pincode,
-                    ledger.TelephoneNo,
-                    ledger.Email,
-                    ledger.MobileNo,
-                    ledger.Website,
-                    ledger.PANNo,
-                    ledger.GSTNo,
-                    RefSalesRepresentativeID = salesRepId,
-                    ledger.SupplyTypeCode,
-                    ledger.GSTApplicable,
-                    ledger.DeliveredQtyTolerance
+                    MailingName = ledger.MailingName ?? ledger.LedgerName,
+                    Address1 = ledger.Address1 ?? (object)DBNull.Value,
+                    Address2 = ledger.Address2 ?? (object)DBNull.Value,
+                    Address3 = ledger.Address3 ?? (object)DBNull.Value,
+                    Country = ledger.Country ?? (object)DBNull.Value,
+                    State = ledger.State ?? (object)DBNull.Value,
+                    City = ledger.City ?? (object)DBNull.Value,
+                    Pincode = ledger.Pincode ?? (object)DBNull.Value,
+                    TelephoneNo = ledger.TelephoneNo ?? (object)DBNull.Value,
+                    Email = ledger.Email ?? (object)DBNull.Value,
+                    MobileNo = ledger.MobileNo ?? (object)DBNull.Value,
+                    Website = ledger.Website ?? (object)DBNull.Value,
+                    PANNo = ledger.PANNo ?? (object)DBNull.Value,
+                    GSTNo = ledger.GSTNo ?? (object)DBNull.Value,
+                    RefSalesRepresentativeID = salesRepId ?? (object)DBNull.Value,
+                    SupplyTypeCode = supplyTypeCode,
+                    GSTApplicable = gstApplicable,
+
+                    Distance = ledger.Distance ?? (object)DBNull.Value,
+                    DeliveredQtyTolerance = ledger.DeliveredQtyTolerance ?? (object)DBNull.Value,
+                    LegalName = legalName, // Set LegalName
+                    MailingAddress = ledger.MailingAddress ?? (object)DBNull.Value
                 }, transaction: transaction);
 
                 int newLedgerId = Convert.ToInt32(ledgerIdObj);
 
-                // INSERT INTO LedgerMasterDetails (Reflection)
-                var properties = typeof(LedgerMasterDto).GetProperties();
-                foreach (var prop in properties)
+                // INSERT INTO LedgerMasterDetails (Explicit Sequence)
+                var details = new List<(string Name, object? Value, int Seq)>
                 {
-                    // Skip system fields in details if needed, or include all
-                    if (prop.Name == "LedgerID" || prop.Name == "LedgerGroupID" || prop.Name == "IsDeletedTransaction") continue;
+                    ("LedgerName", ledger.LedgerName, 1),
+                    ("MailingName", ledger.MailingName, 2),
+                    ("Address1", ledger.Address1, 3),
+                    ("Address2", ledger.Address2, 4),
+                    ("Address3", ledger.Address3, 5),
+                    ("Country", ledger.Country, 6),
+                    ("State", ledger.State, 7),
+                    ("City", ledger.City, 8),
+                    ("Pincode", ledger.Pincode, 9),
+                    ("MailingAddress", ledger.MailingAddress, 10),
+                    ("TelephoneNo", ledger.TelephoneNo, 11),
+                    ("MobileNo", ledger.MobileNo, 12),
+                    ("Email", ledger.Email, 13),
+                    ("Website", ledger.Website, 14),
+                    ("PANNo", ledger.PANNo, 15),
+                    ("GSTNo", ledger.GSTNo, 16),
+                    ("GSTApplicable", gstApplicable.ToString(), 17),
+                    ("RefSalesRepresentativeID", salesRepId?.ToString(), 18),
+                    ("LegalName", legalName, 19),
+                    ("SupplyTypeCode", supplyTypeCode, 20),
+                    ("RefCode", ledger.RefCode, 21),
+                    ("GSTRegistrationType", ledger.GSTRegistrationType, 22),
+                    ("DeliveredQtyTolerance", ledger.DeliveredQtyTolerance?.ToString(), 23),
+                    ("Distance", ledger.Distance?.ToString(), 24),
+                    ("CreditDays", ledger.CreditDays?.ToString(), 25),
+                    ("CurrencyCode", ledger.CurrencyCode, 26),
+                    ("ISLedgerActive", "True", 0)
+                };
 
-                    var val = prop.GetValue(ledger)?.ToString();
-                    
-                    // Always insert, even if null/empty (as DBNull or empty string), matching loosely with ExcelService logic
-                    // which inserted all mapped keys.
-                    
+                foreach (var item in details)
+                {
                     await _connection.ExecuteAsync(insertDetailSql, new {
                         LedgerID = newLedgerId,
                         LedgerGroupID = ledgerGroupId,
                         CompanyID = 2,
                         UserID = 2,
                         FYear = "2025-2026",
-                        FieldName = prop.Name,
-                        FieldValue = val ?? (object)DBNull.Value,
-                        ParentFieldName = prop.Name,
-                        ParentFieldValue = val ?? (object)DBNull.Value,
-                        CreatedBy = 2
+                        FieldName = item.Name,
+                        FieldValue = item.Value ?? (object)DBNull.Value,
+                        ParentFieldName = item.Name,
+                        ParentFieldValue = item.Value ?? (object)DBNull.Value,
+                        CreatedBy = 2,
+                        SequenceNo = item.Seq,
+                        FieldID = 0
                     }, transaction: transaction);
                 }
-
-                // Explicit ISLedgerActive for Details
-                await _connection.ExecuteAsync(insertDetailSql, new {
-                    LedgerID = newLedgerId,
-                    LedgerGroupID = ledgerGroupId,
-                    CompanyID = 2,
-                    UserID = 2,
-                    FYear = "2025-2026",
-                    FieldName = "ISLedgerActive",
-                    FieldValue = "True",
-                    ParentFieldName = "ISLedgerActive",
-                    ParentFieldValue = "True",
-                    CreatedBy = 2
-                }, transaction: transaction);
 
                 successCount++;
             }
@@ -373,6 +430,7 @@ public class LedgerService : ILedgerService
             await transaction.RollbackAsync();
             result.Success = false;
             result.Message = $"Import failed: {ex.Message}";
+            try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Service Import Exception: {ex.Message}\nStack: {ex.StackTrace}\n"); } catch {}
         }
 
         return result;
@@ -390,8 +448,76 @@ public class LedgerService : ILedgerService
         return results.ToList();
     }
 
+    public async Task<bool> ClearAllLedgerDataAsync(int ledgerGroupId, string username, string password, string reason)
+    {
+        if (_connection.State != System.Data.ConnectionState.Open) await _connection.OpenAsync();
+        
+        // 1. Validate Credentials
+        // Note: Assuming UserMaster table has UserName and Password columns. 
+        // In a production environment, passwords should be hashed.
+        var userCheckQuery = @"
+            SELECT COUNT(1) 
+            FROM UserMaster 
+            WHERE UserName = @Username AND ISNULL(Password, '') = @Password";
+
+        var isValidUser = await _connection.ExecuteScalarAsync<bool>(userCheckQuery, new { Username = username, Password = password });
+
+        if (!isValidUser)
+        {
+            try { await System.IO.File.AppendAllTextAsync("debug_log.txt", $"[{DateTime.Now}] ClearAllLedgerData Failed: Invalid credentials for user '{username}'. Reason: {reason}\n"); } catch {}
+            throw new UnauthorizedAccessException("Invalid username or password.");
+        }
+
+        // 2. Perform Transactional Delete
+        var transaction = await _connection.BeginTransactionAsync();
+        try
+        {
+            // Delete from Details first (FK constraint usually requires this)
+            var deleteDetailsQuery = "DELETE FROM LedgerMasterDetails WHERE LedgerGroupID = @LedgerGroupId";
+            await _connection.ExecuteAsync(deleteDetailsQuery, new { LedgerGroupId = ledgerGroupId }, transaction: transaction);
+
+            // Delete from Master
+            var deleteMasterQuery = "DELETE FROM LedgerMaster WHERE LedgerGroupID = @LedgerGroupId";
+            await _connection.ExecuteAsync(deleteMasterQuery, new { LedgerGroupId = ledgerGroupId }, transaction: transaction);
+
+            await transaction.CommitAsync();
+
+            // 3. Log Audit
+            try 
+            { 
+                var logMessage = $"[{DateTime.Now}] AUDIT: User '{username}' cleared all data for LedgerGroupID {ledgerGroupId}. Reason: {reason}\n";
+                await System.IO.File.AppendAllTextAsync("debug_log.txt", logMessage); 
+            } 
+            catch {}
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            try { await System.IO.File.AppendAllTextAsync("debug_log.txt", $"[{DateTime.Now}] ClearAllLedgerData Exception: {ex.Message}\n"); } catch {}
+            throw;
+        }
+    }
+
+    public async Task<List<SalesRepresentativeDto>> GetSalesRepresentativesAsync()
+    {
+        var query = @"
+            SELECT LM.[LedgerID] AS EmployeeID, LM.[LedgerName] AS EmployeeName 
+            FROM LedgerMaster AS LM 
+            INNER JOIN LedgerGroupMaster AS LG ON LG.LedgerGroupID=LM.LedgerGroupID AND LG.CompanyID=LM.CompanyID 
+            Where LG.LedgerGroupNameID=27 AND LM.DepartmentID=-50  
+            And ISNULL(LM.IsDeletedTransaction, 0) <> 1 AND LM.CompanyID=2 
+            Order By LM.[LedgerName]";
+
+        var results = await _connection.QueryAsync<SalesRepresentativeDto>(query);
+        return results.ToList();
+    }
+
     private object? GetPropertyValue(object obj, string propertyName)
     {
         return obj.GetType().GetProperty(propertyName)?.GetValue(obj);
     }
 }
+
+

@@ -26,7 +26,11 @@ public class LedgerMasterDto
     public string? RefCode { get; set; }
     public string? GSTRegistrationType { get; set; }
     public int? CreditDays { get; set; }
+    public string? LegalName { get; set; }
+    public string? MailingAddress { get; set; }
     public bool IsDeletedTransaction { get; set; }
+    public decimal? Distance { get; set; }
+    public string? CurrencyCode { get; set; }
 }
 
 public class LedgerValidationResultDto
@@ -57,7 +61,8 @@ public enum ValidationStatus
     Valid,
     Duplicate,      // RED
     MissingData,    // BLUE
-    Mismatch        // ORANGE/YELLOW
+    Mismatch,       // ORANGE/YELLOW
+    InvalidContent  // PURPLE/OTHER
 }
 
 public class ValidationSummary
@@ -65,6 +70,13 @@ public class ValidationSummary
     public int DuplicateCount { get; set; }
     public int MissingDataCount { get; set; }
     public int MismatchCount { get; set; }
+    public int InvalidContentCount { get; set; }
     public int TotalRows { get; set; }
     public int ValidRows { get; set; }
+}
+
+public class SalesRepresentativeDto
+{
+    public int EmployeeID { get; set; }
+    public string EmployeeName { get; set; } = string.Empty;
 }

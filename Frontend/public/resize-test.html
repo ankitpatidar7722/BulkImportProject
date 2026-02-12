@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Resize Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #0f172a; color: white; }
+        .container { overflow: auto; max-height: 400px; border: 1px solid #333; }
+        table { border-collapse: collapse; table-layout: fixed; }
+        th, td { border: 1px solid #333; padding: 8px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+        th { background: #1e293b; position: relative; user-select: none; }
+        .resize-handle {
+            position: absolute;
+            right: -1px;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            cursor: col-resize;
+            background: transparent;
+            z-index: 10;
+        }
+        .resize-handle:hover { background: rgba(59, 130, 246, 0.5); }
+        td { background: #0f172a; }
+        #status { margin: 10px 0; padding: 10px; background: #1e293b; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h2>Column Resize Test</h2>
+    <div id="status">Status: Ready. Try dragging the right border of any column header.</div>
+    <div class="container">
+        <table id="testTable">
+            <colgroup id="colgroup">
+                <col style="width: 50px">
+                <col style="width: 150px">
+                <col style="width: 150px">
+                <col style="width: 150px">
+                <col style="width: 150px">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name <div class="resize-handle" data-col="1"></div></th>
+                    <th>Address <div class="resize-handle" data-col="2"></div></th>
+                    <th>City <div class="resize-handle" data-col="3"></div></th>
+                    <th>Country <div class="resize-handle" data-col="4"></div></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>1</td><td>John Doe</td><td>123 Main Street</td><td>New York</td><td>USA</td></tr>
+                <tr><td>2</td><td>Jane Smith</td><td>456 Oak Avenue</td><td>London</td><td>UK</td></tr>
+                <tr><td>3</td><td>Bob Johnson</td><td>789 Pine Road</td><td>Tokyo</td><td>Japan</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const status = document.getElementById('status');
+        const cols = document.querySelectorAll('#colgroup col');
+        let resizing = { active: false, colIndex: -1, startX: 0, startWidth: 0 };
+
+        // Add mousedown to each resize handle
+        document.querySelectorAll('.resize-handle').forEach(handle => {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const colIndex = parseInt(handle.dataset.col);
+                const currentWidth = parseInt(cols[colIndex].style.width);
+                resizing = { active: true, colIndex, startX: e.clientX, startWidth: currentWidth };
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                status.textContent = `Resizing column ${colIndex}: started at ${currentWidth}px`;
+            });
+        });
+
+        // Persistent document listeners
+        document.addEventListener('mousemove', (e) => {
+            if (!resizing.active) return;
+            const diff = e.clientX - resizing.startX;
+            const newWidth = Math.max(50, resizing.startWidth + diff);
+            cols[resizing.colIndex].style.width = newWidth + 'px';
+            status.textContent = `Resizing column ${resizing.colIndex}: ${newWidth}px (diff: ${diff}px)`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!resizing.active) return;
+            status.textContent = `Resize complete. Column ${resizing.colIndex} set to ${cols[resizing.colIndex].style.width}`;
+            resizing.active = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        });
+    </script>
+</body>
+</html>

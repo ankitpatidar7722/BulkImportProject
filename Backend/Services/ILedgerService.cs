@@ -9,4 +9,6 @@ public interface ILedgerService
     Task<LedgerValidationResultDto> ValidateLedgersAsync(List<LedgerMasterDto> ledgers, int ledgerGroupId);
     Task<ImportResultDto> ImportLedgersAsync(List<LedgerMasterDto> ledgers, int ledgerGroupId);
     Task<List<CountryStateDto>> GetCountryStatesAsync();
+    Task<bool> ClearAllLedgerDataAsync(int ledgerGroupId, string username, string password, string reason);
+    Task<List<SalesRepresentativeDto>> GetSalesRepresentativesAsync();
 }

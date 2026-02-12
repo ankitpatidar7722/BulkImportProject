@@ -39,6 +39,65 @@ const ImportMaster: React.FC = () => {
     const [itemGroups, setItemGroups] = useState<ItemGroupDto[]>([]);
     const [isItemMode, setIsItemMode] = useState(false);
 
+    // Column resize states for Excel Preview Table
+    const [previewColWidths, setPreviewColWidths] = useState<Record<number, number>>({});
+    const previewResizeRef = useRef<{ colIndex: number; startX: number; startWidth: number; active: boolean }>({ colIndex: -1, startX: 0, startWidth: 0, active: false });
+
+    // Initialize column widths when preview data changes
+    useEffect(() => {
+        if (previewData) {
+            const widths: Record<number, number> = {};
+            previewData.headers.forEach((_, idx) => {
+                widths[idx] = 150;
+            });
+            setPreviewColWidths(widths);
+        }
+    }, [previewData]);
+
+    // Persistent document-level resize listeners (set up once, cleaned up on unmount)
+    useEffect(() => {
+        const onMouseMove = (e: MouseEvent) => {
+            if (!previewResizeRef.current.active) return;
+            const { colIndex, startX, startWidth } = previewResizeRef.current;
+            const diff = e.clientX - startX;
+            const newWidth = Math.max(50, startWidth + diff);
+            setPreviewColWidths(prev => ({ ...prev, [colIndex]: newWidth }));
+        };
+
+        const onMouseUp = () => {
+            if (!previewResizeRef.current.active) return;
+            previewResizeRef.current.active = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        return () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        };
+    }, []);
+
+    const handlePreviewResizeStart = (e: React.MouseEvent<HTMLTableCellElement>, colIndex: number) => {
+        const th = e.currentTarget;
+        const rect = th.getBoundingClientRect();
+        const offsetFromRight = rect.right - e.clientX;
+        if (offsetFromRight > 8) return;
+        e.preventDefault();
+        e.stopPropagation();
+        previewResizeRef.current = { colIndex, startX: e.clientX, startWidth: previewColWidths[colIndex] || 150, active: true };
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    };
+
+    const handlePreviewThMouseMove = (e: React.MouseEvent<HTMLTableCellElement>) => {
+        const th = e.currentTarget;
+        const rect = th.getBoundingClientRect();
+        const offsetFromRight = rect.right - e.clientX;
+        th.style.cursor = offsetFromRight <= 8 ? 'col-resize' : '';
+    };
+
     const fetchModules = async () => {
         try {
             const data = await getModules('Masters');
@@ -540,65 +599,67 @@ const ImportMaster: React.FC = () => {
                     )}
 
                     {/* File Upload */}
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            Excel File (.xlsx only)
-                        </label>
-                        <div className="flex gap-2">
-                            <div className="flex-1">
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".xlsx"
-                                    onChange={handleFileChange}
-                                    className="hidden"
-                                />
-                                <div
-                                    onClick={() => isFileUploadEnabled && fileInputRef.current?.click()}
-                                    className={`w-full px-3 py-1.5 border-2 border-dashed rounded-lg transition-all ${!isFileUploadEnabled
-                                        ? 'border-gray-200 dark:border-gray-800 bg-gray-100/50 dark:bg-gray-900/50 cursor-not-allowed opacity-60'
-                                        : uploadedFile
-                                            ? 'border-green-500 bg-green-50/50 dark:bg-green-900/10 cursor-pointer'
-                                            : 'border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 bg-gray-50/50 dark:bg-[#020617]/50 cursor-pointer'
-                                        }`}
-                                >
-                                    {uploadedFile ? (
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{uploadedFile.name}</span>
-                                            <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓</span>
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                                            <Upload className="w-4 h-4" />
-                                            <span className="text-xs">
-                                                {isFileUploadEnabled ? 'Click to upload Excel file' : 'Select module first'}
-                                            </span>
-                                        </div>
-                                    )}
+                    {(selectedModule && !isLedgerMode) && (
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Excel File (.xlsx only)
+                            </label>
+                            <div className="flex gap-2">
+                                <div className="flex-1">
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept=".xlsx"
+                                        onChange={handleFileChange}
+                                        className="hidden"
+                                    />
+                                    <div
+                                        onClick={() => isFileUploadEnabled && fileInputRef.current?.click()}
+                                        className={`w-full px-3 py-1.5 border-2 border-dashed rounded-lg transition-all ${!isFileUploadEnabled
+                                            ? 'border-gray-200 dark:border-gray-800 bg-gray-100/50 dark:bg-gray-900/50 cursor-not-allowed opacity-60'
+                                            : uploadedFile
+                                                ? 'border-green-500 bg-green-50/50 dark:bg-green-900/10 cursor-pointer'
+                                                : 'border-gray-300 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 bg-gray-50/50 dark:bg-[#020617]/50 cursor-pointer'
+                                            }`}
+                                    >
+                                        {uploadedFile ? (
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{uploadedFile.name}</span>
+                                                <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                                                <Upload className="w-4 h-4" />
+                                                <span className="text-xs">
+                                                    {isFileUploadEnabled ? 'Click to upload Excel file' : 'Select module first'}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
 
-                            {/* Action Buttons */}
-                            {uploadedFile && (
-                                <>
-                                    <button
-                                        onClick={handleShowPreview}
-                                        disabled={isLoading}
-                                        className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm disabled:opacity-50 transition-colors whitespace-nowrap"
-                                    >
-                                        Preview
-                                    </button>
-                                    <button
-                                        onClick={handleImportClick}
-                                        disabled={isLoading || !isPreviewShown}
-                                        className="px-4 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 shadow-sm disabled:opacity-50 disabled:bg-gray-400 dark:disabled:bg-gray-800 transition-colors whitespace-nowrap"
-                                    >
-                                        Import
-                                    </button>
-                                </>
-                            )}
+                                {/* Action Buttons */}
+                                {uploadedFile && (
+                                    <>
+                                        <button
+                                            onClick={handleShowPreview}
+                                            disabled={isLoading}
+                                            className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm disabled:opacity-50 transition-colors whitespace-nowrap"
+                                        >
+                                            Preview
+                                        </button>
+                                        <button
+                                            onClick={handleImportClick}
+                                            disabled={isLoading || !isPreviewShown}
+                                            className="px-4 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 shadow-sm disabled:opacity-50 disabled:bg-gray-400 dark:disabled:bg-gray-800 transition-colors whitespace-nowrap"
+                                        >
+                                            Import
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Info Text */}
@@ -666,7 +727,13 @@ const ImportMaster: React.FC = () => {
                     {/* Fixed Height Scrollable Container */}
                     <div className="relative border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden" style={{ height: '450px' }}>
                         <div className="excel-scroll-container absolute inset-0 overflow-auto scroll-smooth">
-                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-xs">
+                            <table className="divide-y divide-gray-200 dark:divide-gray-800 text-xs border-collapse" style={{ tableLayout: 'fixed' }}>
+                                <colgroup>
+                                    <col style={{ width: '48px' }} />
+                                    {previewData.headers.map((_, idx) => (
+                                        <col key={idx} style={{ width: `${previewColWidths[idx] || 150}px` }} />
+                                    ))}
+                                </colgroup>
                                 <thead className="bg-gray-50 dark:bg-[#1e293b] sticky top-0 z-10 shadow-sm">
                                     <tr>
                                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-12 bg-gray-50 dark:bg-[#1e293b] border-r border-gray-200 dark:border-gray-700 sticky left-0 z-20">
@@ -675,9 +742,11 @@ const ImportMaster: React.FC = () => {
                                         {previewData.headers.map((header, index) => (
                                             <th
                                                 key={index}
-                                                className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-[#1e293b] whitespace-nowrap"
+                                                className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-[#1e293b] whitespace-nowrap relative select-none border-b border-r border-gray-300 dark:border-gray-600"
+                                                onMouseDown={(e) => handlePreviewResizeStart(e, index)}
+                                                onMouseMove={handlePreviewThMouseMove}
                                             >
-                                                {header}
+                                                <span className="truncate">{header}</span>
                                             </th>
                                         ))}
                                     </tr>
@@ -691,9 +760,11 @@ const ImportMaster: React.FC = () => {
                                             {row.map((cell, cellIndex) => (
                                                 <td
                                                     key={cellIndex}
-                                                    className="px-3 py-2 whitespace-nowrap text-xs text-gray-700 dark:text-gray-300"
+                                                    className="px-3 py-2 text-xs text-gray-700 dark:text-gray-300 border-r border-gray-200 dark:border-gray-700 overflow-hidden"
                                                 >
-                                                    {cell?.toString() || ''}
+                                                    <span className="block truncate" title={cell?.toString() || ''}>
+                                                        {cell?.toString() || ''}
+                                                    </span>
                                                 </td>
                                             ))}
                                         </tr>
