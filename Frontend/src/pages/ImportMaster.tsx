@@ -598,8 +598,8 @@ const ImportMaster: React.FC = () => {
                         </div>
                     )}
 
-                    {/* File Upload */}
-                    {(selectedModule && !isLedgerMode) && (
+                    {/* File Upload - HIDDEN BY USER REQUEST */}
+                    {(false && selectedModule && !isLedgerMode) && (
                         <div className="md:col-span-2">
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                                 Excel File (.xlsx only)

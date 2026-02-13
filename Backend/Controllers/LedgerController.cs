@@ -43,6 +43,20 @@ public class LedgerController : ControllerBase
         }
     }
 
+    [HttpGet("departments")]
+    public async Task<IActionResult> GetDepartments()
+    {
+        try
+        {
+            var departments = await _ledgerService.GetDepartmentsAsync();
+            return Ok(departments);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     [HttpGet("bygroup/{ledgerGroupId}")]
     public async Task<IActionResult> GetLedgersByGroup(int ledgerGroupId)
     {
@@ -50,6 +64,20 @@ public class LedgerController : ControllerBase
         {
             var ledgers = await _ledgerService.GetLedgersByGroupAsync(ledgerGroupId);
             return Ok(ledgers);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("clients")]
+    public async Task<IActionResult> GetClients()
+    {
+        try
+        {
+            var clients = await _ledgerService.GetClientsAsync();
+            return Ok(clients);
         }
         catch (Exception ex)
         {
@@ -127,12 +155,8 @@ public class LedgerController : ControllerBase
 
         try
         {
-            var success = await _ledgerService.ClearAllLedgerDataAsync(request.LedgerGroupId, request.Username, request.Password, request.Reason);
-            if (success)
-            {
-                return Ok(new { message = "All data cleared successfully." });
-            }
-            return StatusCode(500, new { message = "Failed to clear data." });
+            var deletedCount = await _ledgerService.ClearAllLedgerDataAsync(request.LedgerGroupId, request.Username, request.Password, request.Reason);
+            return Ok(new { message = "All data cleared successfully.", deletedCount });
         }
         catch (UnauthorizedAccessException)
         {

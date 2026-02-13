@@ -17,7 +17,11 @@ import {
     ValidationStatus,
     clearAllLedgerData,
     SalesRepresentativeDto,
-    getSalesRepresentatives
+    getSalesRepresentatives,
+    DepartmentDto,
+    getDepartments,
+    ClientDto,
+    getClients
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 
@@ -50,14 +54,22 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     const [filterType, setFilterType] = useState<'all' | 'valid' | 'duplicate' | 'missing' | 'mismatch' | 'invalid'>('all');
     const [countryStates, setCountryStates] = useState<CountryStateDto[]>([]);
     const [salesRepresentatives, setSalesRepresentatives] = useState<SalesRepresentativeDto[]>([]);
+    const [departments, setDepartments] = useState<DepartmentDto[]>([]);
+    const [clients, setClients] = useState<ClientDto[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Clear Data Flow State
     const [clearFlowStep, setClearFlowStep] = useState<0 | 1 | 2 | 3 | 4>(0);
     const [clearCredentials, setClearCredentials] = useState({ username: '', password: '', reason: '' });
-    const [filenameError, setFilenameError] = useState<string | null>(null);
 
-    const handleClearAllDataTrigger = () => {
+    // Validation Modal State
+    const [showValidationModal, setShowValidationModal] = useState(false);
+    const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
+    const [filenameError, setFilenameError] = useState<string | null>(null);
+    const [clearActionType, setClearActionType] = useState<'clearOnly' | 'freshUpload'>('freshUpload');
+
+    const handleClearAllDataTrigger = (type: 'clearOnly' | 'freshUpload') => {
+        setClearActionType(type);
         setClearFlowStep(1);
     };
 
@@ -78,22 +90,24 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         e.preventDefault();
         try {
             setIsLoading(true);
-            await clearAllLedgerData(ledgerGroupId, clearCredentials.username, clearCredentials.password, clearCredentials.reason);
-            toast.success('All data cleared successfully');
+            const response = await clearAllLedgerData(ledgerGroupId, clearCredentials.username, clearCredentials.password, clearCredentials.reason);
+            const deletedCount = response.deletedCount || 0;
+
+            toast.success(`Successfully cleared ${deletedCount} ledger(s) from database`);
             setLedgerData([]);
             setValidationResult(null);
             setMode('idle');
-            setMode('idle');
-            if (fileInputRef.current) {
+
+            if (clearActionType === 'freshUpload' && fileInputRef.current) {
                 fileInputRef.current.value = '';
                 // Automatically trigger file selection after fresh load
                 fileInputRef.current.click();
             }
+
             handleClearCancel();
         } catch (error: any) {
             console.error(error);
             toast.error(error.response?.data?.message || 'Failed to clear data. Check credentials.');
-            // Only close if successful? No, keep open on error to retry
         } finally {
             setIsLoading(false);
         }
@@ -119,9 +133,54 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             }
         };
 
+        const fetchDepartments = async () => {
+            try {
+                const data = await getDepartments();
+                console.log('Fetched Departments:', data);
+                if (Array.isArray(data)) {
+                    setDepartments(data);
+                } else {
+                    console.error('Departments data is not an array:', data);
+                    toast.error('Failed to load departments: Invalid data format');
+                }
+            } catch (error) {
+                console.error('Failed to load departments', error);
+                toast.error('Failed to load Department master data');
+            }
+        };
+
+        const fetchClients = async () => {
+            try {
+                const data = await getClients();
+                setClients(data);
+            } catch (error) {
+                console.error('Failed to load clients', error);
+            }
+        };
+
         fetchCountryStates();
         fetchSalesRepresentatives();
+        fetchDepartments();
+        fetchClients();
     }, []);
+
+    // Reset state when Ledger Group changes
+    useEffect(() => {
+        setLedgerData([]);
+        setMode('idle');
+        setValidationResult(null);
+        setSelectedRows(new Set());
+        setFilterType('all');
+        setShowValidationModal(false);
+        setValidationModalContent(null);
+        setFilenameError(null);
+        setClearFlowStep(0);
+        setClearCredentials({ username: '', password: '', reason: '' });
+
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    }, [ledgerGroupId, ledgerGroupName]);
 
     // Helper functions for options
     const distinctCountries = useMemo(() => {
@@ -150,6 +209,12 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
     // Column Definitions for AG Grid
     const columnDefs: ColDef[] = useMemo(() => {
+        const isSupplier = ledgerGroupName?.toLowerCase().includes('supplier') ?? false;
+        const isEmployee = ledgerGroupName?.toLowerCase().includes('employee') ?? false;
+        const isConsignee = ledgerGroupName?.toLowerCase().includes('consignee') ?? false;
+        const isVendor = ledgerGroupName?.toLowerCase().includes('vendors') ?? false;
+        const isTransporter = ledgerGroupName?.toLowerCase().includes('transporters') ?? false;
+
         return [
             {
                 field: 'checkbox',
@@ -173,6 +238,17 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             },
             { field: 'ledgerName', headerName: 'LedgerName', minWidth: 100 },
             { field: 'mailingName', headerName: 'MailingName' },
+            // Consignee Specific
+            {
+                field: 'clientName',
+                headerName: 'ClientName',
+                hide: !isConsignee,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: {
+                    values: clients.map(c => c.ledgerName || c.LedgerName || '').filter(Boolean)
+                }
+            },
+
             { field: 'address1', headerName: 'Address1' },
             { field: 'address2', headerName: 'Address2' },
             { field: 'address3', headerName: 'Address3' },
@@ -208,13 +284,42 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             { field: 'telephoneNo', headerName: 'TelephoneNo' },
             { field: 'email', headerName: 'Email' },
             { field: 'mobileNo', headerName: 'MobileNo' },
-            { field: 'website', headerName: 'Website' },
+            // Employee Specific Columns
+            {
+                field: 'dateOfBirth',
+                headerName: 'DateOfBirth',
+                hide: !isEmployee,
+                valueFormatter: (params) => {
+                    if (!params.value) return '';
+                    // Return formatted date or original string if parsing needed
+                    // Assuming backend returns ISO string, or Excel returns string/date
+                    // Simple display
+                    return params.value;
+                }
+            },
             { field: 'panNo', headerName: 'PANNo' },
-            { field: 'gstNo', headerName: 'GSTNo' },
+            {
+                field: 'departmentName',
+                headerName: 'DepartmentName',
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: {
+                    values: departments.map(d => d.departmentName || d.DepartmentName || '').filter(Boolean)
+                },
+                hide: !isEmployee
+            },
+            {
+                field: 'designation',
+                headerName: 'Designation',
+                hide: !isEmployee
+            },
+            // End Employee Specific
+
+            { field: 'website', headerName: 'Website', hide: isEmployee },
+            { field: 'gstNo', headerName: 'GSTNo', hide: isEmployee },
             {
                 field: 'currencyCode',
                 headerName: 'CurrencyCode',
-                hide: !ledgerGroupName.toLowerCase().includes('supplier')
+                hide: !isSupplier && !isVendor
             },
             {
                 field: 'salesRepresentative',
@@ -223,20 +328,16 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 cellEditorParams: {
                     values: salesRepresentatives.map(sr => sr.employeeName || sr.EmployeeName || '').filter(Boolean)
                 },
-                hide: ledgerGroupName.toLowerCase().includes('supplier')
+                hide: isSupplier || isEmployee || isConsignee || isVendor || isTransporter
             },
-            { field: 'supplyTypeCode', headerName: 'SupplyTypeCode' },
-            { field: 'gstApplicable', headerName: 'GSTApplicable', cellEditor: 'agCheckboxCellEditor' },
-            { field: 'refCode', headerName: 'RefCode' },
-            { field: 'gstRegistrationType', headerName: 'GSTRegistrationType' },
-            {
-                field: 'creditDays',
-                headerName: 'CreditDays',
-                hide: ledgerGroupName.toLowerCase().includes('supplier')
-            },
-            { field: 'deliveredQtyTolerance', headerName: 'DeliveredQtyTolerance' }
+            { field: 'supplyTypeCode', headerName: 'SupplyTypeCode', hide: isEmployee || isVendor || isTransporter },
+            { field: 'gstApplicable', headerName: 'GSTApplicable', cellEditor: 'agCheckboxCellEditor', hide: isEmployee || isConsignee || isTransporter },
+            { field: 'refCode', headerName: 'RefCode', hide: isEmployee || isVendor || isTransporter },
+            { field: 'gstRegistrationType', headerName: 'GSTRegistrationType', hide: isEmployee || isConsignee || isVendor || isTransporter },
+            { field: 'creditDays', headerName: 'CreditDays', hide: isSupplier || isEmployee || isConsignee || isVendor || isTransporter },
+            { field: 'deliveredQtyTolerance', headerName: 'DeliveredQtyTolerance', hide: isEmployee || isConsignee || isVendor || isTransporter },
         ];
-    }, [distinctCountries, countryStates, salesRepresentatives, ledgerGroupName]);
+    }, [ledgerGroupName, distinctCountries, countryStates, salesRepresentatives, departments, clients]);
 
     const defaultColDef = useMemo(() => {
         return {
@@ -264,9 +365,6 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 // row style for duplicate from validation
                 if (rowValidation?.rowStatus === ValidationStatus.Duplicate) {
                     return { backgroundColor: colors.duplicate };
-                }
-                if (rowValidation?.rowStatus === ValidationStatus.InvalidContent) {
-                    return { backgroundColor: colors.invalid };
                 }
 
                 // cell specific style
@@ -501,6 +599,22 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                         supplyTypeCode = row.SupplyTypeCode;
                     }
 
+                    // Format DateOfBirth
+                    let dateOfBirth = row.DateOfBirth;
+                    if (dateOfBirth && typeof dateOfBirth === 'number') {
+                        // Excel serial date to JS Date
+                        const date = new Date(Math.round((dateOfBirth - 25569) * 86400 * 1000));
+                        dateOfBirth = date.toISOString().split('T')[0];
+                    }
+
+                    // Determine DepartmentName and Designation with fallback
+                    // Sometimes Excel headers might have spaces or case differences
+                    const departmentName = row.DepartmentName || row['Department Name'] || row['DEPARTMENT NAME'] || row.departmentname;
+                    const designation = row.Designation || row.designation || row.DESIGNATION;
+
+                    // ClientName for Consignee
+                    const clientName = row.ClientName || row['Client Name'] || row.clientName;
+
                     let refCode = row.RefCode || '';
 
                     let gstRegistrationType = 'Regular';
@@ -531,16 +645,16 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
                     return {
                         ledgerGroupID: ledgerGroupId,
-                        ledgerName: row.LedgerName ? String(row.LedgerName) : undefined,
-                        mailingName: row.MailingName ? String(row.MailingName) : undefined,
+                        ledgerName: row.LedgerName,
+                        mailingName: row.MailingName,
                         legalName: legalName ? String(legalName) : undefined,
                         mailingAddress: mailingAddress,
-                        address1: row.Address1 ? String(row.Address1) : undefined,
-                        address2: row.Address2 ? String(row.Address2) : undefined,
-                        address3: row.Address3 ? String(row.Address3) : undefined,
+                        address1: row.Address1,
+                        address2: row.Address2,
+                        address3: row.Address3,
                         country: country,
                         state: state,
-                        city: row.City ? String(row.City) : undefined,
+                        city: row.City,
                         pincode: row.Pincode ? String(row.Pincode) : undefined,
                         telephoneNo: row.TelephoneNo ? String(row.TelephoneNo) : undefined,
                         email: row.Email ? String(row.Email) : undefined,
@@ -555,7 +669,15 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                         gstRegistrationType: String(gstRegistrationType),
                         creditDays: creditDays,
                         deliveredQtyTolerance: (row.DeliveredQtyTolerance && !isNaN(parseFloat(row.DeliveredQtyTolerance))) ? parseFloat(row.DeliveredQtyTolerance) : undefined,
-                        currencyCode: row.CurrencyCode ? String(row.CurrencyCode) : undefined
+                        currencyCode: row.CurrencyCode ? String(row.CurrencyCode) : undefined,
+
+                        // Employee Fields
+                        departmentName: departmentName ? String(departmentName) : undefined,
+                        designation: designation ? String(designation) : undefined,
+                        dateOfBirth: dateOfBirth ? String(dateOfBirth) : undefined,
+
+                        // Consignee Fields
+                        clientName: clientName ? String(clientName) : undefined
                     };
                 });
 
@@ -577,6 +699,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         }
 
         setIsLoading(true);
+        setValidationResult(null); // Reset UI first
+
         try {
             const result = await validateLedgers(ledgerData, ledgerGroupId);
             setValidationResult(result);
@@ -584,8 +708,47 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             if (result.isValid) {
                 toast.success('All validations passed! Ready to import.');
             } else {
-                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount;
-                toast.error(`Validation completed with ${totalIssues} issues`);
+                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
+
+                // Aggregate failures by column
+                const columnFailures = new Map<string, Set<string>>();
+
+                result.rows.forEach((row: LedgerRowValidation) => {
+                    // 1. Handle Duplicates (Row Level)
+                    if (row.rowStatus === ValidationStatus.Duplicate) {
+                        // Attribute duplicate to LedgerName as primary indicator
+                        const col = 'LedgerName';
+                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                        columnFailures.get(col)!.add('Duplicate data found');
+                    }
+
+                    // 2. Handle Cell Validations
+                    if (row.cellValidations && row.cellValidations.length > 0) {
+                        row.cellValidations.forEach((cell: any) => {
+                            const col = cell.columnName || 'Unknown';
+                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+
+                            let reason = cell.validationMessage;
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+
+                            columnFailures.get(col)!.add(reason);
+                        });
+                    }
+                });
+
+                // Construct Message
+                const messages: string[] = [];
+                columnFailures.forEach((reasons, col) => {
+                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
+                });
+
+                setValidationModalContent({
+                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
+                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues that were not attributed to specific columns.']
+                });
+                setShowValidationModal(true);
             }
         } catch (error: any) {
             toast.error(error?.response?.data?.error || 'Validation failed');
@@ -629,34 +792,67 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         const worksheet = workbook.addWorksheet(ledgerGroupName || 'Sheet1');
 
         const isSupplier = ledgerGroupName?.toLowerCase().includes('supplier');
+        const isEmployee = ledgerGroupName?.toLowerCase().includes('employee');
+        const isConsignee = ledgerGroupName?.toLowerCase().includes('consignee');
+        const isVendor = ledgerGroupName?.toLowerCase().includes('vendors');
+        const isTransporter = ledgerGroupName?.toLowerCase().includes('transporters');
 
         const exportColumns = [
-            'LedgerName', 'MailingName', 'Address1', 'Address2', 'Address3',
-            'Country', 'State', 'City', 'Pincode', 'TelephoneNo', 'Email',
-            'MobileNo', 'Website', 'PANNo', 'GSTNo'
+            'LedgerName', 'MailingName'
         ];
 
-        if (isSupplier) {
-            exportColumns.push('CurrencyCode');
+        if (isConsignee) {
+            exportColumns.push('ClientName');
+        }
+
+        exportColumns.push('Address1', 'Address2', 'Address3', 'Country', 'State', 'City', 'Pincode', 'TelephoneNo', 'Email', 'MobileNo');
+
+        if (isEmployee) {
+            exportColumns.push('DateOfBirth');
+            exportColumns.push('PANNo');
+            exportColumns.push('DepartmentName');
+            exportColumns.push('Designation');
         } else {
+            // Supplier, Customer, Consignee
+            exportColumns.push('Website');
+            exportColumns.push('PANNo');
+            exportColumns.push('GSTNo');
+        }
+
+        if (isSupplier || isVendor) {
+            exportColumns.push('CurrencyCode');
+        } else if (!isEmployee && !isConsignee && !isTransporter) {
             exportColumns.push('SalesRepresentative');
         }
 
-        exportColumns.push('SupplyTypeCode');
-        exportColumns.push('GSTApplicable');
-        exportColumns.push('RefCode');
-        exportColumns.push('GSTRegistrationType');
+        if (!isEmployee) {
+            if (!isVendor && !isTransporter) {
+                exportColumns.push('SupplyTypeCode');
+            }
 
-        if (!isSupplier) {
+            if (!isConsignee && !isTransporter) {
+                exportColumns.push('GSTApplicable');
+                if (!isVendor) {
+                    exportColumns.push('GSTRegistrationType');
+                }
+            }
+            if (!isVendor && !isTransporter) {
+                exportColumns.push('RefCode');
+            }
+        }
+
+        if (!isSupplier && !isEmployee && !isConsignee && !isVendor && !isTransporter) {
             exportColumns.push('CreditDays');
         }
 
-        exportColumns.push('DeliveredQtyTolerance');
+        if (!isEmployee && !isConsignee && !isVendor && !isTransporter) {
+            exportColumns.push('DeliveredQtyTolerance');
+        }
 
         worksheet.columns = exportColumns.map(col => ({ header: col, key: col, width: 20 }));
         worksheet.getRow(1).font = { bold: true };
 
-        ledgerData.forEach((ledger, index) => {
+        ledgerData.forEach((ledger) => {
             const rowValues: any = {
                 LedgerName: ledger.ledgerName,
                 MailingName: ledger.mailingName,
@@ -670,68 +866,53 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 TelephoneNo: ledger.telephoneNo,
                 Email: ledger.email,
                 MobileNo: ledger.mobileNo,
-                Website: ledger.website,
-                PANNo: ledger.panNo,
-                GSTNo: ledger.gstNo,
-                SupplyTypeCode: ledger.supplyTypeCode,
-                GSTApplicable: ledger.gstApplicable,
-                RefCode: ledger.refCode,
-                GSTRegistrationType: ledger.gstRegistrationType,
-                DeliveredQtyTolerance: ledger.deliveredQtyTolerance
+                PANNo: ledger.panNo
             };
 
-            if (isSupplier) {
-                rowValues.CurrencyCode = ledger.currencyCode;
+            if (isConsignee) {
+                rowValues.ClientName = ledger.clientName;
+            }
+
+            if (isEmployee) {
+                rowValues.DateOfBirth = ledger.dateOfBirth;
+                rowValues.DepartmentName = ledger.departmentName;
+                rowValues.Designation = ledger.designation;
             } else {
+                rowValues.Website = ledger.website;
+                rowValues.GSTNo = ledger.gstNo;
+                rowValues.PANNo = ledger.panNo; // Ensure PAN is mapped
+                if (!isVendor && !isTransporter) {
+                    rowValues.RefCode = ledger.refCode;
+                }
+
+                if (!isConsignee && !isTransporter) {
+                    rowValues.GSTApplicable = ledger.gstApplicable;
+                    if (!isVendor) {
+                        rowValues.GSTRegistrationType = ledger.gstRegistrationType;
+                        rowValues.DeliveredQtyTolerance = ledger.deliveredQtyTolerance;
+                    }
+                }
+
+                // SupplyTypeCode logic
+                if (!isEmployee && !isVendor && !isTransporter) {
+                    rowValues.SupplyTypeCode = ledger.supplyTypeCode;
+                }
+            }
+
+            if (isSupplier || isVendor) {
+                rowValues.CurrencyCode = ledger.currencyCode;
+            } else if (!isEmployee && !isConsignee && !isTransporter) {
                 rowValues.SalesRepresentative = ledger.salesRepresentative;
                 rowValues.CreditDays = ledger.creditDays;
             }
 
-            const row = worksheet.addRow(rowValues);
-            const rowIndex = index;
-
-            if (validationMap.size > 0 && validationMap.has(rowIndex)) {
-                const rowValidation = validationMap.get(rowIndex)!;
-
-                if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
-                    row.eachCell({ includeEmpty: true }, (cell: ExcelJS.Cell) => {
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFEE2E2' }
-                        };
-                    });
-                }
-
-                if (rowValidation.cellValidations && rowValidation.cellValidations.length > 0) {
-                    exportColumns.forEach((colName, colIdx) => {
-                        const cellValidation = rowValidation.cellValidations.find(cv => cv.columnName === colName);
-                        if (cellValidation) {
-                            const cell = row.getCell(colIdx + 1);
-
-                            if (cellValidation.status === ValidationStatus.MissingData) {
-                                cell.fill = {
-                                    type: 'pattern',
-                                    pattern: 'solid',
-                                    fgColor: { argb: 'FFDBEAFE' }
-                                };
-                            } else if (cellValidation.status === ValidationStatus.Mismatch) {
-                                cell.fill = {
-                                    type: 'pattern',
-                                    pattern: 'solid',
-                                    fgColor: { argb: 'FFFEF9C3' }
-                                };
-                            }
-                        }
-                    });
-                }
-            }
+            worksheet.addRow(rowValues);
         });
 
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `${ledgerGroupName}.xlsx`);
-        toast.success('Data exported successfully with validation colors');
+        toast.success('Data exported successfully');
     };
 
     // Display rows now handled by AG Grid Filtering
@@ -754,7 +935,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 </button>
 
                 <button
-                    onClick={handleClearAllDataTrigger}
+                    onClick={() => handleClearAllDataTrigger('clearOnly')}
                     disabled={isLoading || ledgerData.length === 0}
                     className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
                 >
@@ -772,7 +953,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 </button>
 
                 <button
-                    onClick={handleClearAllDataTrigger}
+                    onClick={() => handleClearAllDataTrigger('freshUpload')}
                     disabled={isLoading}
                     className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
                 >
@@ -887,7 +1068,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 </div>
             )}
 
-            {ledgerData.length > 0 && (
+            {/* Grid Section - Show if data exists OR if explicitly loaded (even if empty) */}
+            {(ledgerData.length > 0 || mode === 'loaded' || mode === 'validated') && (
                 <div className="bg-white dark:bg-[#0f172a] rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
                     <div className="p-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-[#1e293b]">
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
@@ -983,6 +1165,20 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                                 border-right: 1px solid var(--ag-border-color);
                                 z-index: 10 !important;
                             }
+
+                            /* Center No Rows Message */
+                            .ag-overlay-no-rows-center {
+                                display: flex;
+                                justify-content: center;
+                                align-items: center;
+                                height: 100%;
+                                font-size: 1.125rem;
+                                color: #64748b;
+                                font-weight: 500;
+                            }
+                            .ag-theme-quartz-dark .ag-overlay-no-rows-center {
+                                color: #94a3b8;
+                            }
                         `}</style>
                         <AgGridReact
                             rowData={ledgerData}
@@ -1000,6 +1196,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             paginationPageSizeSelector={[20, 50, 100]}
                             enableCellTextSelection={true}
                             ensureDomOrder={true}
+                            overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No records found</div>`}
                         />
                     </div>
                 </div>
@@ -1127,6 +1324,35 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             <button
                                 onClick={() => setFilenameError(null)}
                                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                            >
+                                Ok
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Validation Result Modal */}
+            {showValidationModal && validationModalContent && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-700 max-h-[90vh] flex flex-col">
+                        <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400 shrink-0">
+                            <AlertCircle className="w-8 h-8" />
+                            <h3 className="text-xl font-bold">{validationModalContent.title}</h3>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto mb-6 pr-2">
+                            <ul className="list-disc list-inside space-y-2 text-gray-700 dark:text-gray-300 text-lg">
+                                {validationModalContent.messages.map((msg, idx) => (
+                                    <li key={idx} className="whitespace-pre-wrap leading-relaxed">{msg}</li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className="flex justify-center shrink-0">
+                            <button
+                                onClick={() => setShowValidationModal(false)}
+                                className="px-8 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-lg min-w-[120px]"
                             >
                                 Ok
                             </button>

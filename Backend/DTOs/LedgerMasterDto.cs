@@ -31,6 +31,12 @@ public class LedgerMasterDto
     public bool IsDeletedTransaction { get; set; }
     public decimal? Distance { get; set; }
     public string? CurrencyCode { get; set; }
+    public string? DepartmentName { get; set; }
+    public int? DepartmentID { get; set; }
+    public string? Designation { get; set; }
+    public DateTime? DateOfBirth { get; set; }
+    public string? ClientName { get; set; }
+    public int? RefClientID { get; set; }
 }
 
 public class LedgerValidationResultDto
@@ -79,4 +85,10 @@ public class SalesRepresentativeDto
 {
     public int EmployeeID { get; set; }
     public string EmployeeName { get; set; } = string.Empty;
+}
+
+public class DepartmentDto
+{
+    public int DepartmentID { get; set; }
+    public string DepartmentName { get; set; } = string.Empty;
 }

@@ -44,7 +44,13 @@ public class LedgerService : ILedgerService
                 (SELECT TOP 1 CASE WHEN ISNUMERIC(FieldValue) = 1 THEN CAST(FieldValue AS INT) ELSE NULL END FROM LedgerMasterDetails WHERE LedgerID = l.LedgerID AND FieldName = 'CreditDays' AND (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0) AND FieldValue IS NOT NULL ORDER BY LedgerDetailsID DESC) as CreditDays,
                 (SELECT TOP 1 FieldValue FROM LedgerMasterDetails WHERE LedgerID = l.LedgerID AND FieldName = 'CurrencyCode' AND (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0) AND FieldValue IS NOT NULL ORDER BY LedgerDetailsID DESC) as CurrencyCode,
                 l.LegalName,
-                l.MailingAddress
+                l.MailingAddress,
+                l.DateOfBirth,
+                l.Designation,
+                l.DepartmentID,
+                dm.DepartmentName,
+                l.RefClientID,
+                client.LedgerName as ClientName
             FROM LedgerMaster l
             LEFT JOIN (
                 SELECT LM.LedgerID, LM.LedgerName 
@@ -52,6 +58,8 @@ public class LedgerService : ILedgerService
                 INNER JOIN LedgerGroupMaster AS LG ON LG.LedgerGroupID=LM.LedgerGroupID AND LG.CompanyID=LM.CompanyID 
                 WHERE LG.LedgerGroupNameID=27 AND LM.DepartmentID=-50  And ISNULL(LM.IsDeletedTransaction, 0) <> 1 AND LM.CompanyID=2
             ) sr ON l.RefSalesRepresentativeID = sr.LedgerID
+            LEFT JOIN DepartmentMaster dm ON l.DepartmentID = dm.DepartmentID
+            LEFT JOIN LedgerMaster client ON l.RefClientID = client.LedgerID
             WHERE l.LedgerGroupID = @LedgerGroupId 
             AND (l.IsDeletedTransaction IS NULL OR l.IsDeletedTransaction = 0)
             ORDER BY l.LedgerName";
@@ -87,6 +95,10 @@ public class LedgerService : ILedgerService
             new { LedgerGroupId = ledgerGroupId });
         
         bool isSupplier = ledgerGroupName?.ToLower().Contains("supplier") == true;
+        bool isEmployee = ledgerGroupName?.ToLower().Contains("employee") == true;
+        bool isConsignee = ledgerGroupName?.ToLower().Contains("consignee") == true;
+        bool isVendor = ledgerGroupName?.ToLower().Contains("vendors") == true;
+        bool isTransporter = ledgerGroupName?.ToLower().Contains("transporters") == true;
 
         // Get existing ledgers from database for duplicate check
         var existingLedgers = await GetLedgersByGroupAsync(ledgerGroupId);
@@ -94,9 +106,28 @@ public class LedgerService : ILedgerService
         // Get valid Country/State combinations
         var validCountryStates = await GetCountryStatesAsync();
 
+        // Get Valid Clients if needed
+        var validClients = new List<ClientDto>();
+        if (ledgers.Any(l => !string.IsNullOrWhiteSpace(l.ClientName)))
+        {
+            validClients = await GetClientsAsync();
+        }
+
         // Required fields
-        var requiredList = new List<string> { "LedgerName", "MailingName", "Address1", "Country", "State", "City", "MobileNo", "GSTNo" };
-        if (isSupplier)
+        var requiredList = new List<string> { "LedgerName", "MailingName", "Address1", "Country", "State", "City", "MobileNo" };
+        
+        if (isEmployee)
+        {
+            requiredList.Add("DepartmentName");
+            requiredList.Add("Designation");
+            // GSTNo is not mandatory for employees
+        }
+        else
+        {
+            requiredList.Add("GSTNo");
+        }
+
+        if (isSupplier || isVendor)
         {
             requiredList.Add("CurrencyCode");
         }
@@ -136,21 +167,50 @@ public class LedgerService : ILedgerService
                 }
             }
 
-            // 2. Check for duplicates (RED) - LedgerName + Address1 + GSTNo
+            // 2. Check for duplicates (RED)
             // Helper for composite comparison
             bool IsDuplicate(LedgerMasterDto a, LedgerMasterDto b)
             {
                 var nameA = a.LedgerName?.Trim() ?? "";
                 var addrA = a.Address1?.Trim() ?? "";
-                var gstA = a.GSTNo?.Trim() ?? "";
-
+                
                 var nameB = b.LedgerName?.Trim() ?? "";
                 var addrB = b.Address1?.Trim() ?? "";
-                var gstB = b.GSTNo?.Trim() ?? "";
 
-                return string.Equals(nameA, nameB, StringComparison.OrdinalIgnoreCase) &&
-                       string.Equals(addrA, addrB, StringComparison.OrdinalIgnoreCase) &&
-                       string.Equals(gstA, gstB, StringComparison.OrdinalIgnoreCase);
+                if (isEmployee)
+                {
+                    // For Employees: LedgerName + Address1 + DepartmentName
+                    var deptA = a.DepartmentName?.Trim() ?? "";
+                    var deptB = b.DepartmentName?.Trim() ?? "";
+
+                    return string.Equals(nameA, nameB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(addrA, addrB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(deptA, deptB, StringComparison.OrdinalIgnoreCase);
+                }
+                else if (isConsignee)
+                {
+                    // For Consignee: LedgerName + ClientName + Address1 + GSTNo
+                    var gstA = a.GSTNo?.Trim() ?? "";
+                    var gstB = b.GSTNo?.Trim() ?? "";
+
+                    var clientA = a.ClientName?.Trim() ?? "";
+                    var clientB = b.ClientName?.Trim() ?? "";
+
+                    return string.Equals(nameA, nameB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(clientA, clientB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(addrA, addrB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(gstA, gstB, StringComparison.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    // For Others: LedgerName + Address1 + GSTNo
+                    var gstA = a.GSTNo?.Trim() ?? "";
+                    var gstB = b.GSTNo?.Trim() ?? "";
+
+                    return string.Equals(nameA, nameB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(addrA, addrB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(gstA, gstB, StringComparison.OrdinalIgnoreCase);
+                }
             }
 
             var isDuplicate = existingLedgers.Any(e => IsDuplicate(e, ledger));
@@ -195,11 +255,32 @@ public class LedgerService : ILedgerService
                 }
             }
 
+            // Check ClientName mismatch (Consignee)
+            if (!string.IsNullOrWhiteSpace(ledger.ClientName))
+            {
+                var isValidClient = validClients.Any(c => string.Equals(c.LedgerName, ledger.ClientName, StringComparison.OrdinalIgnoreCase));
+                
+                if (!isValidClient)
+                {
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = "ClientName",
+                        ValidationMessage = "Client not found in system",
+                        Status = ValidationStatus.Mismatch
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                         rowValidation.RowStatus = ValidationStatus.Mismatch;
+                        
+                    hasMismatch = true;
+                }
+            }
+
             // 4. Check for Special Characters (InvalidContent)
             bool hasInvalidContent = false;
             var stringProperties = typeof(LedgerMasterDto)
                 .GetProperties()
-                .Where(p => p.PropertyType == typeof(string));
+                .Where(p => p.PropertyType == typeof(string) && p.Name != "LegalName" && p.Name != "MailingAddress");
 
             foreach (var prop in stringProperties)
             {
@@ -251,14 +332,20 @@ public class LedgerService : ILedgerService
 
         try
         {
-            // 1. Get Ledger Group Prefix
+            // 1. Get Ledger Group Prefix and Name
             string prefix = "LGR";
+            string ledgerType = "Suppliers"; // Default
             try 
             {
-                var groupPrefix = await _connection.ExecuteScalarAsync<string>(
-                    "SELECT LedgerGroupPrefix FROM LedgerGroupMaster WHERE LedgerGroupID = @GID", 
+                var groupData = await _connection.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT LedgerGroupPrefix, LedgerGroupName FROM LedgerGroupMaster WHERE LedgerGroupID = @GID", 
                     new { GID = ledgerGroupId }, transaction: transaction);
-                if (!string.IsNullOrEmpty(groupPrefix)) prefix = groupPrefix;
+                
+                if (groupData != null)
+                {
+                    if (!string.IsNullOrEmpty(groupData.LedgerGroupPrefix)) prefix = groupData.LedgerGroupPrefix;
+                    if (!string.IsNullOrEmpty(groupData.LedgerGroupName)) ledgerType = groupData.LedgerGroupName;
+                }
             }
             catch {}
 
@@ -272,6 +359,7 @@ public class LedgerService : ILedgerService
             int successCount = 0;
 
             // Prepare Insert SQL for LedgerMaster (Full Columns)
+            // Prepare Insert SQL for LedgerMaster (Full Columns)
             var insertMasterSql = @"
                 INSERT INTO LedgerMaster (
                     LedgerCode, MaxLedgerNo, LedgerCodePrefix,
@@ -279,14 +367,18 @@ public class LedgerService : ILedgerService
                     Country, State, City, Pincode, TelephoneNo, Email, MobileNo, Website,
                     PANNo, GSTNo, RefSalesRepresentativeID, SupplyTypeCode, GSTApplicable,
                     Distance, DeliveredQtyTolerance, IsDeletedTransaction, CompanyID, UserID, FYear,
-                    CreatedDate, CreatedBy, ISLedgerActive, LegalName, MailingAddress
+                    CreatedDate, CreatedBy, ISLedgerActive, LegalName, MailingAddress,
+                    CurrencyCode, DepartmentID, LedgerRefCode, InventoryEffect, MaintainBillWise, IsTaxType,
+                    LedgerType, DateOfBirth, Designation, RefClientID
                 ) VALUES (
                     @LedgerCode, @MaxLedgerNo, @LedgerCodePrefix,
                     @LedgerGroupID, @LedgerName, @MailingName, @Address1, @Address2, @Address3,
                     @Country, @State, @City, @Pincode, @TelephoneNo, @Email, @MobileNo, @Website,
                     @PANNo, @GSTNo, @RefSalesRepresentativeID, @SupplyTypeCode, @GSTApplicable,
                     @Distance, @DeliveredQtyTolerance, 0, 2, 2, '2025-2026',
-                    GETDATE(), 2, 1, @LegalName, @MailingAddress
+                    GETDATE(), 2, 1, @LegalName, @MailingAddress,
+                    @CurrencyCode, @DepartmentID, @RefCode, 0, 0, 0,
+                    @LedgerType, @DateOfBirth, @Designation, @RefClientID
                 );
                 SELECT CAST(SCOPE_IDENTITY() as int);";
 
@@ -327,6 +419,28 @@ public class LedgerService : ILedgerService
                     );
                 }
 
+                // Lookup Department ID if name is provided
+                int? departmentId = null;
+                if (!string.IsNullOrWhiteSpace(ledger.DepartmentName))
+                {
+                     departmentId = await _connection.ExecuteScalarAsync<int?>(
+                        "SELECT DepartmentID FROM DepartmentMaster WHERE DepartmentName = @Name",
+                        new { Name = ledger.DepartmentName },
+                        transaction: transaction
+                    );
+                }
+
+                // Lookup RefClientID for Consignee
+                int? refClientId = null;
+                if (ledgerType.ToLower().Contains("consignee") && !string.IsNullOrWhiteSpace(ledger.ClientName))
+                {
+                     refClientId = await _connection.ExecuteScalarAsync<int?>(
+                        "SELECT LedgerID FROM LedgerMaster WHERE LedgerName = @Name AND (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0)",
+                        new { Name = ledger.ClientName },
+                        transaction: transaction
+                     );
+                }
+
                 // Apply Defaults
                 string supplyTypeCode = !string.IsNullOrWhiteSpace(ledger.SupplyTypeCode) ? ledger.SupplyTypeCode : "B2B";
                 bool gstApplicable = ledger.GSTApplicable ?? true;
@@ -361,42 +475,83 @@ public class LedgerService : ILedgerService
                     Distance = ledger.Distance ?? (object)DBNull.Value,
                     DeliveredQtyTolerance = ledger.DeliveredQtyTolerance ?? (object)DBNull.Value,
                     LegalName = legalName, // Set LegalName
-                    MailingAddress = ledger.MailingAddress ?? (object)DBNull.Value
+                    MailingAddress = ledger.MailingAddress ?? (object)DBNull.Value,
+                    CurrencyCode = ledger.CurrencyCode ?? (object)DBNull.Value,
+                    DepartmentID = departmentId ?? 0,
+                    RefCode = ledger.RefCode ?? (object)DBNull.Value,
+                    LedgerType = ledgerType,
+                    DateOfBirth = ledger.DateOfBirth ?? (object)DBNull.Value,
+                    Designation = ledger.Designation ?? (object)DBNull.Value,
+                    RefClientID = refClientId ?? (object)DBNull.Value
                 }, transaction: transaction);
 
                 int newLedgerId = Convert.ToInt32(ledgerIdObj);
 
                 // INSERT INTO LedgerMasterDetails (Explicit Sequence)
-                var details = new List<(string Name, object? Value, int Seq)>
+                var details = new List<(string Name, object? Value, int Seq)>();
+                
+                // Check if Employee
+                bool isEmployee = ledgerType.ToLower().Contains("employee");
+
+                if (isEmployee)
                 {
-                    ("LedgerName", ledger.LedgerName, 1),
-                    ("MailingName", ledger.MailingName, 2),
-                    ("Address1", ledger.Address1, 3),
-                    ("Address2", ledger.Address2, 4),
-                    ("Address3", ledger.Address3, 5),
-                    ("Country", ledger.Country, 6),
-                    ("State", ledger.State, 7),
-                    ("City", ledger.City, 8),
-                    ("Pincode", ledger.Pincode, 9),
-                    ("MailingAddress", ledger.MailingAddress, 10),
-                    ("TelephoneNo", ledger.TelephoneNo, 11),
-                    ("MobileNo", ledger.MobileNo, 12),
-                    ("Email", ledger.Email, 13),
-                    ("Website", ledger.Website, 14),
-                    ("PANNo", ledger.PANNo, 15),
-                    ("GSTNo", ledger.GSTNo, 16),
-                    ("GSTApplicable", gstApplicable.ToString(), 17),
-                    ("RefSalesRepresentativeID", salesRepId?.ToString(), 18),
-                    ("LegalName", legalName, 19),
-                    ("SupplyTypeCode", supplyTypeCode, 20),
-                    ("RefCode", ledger.RefCode, 21),
-                    ("GSTRegistrationType", ledger.GSTRegistrationType, 22),
-                    ("DeliveredQtyTolerance", ledger.DeliveredQtyTolerance?.ToString(), 23),
-                    ("Distance", ledger.Distance?.ToString(), 24),
-                    ("CreditDays", ledger.CreditDays?.ToString(), 25),
-                    ("CurrencyCode", ledger.CurrencyCode, 26),
-                    ("ISLedgerActive", "True", 0)
-                };
+                    details = new List<(string Name, object? Value, int Seq)>
+                    {
+                        ("LedgerName", ledger.LedgerName, 1),
+                        ("MailingName", ledger.MailingName, 2),
+                        ("Address1", ledger.Address1, 3),
+                        ("Address2", ledger.Address2, 4),
+                        ("Address3", ledger.Address3, 5),
+                        ("Country", ledger.Country, 6),
+                        ("State", ledger.State, 7),
+                        ("City", ledger.City, 8),
+                        ("Pincode", ledger.Pincode, 9),
+                        ("MailingAddress", ledger.MailingAddress, 10),
+                        ("DateOfBirth", ledger.DateOfBirth?.ToString("yyyy-MM-dd"), 11),
+                        ("TelephoneNo", ledger.TelephoneNo, 12),
+                        ("MobileNo", ledger.MobileNo, 13),
+                        ("Email", ledger.Email, 14),
+                        ("PANNo", ledger.PANNo, 15),
+                        ("DepartmentID", departmentId?.ToString(), 16),
+                        ("Designation", ledger.Designation, 17),
+                        ("ISLedgerActive", "True", 0)
+                    };
+                }
+                else
+                {
+                    // Default / Supplier / Client
+                    details = new List<(string Name, object? Value, int Seq)>
+                    {
+                        ("LedgerName", ledger.LedgerName, 1),
+                        ("MailingName", ledger.MailingName, 2),
+                        ("Address1", ledger.Address1, 3),
+                        ("Address2", ledger.Address2, 4),
+                        ("Address3", ledger.Address3, 5),
+                        ("Country", ledger.Country, 6),
+                        ("State", ledger.State, 7),
+                        ("City", ledger.City, 8),
+                        ("Pincode", ledger.Pincode, 9),
+                        ("MailingAddress", ledger.MailingAddress, 10),
+                        ("TelephoneNo", ledger.TelephoneNo, 11),
+                        ("MobileNo", ledger.MobileNo, 12),
+                        ("Email", ledger.Email, 13),
+                        ("Website", ledger.Website, 14),
+                        ("PANNo", ledger.PANNo, 15),
+                        ("GSTNo", ledger.GSTNo, 16),
+                        ("CurrencyCode", ledger.CurrencyCode, 17),
+                        ("GSTApplicable", gstApplicable.ToString(), 18),
+                        ("LegalName", legalName, 19),
+                        ("SupplyTypeCode", supplyTypeCode, 20),
+                        ("RefCode", ledger.RefCode, 21),
+                        ("DeliveredQtyTolerance", ledger.DeliveredQtyTolerance?.ToString(), 22),
+                        ("ISLedgerActive", "True", 0)
+                    };
+
+                    if (refClientId.HasValue)
+                    {
+                        details.Add(("RefClientID", refClientId.Value, 23));
+                    }
+                }
 
                 foreach (var item in details)
                 {
@@ -448,7 +603,7 @@ public class LedgerService : ILedgerService
         return results.ToList();
     }
 
-    public async Task<bool> ClearAllLedgerDataAsync(int ledgerGroupId, string username, string password, string reason)
+    public async Task<int> ClearAllLedgerDataAsync(int ledgerGroupId, string username, string password, string reason)
     {
         if (_connection.State != System.Data.ConnectionState.Open) await _connection.OpenAsync();
         
@@ -469,6 +624,7 @@ public class LedgerService : ILedgerService
         }
 
         // 2. Perform Transactional Delete
+        int deletedCount = 0;
         var transaction = await _connection.BeginTransactionAsync();
         try
         {
@@ -478,25 +634,58 @@ public class LedgerService : ILedgerService
 
             // Delete from Master
             var deleteMasterQuery = "DELETE FROM LedgerMaster WHERE LedgerGroupID = @LedgerGroupId";
-            await _connection.ExecuteAsync(deleteMasterQuery, new { LedgerGroupId = ledgerGroupId }, transaction: transaction);
+            deletedCount = await _connection.ExecuteAsync(deleteMasterQuery, new { LedgerGroupId = ledgerGroupId }, transaction: transaction);
 
             await transaction.CommitAsync();
 
             // 3. Log Audit
             try 
             { 
-                var logMessage = $"[{DateTime.Now}] AUDIT: User '{username}' cleared all data for LedgerGroupID {ledgerGroupId}. Reason: {reason}\n";
+                var logMessage = $"[{DateTime.Now}] AUDIT: User '{username}' cleared {deletedCount} records for LedgerGroupID {ledgerGroupId}. Reason: {reason}\n";
                 await System.IO.File.AppendAllTextAsync("debug_log.txt", logMessage); 
             } 
             catch {}
 
-            return true;
+            return deletedCount;
         }
+
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
             try { await System.IO.File.AppendAllTextAsync("debug_log.txt", $"[{DateTime.Now}] ClearAllLedgerData Exception: {ex.Message}\n"); } catch {}
             throw;
+        }
+    }
+
+    public async Task<List<ClientDto>> GetClientsAsync()
+    {
+        try
+        {
+            var query = @"
+                SELECT LedgerID, LedgerName 
+                FROM (
+                    SELECT LedgerID, FieldName, NULLIF(FieldValue, '') as FieldValue 
+                    FROM LedgerMasterDetails 
+                    WHERE CompanyID = 2 
+                    AND LedgerGroupID IN (
+                        SELECT DISTINCT LedgerGroupID 
+                        FROM LedgerGroupMaster 
+                        WHERE LedgerGroupNameID = 24 AND CompanyID = 2
+                    ) 
+                    AND ISNULL(IsDeletedTransaction, 0) <> 1 
+                ) x 
+                PIVOT (
+                    MAX(FieldValue) FOR FieldName IN ([LedgerName])
+                ) p
+                ORDER BY LedgerName";
+
+            var results = await _connection.QueryAsync<ClientDto>(query);
+            return results.ToList();
+        }
+        catch (Exception ex)
+        {
+             try { await System.IO.File.AppendAllTextAsync("debug_log.txt", $"[{DateTime.Now}] GetClientsAsync Error: {ex.Message}\nStack: {ex.StackTrace}\n"); } catch { }
+             throw;
         }
     }
 
@@ -512,6 +701,25 @@ public class LedgerService : ILedgerService
 
         var results = await _connection.QueryAsync<SalesRepresentativeDto>(query);
         return results.ToList();
+    }
+
+    public async Task<List<DepartmentDto>> GetDepartmentsAsync()
+    {
+        try 
+        {
+            var query = @"
+                SELECT DepartmentID, DepartmentName 
+                FROM DepartmentMaster 
+                ORDER BY DepartmentName";
+
+            var results = await _connection.QueryAsync<DepartmentDto>(query);
+            return results.ToList();
+        }
+        catch (Exception ex)
+        {
+             try { await System.IO.File.AppendAllTextAsync("debug_log.txt", $"[{DateTime.Now}] GetDepartmentsAsync Error: {ex.Message}\nStack: {ex.StackTrace}\n"); } catch { }
+             throw;
+        }
     }
 
     private object? GetPropertyValue(object obj, string propertyName)

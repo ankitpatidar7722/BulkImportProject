@@ -170,6 +170,12 @@ export interface LedgerMasterDto {
     mailingAddress?: string;
     isDeletedTransaction?: boolean;
     currencyCode?: string;
+    departmentName?: string;
+    departmentID?: number;
+    designation?: string;
+    dateOfBirth?: string;
+    clientName?: string;
+    refClientID?: number;
 }
 
 export enum ValidationStatus {
@@ -222,6 +228,20 @@ export interface SalesRepresentativeDto {
     EmployeeName?: string;
 }
 
+export interface DepartmentDto {
+    departmentID?: number;
+    departmentName?: string;
+    DepartmentID?: number;
+    DepartmentName?: string;
+}
+
+export interface ClientDto {
+    ledgerID?: number;
+    ledgerName?: string;
+    LedgerID?: number;
+    LedgerName?: string;
+}
+
 export const getLedgersByGroup = async (ledgerGroupId: number): Promise<LedgerMasterDto[]> => {
     const response = await api.get(`/ledger/bygroup/${ledgerGroupId}`);
     return response.data;
@@ -234,6 +254,16 @@ export const getCountryStates = async (): Promise<CountryStateDto[]> => {
 
 export const getSalesRepresentatives = async (): Promise<SalesRepresentativeDto[]> => {
     const response = await api.get('/ledger/sales-representatives');
+    return response.data;
+};
+
+export const getClients = async (): Promise<ClientDto[]> => {
+    const response = await api.get('/ledger/clients');
+    return response.data;
+};
+
+export const getDepartments = async (): Promise<DepartmentDto[]> => {
+    const response = await api.get('/ledger/departments');
     return response.data;
 };
 
