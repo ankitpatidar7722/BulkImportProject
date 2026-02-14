@@ -517,3 +517,164 @@ export const updateCompany = async (company: CompanyDto): Promise<void> => {
 };
 
 export default api;
+
+// ---------------------------------------------
+// HSN Master Types & APIs
+// ---------------------------------------------
+
+export interface HSNMasterDto {
+    productHSNID?: number;
+    productHSNName?: string; // Group Name
+    displayName?: string;
+    hsnCode?: string;
+    productCategory?: string; // ProductType
+    gstTaxPercentage?: number;
+    cgstTaxPercentage?: number;
+    sgstTaxPercentage?: number;
+    igstTaxPercentage?: number;
+    itemGroupName?: string;
+    itemGroupID?: number;
+    companyID?: number;
+    isDeletedTransaction?: boolean;
+}
+
+export interface HSNRowValidation {
+    rowIndex: number;
+    data: HSNMasterDto;
+    cellValidations: CellValidation[];
+    rowStatus: ValidationStatus;
+    errorMessage?: string;
+}
+
+export interface HSNValidationResultDto {
+    rows: HSNRowValidation[];
+    summary: ValidationSummary;
+    isValid: boolean;
+}
+
+export const getHSNs = async (companyId: number = 2): Promise<HSNMasterDto[]> => {
+    const response = await api.get(`/hsn/list?companyId=${companyId}`);
+    return response.data;
+};
+
+export const getItemGroupNames = async (companyId: number = 2): Promise<string[]> => {
+    const response = await api.get(`/hsn/itemgroups?companyId=${companyId}`);
+    return response.data;
+};
+
+export const importHSNs = async (hsns: HSNMasterDto[]): Promise<ImportResultDto> => {
+    const response = await api.post('/hsn/import', hsns);
+    return response.data;
+};
+
+export const softDeleteHSN = async (id: number): Promise<ImportResultDto> => {
+    const response = await api.delete(`/hsn/delete/${id}`);
+    return response.data;
+};
+
+export const clearHSNData = async (companyId: number, username?: string, password?: string, reason?: string) => {
+    try {
+        const response = await api.post('/hsn/clear', {
+            companyId,
+            username,
+            password,
+            reason
+        });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+export const validateHSNs = async (hsns: HSNMasterDto[]): Promise<HSNValidationResultDto> => {
+    const response = await api.post('/hsn/validate', hsns);
+    return response.data;
+};
+
+// ==========================================
+// SPARE PART MASTER API
+// ==========================================
+
+export interface SparePartMasterDto {
+    sparePartID?: number;
+    sparePartName?: string;
+    sparePartGroup?: string;
+    hsnGroup?: string;
+    unit?: string;
+    rate?: number;
+    sparePartType?: string;
+    minimumStockQty?: number;
+    purchaseOrderQuantity?: number;
+    stockRefCode?: string;
+    supplierReference?: string;
+    narration?: string;
+    isDeletedTransaction?: boolean;
+}
+
+export interface SparePartRowValidation {
+    rowIndex: number;
+    data: SparePartMasterDto;
+    cellValidations: CellValidation[];
+    rowStatus: ValidationStatus;
+    errorMessage?: string;
+}
+
+export interface SparePartValidationResultDto {
+    rows: SparePartRowValidation[];
+    summary: ValidationSummary;
+    isValid: boolean;
+}
+
+export interface HSNGroupDto {
+    productHSNID: number;
+    displayName: string;
+}
+
+export interface UnitDto {
+    unitID: number;
+    unitSymbol: string;
+}
+
+export const getAllSpareParts = async (): Promise<SparePartMasterDto[]> => {
+    const response = await api.get('/sparepart/all');
+    return response.data;
+};
+
+export const getHSNGroups = async (): Promise<HSNGroupDto[]> => {
+    const response = await api.get('/sparepart/hsn-groups');
+    return response.data;
+};
+
+export const getUnits = async (): Promise<UnitDto[]> => {
+    const response = await api.get('/sparepart/units');
+    return response.data;
+};
+
+export const softDeleteSparePart = async (sparePartId: number): Promise<{ message: string }> => {
+    const response = await api.delete(`/sparepart/soft-delete/${sparePartId}`);
+    return response.data;
+};
+
+export const validateSpareParts = async (spareParts: SparePartMasterDto[]): Promise<SparePartValidationResultDto> => {
+    const response = await api.post('/sparepart/validate', {
+        spareParts
+    });
+    return response.data;
+};
+
+export const importSpareParts = async (spareParts: SparePartMasterDto[]): Promise<ImportResultDto> => {
+    const response = await api.post('/sparepart/import', {
+        spareParts
+    });
+    return response.data;
+};
+
+export const clearAllSparePartData = async (username: string, password: string, reason: string): Promise<any> => {
+    const response = await api.post('/sparepart/clear-all-data', {
+        username,
+        password,
+        reason
+    });
+    return response.data;
+};
+

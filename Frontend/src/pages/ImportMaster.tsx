@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LedgerMasterEnhanced from '../components/LedgerMasterEnhanced';
+import HSNMasterEnhanced from '../components/HSNMasterEnhanced';
+import SparePartMasterEnhanced from '../components/SparePartMasterEnhanced';
 import {
     getModules,
     previewExcel,
@@ -38,6 +40,8 @@ const ImportMaster: React.FC = () => {
     const [selectedItemGroup, setSelectedItemGroup] = useState<number>(0);
     const [itemGroups, setItemGroups] = useState<ItemGroupDto[]>([]);
     const [isItemMode, setIsItemMode] = useState(false);
+    const [isHSNMode, setIsHSNMode] = useState(false);
+    const [isSparePartMode, setIsSparePartMode] = useState(false);
 
     // Column resize states for Excel Preview Table
     const [previewColWidths, setPreviewColWidths] = useState<Record<number, number>>({});
@@ -142,6 +146,8 @@ const ImportMaster: React.FC = () => {
         if (!moduleId) {
             setIsLedgerMode(false);
             setIsItemMode(false);
+            setIsHSNMode(false);
+            setIsSparePartMode(false);
             return;
         }
 
@@ -151,10 +157,14 @@ const ImportMaster: React.FC = () => {
         if (module && (module.moduleName === 'LedgerMaster' || module.moduleDisplayName?.includes('Ledger'))) {
             setIsLedgerMode(true);
             setIsItemMode(false);
+            setIsHSNMode(false);
+            setIsSparePartMode(false);
             setSelectedLedgerGroup(0);
         } else if (module && (module.moduleName === 'ItemMaster' || module.moduleDisplayName?.toLowerCase().includes('item'))) {
             setIsItemMode(true);
             setIsLedgerMode(false);
+            setIsHSNMode(false);
+            setIsSparePartMode(false);
             setSelectedItemGroup(0);
 
             // Fetch Item Groups
@@ -165,19 +175,35 @@ const ImportMaster: React.FC = () => {
                 toast.error('Failed to fetch item groups');
                 console.error(error);
             }
+        } else if (module && (module.moduleName.includes('ProductGroupMaster') || module.moduleDisplayName?.includes('HSN') || module.moduleDisplayName?.includes('Product Group'))) {
+            setIsHSNMode(true);
+            setIsLedgerMode(false);
+            setIsItemMode(false);
+            setIsSparePartMode(false);
+        } else if (module && (module.moduleName.includes('SparePartMaster') || module.moduleDisplayName?.includes('Spare Part'))) {
+            setIsSparePartMode(true);
+            setIsLedgerMode(false);
+            setIsItemMode(false);
+            setIsHSNMode(false);
+            setShowSubModuleDropdown(false);
+            setIsFileUploadEnabled(true);
         } else if (module && (module.moduleName === 'ToolMaster' || module.moduleDisplayName?.toLowerCase().includes('tool master'))) {
             // Tool Master mode - use generic sub-module dropdown
             setIsLedgerMode(false);
             setIsItemMode(false);
+            setIsHSNMode(false);
+            setIsSparePartMode(false);
         } else {
             setIsLedgerMode(false);
             setIsItemMode(false);
+            setIsHSNMode(false);
+            setIsSparePartMode(false);
         }
 
         if (module) {
             try {
                 const lookupName = module.moduleDisplayName || module.moduleName;
-                const subs = await getModules(lookupName);
+                const subs = await getModules(lookupName); // Usually returns submodules or nothing
 
                 setSubModules(subs);
 
@@ -185,7 +211,15 @@ const ImportMaster: React.FC = () => {
                 const moduleDisplayName = module.moduleDisplayName || module.moduleName;
                 const needsSubModuleSelection = requiresSubModuleSelection(moduleDisplayName);
 
-                if (!needsSubModuleSelection && subs.length > 0) {
+                if (isHSNMode) {
+                    // Force enable if HSN mode (unless HSN has submodules logic which we assume basic here)
+                    if (subs.length === 0) {
+                        setIsFileUploadEnabled(true);
+                        setShowSubModuleDropdown(false);
+                    } else {
+                        setShowSubModuleDropdown(true);
+                    }
+                } else if (!needsSubModuleSelection && subs.length > 0) {
                     // Auto-select the first sub-module for non-master modules
                     setSelectedSubModule(subs[0].moduleId.toString());
                     setIsFileUploadEnabled(true); // Enable file upload
@@ -193,12 +227,18 @@ const ImportMaster: React.FC = () => {
                 } else if (!needsSubModuleSelection && subs.length === 0) {
                     // No sub-modules exist, hide dropdown and enable file upload directly
                     setShowSubModuleDropdown(false);
+                    // Enable file upload for HSN specifically if logic falls through here too
                     setIsFileUploadEnabled(true);
                 } else {
                     // Modules that need sub-module selection (Item/Ledger/Tool Master)
                     setShowSubModuleDropdown(true);
                 }
-                // For modules that need sub-module selection, keep file upload disabled until selection
+
+                // Specific fix for HSN mode enabling file upload immediately if needed
+                if (module.moduleName.includes('ProductGroupMaster') || module.moduleDisplayName?.includes('HSN')) {
+                    setIsFileUploadEnabled(true);
+                }
+
             } catch (error: any) {
                 console.error('Failed to fetch sub-modules', error);
                 toast.error(error?.response?.data?.error || 'Failed to fetch sub-modules');
@@ -624,7 +664,7 @@ const ImportMaster: React.FC = () => {
                                     >
                                         {uploadedFile ? (
                                             <div className="flex items-center justify-between">
-                                                <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{uploadedFile.name}</span>
+                                                <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{uploadedFile?.name}</span>
                                                 <span className="text-xs text-green-600 dark:text-green-400 font-medium">✓</span>
                                             </div>
                                         ) : (
@@ -714,8 +754,24 @@ const ImportMaster: React.FC = () => {
                 </div>
             )}
 
+            {/* HSN Master Enhanced Component */}
+            {isHSNMode && (
+                <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
+                    <HSNMasterEnhanced
+                        moduleId={parseInt(selectedModule)}
+                    />
+                </div>
+            )}
+
+            {/* Spare Part Master Enhanced Component */}
+            {isSparePartMode && (
+                <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
+                    <SparePartMasterEnhanced />
+                </div>
+            )}
+
             {/* Excel Preview Table */}
-            {previewData && (
+            {previewData && !isLedgerMode && !isHSNMode && !isSparePartMode && (
                 <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 transition-colors duration-200">
                     <div className="flex items-center justify-between mb-3">
                         <h2 className="text-base font-semibold text-gray-900 dark:text-white">Excel Preview</h2>
