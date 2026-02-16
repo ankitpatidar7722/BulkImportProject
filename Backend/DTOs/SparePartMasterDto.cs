@@ -40,6 +40,7 @@ public class HSNGroupDto
 {
     public int ProductHSNID { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+    public string? HSNCode { get; set; }
 }
 
 public class UnitDto

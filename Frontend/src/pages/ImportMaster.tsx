@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import LedgerMasterEnhanced from '../components/LedgerMasterEnhanced';
 import HSNMasterEnhanced from '../components/HSNMasterEnhanced';
 import SparePartMasterEnhanced from '../components/SparePartMasterEnhanced';
+import ItemMasterEnhanced from '../components/ItemMasterEnhanced';
 import {
     getModules,
     previewExcel,
@@ -770,8 +771,19 @@ const ImportMaster: React.FC = () => {
                 </div>
             )}
 
+            {/* Item Master Enhanced Component */}
+            {isItemMode && selectedItemGroup > 0 && (
+                <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
+                    <ItemMasterEnhanced
+                        key={selectedItemGroup}
+                        itemGroupId={selectedItemGroup}
+                        itemGroupName={itemGroups.find(g => g.itemGroupID === selectedItemGroup)?.itemGroupName || 'Item Master'}
+                    />
+                </div>
+            )}
+
             {/* Excel Preview Table */}
-            {previewData && !isLedgerMode && !isHSNMode && !isSparePartMode && (
+            {previewData && !isLedgerMode && !isHSNMode && !isSparePartMode && !isItemMode && (
                 <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 transition-colors duration-200">
                     <div className="flex items-center justify-between mb-3">
                         <h2 className="text-base font-semibold text-gray-900 dark:text-white">Excel Preview</h2>

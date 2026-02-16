@@ -120,6 +120,22 @@ public class SparePartService : ISparePartService
                 }
             }
 
+            // Check Rate field (numeric field)
+            if (!sparePart.Rate.HasValue || sparePart.Rate.Value <= 0)
+            {
+                rowValidation.CellValidations.Add(new CellValidation
+                {
+                    ColumnName = "Rate",
+                    ValidationMessage = "Rate is required and must be greater than 0",
+                    Status = ValidationStatus.MissingData
+                });
+
+                if (rowValidation.RowStatus != ValidationStatus.Duplicate)
+                    rowValidation.RowStatus = ValidationStatus.MissingData;
+
+                hasMissingData = true;
+            }
+
             // 2. Check for duplicates (RED)
             // Duplicate logic: SparePartName + SparePartGroup + SparePartType
             bool IsDuplicate(SparePartMasterDto a, SparePartMasterDto b)

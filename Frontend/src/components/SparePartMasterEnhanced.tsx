@@ -47,6 +47,21 @@ const SparePartMasterEnhanced: React.FC = () => {
     const [clearFlowStep, setClearFlowStep] = useState<0 | 1 | 2 | 3 | 4>(0);
     const [clearCredentials, setClearCredentials] = useState({ username: '', password: '', reason: '' });
 
+    // CAPTCHA State
+    const [captchaQuestion, setCaptchaQuestion] = useState({ num1: 0, num2: 0, answer: 0 });
+    const [captchaInput, setCaptchaInput] = useState('');
+    const [captchaError, setCaptchaError] = useState(false);
+
+    // Generate CAPTCHA
+    const generateCaptcha = () => {
+        const num1 = Math.floor(Math.random() * 50) + 20;
+        const num2 = Math.floor(Math.random() * 30) + 10;
+        const answer = num1 - num2;
+        setCaptchaQuestion({ num1, num2, answer });
+        setCaptchaInput('');
+        setCaptchaError(false);
+    };
+
     // Validation Modal State
     const [showValidationModal, setShowValidationModal] = useState(false);
     const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
@@ -56,11 +71,21 @@ const SparePartMasterEnhanced: React.FC = () => {
     const handleClearAllDataTrigger = (type: 'clearOnly' | 'freshUpload') => {
         setClearActionType(type);
         setClearFlowStep(1);
+        generateCaptcha();
     };
 
     const handleClearConfirm = () => {
+        // Validate CAPTCHA
+        const userAnswer = parseInt(captchaInput);
+        if (isNaN(userAnswer) || userAnswer !== captchaQuestion.answer) {
+            setCaptchaError(true);
+            toast.error('❌ Incorrect CAPTCHA answer. Please try again.');
+            return;
+        }
+
         if (clearFlowStep < 3) {
             setClearFlowStep((prev) => (prev + 1) as any);
+            generateCaptcha();
         } else {
             setClearFlowStep(4); // Show Credential Popup
         }
@@ -69,6 +94,8 @@ const SparePartMasterEnhanced: React.FC = () => {
     const handleClearCancel = () => {
         setClearFlowStep(0);
         setClearCredentials({ username: '', password: '', reason: '' });
+        setCaptchaInput('');
+        setCaptchaError(false);
     };
 
     const handleCredentialSubmit = async (e: React.FormEvent) => {
@@ -543,7 +570,15 @@ const SparePartMasterEnhanced: React.FC = () => {
         worksheet.columns = exportColumns.map(col => ({ header: col, key: col, width: 20 }));
         worksheet.getRow(1).font = { bold: true };
 
-        sparePartData.forEach((sparePart) => {
+        // Color mapping for validation status
+        const colors = {
+            duplicate: 'FFFFE0E0',     // Light Red
+            missing: 'FFD0E8FF',       // Light Blue
+            mismatch: 'FFFFFF99',      // Light Yellow
+            invalid: 'FFE8D0FF'        // Light Purple
+        };
+
+        sparePartData.forEach((sparePart, rowIndex) => {
             const rowValues: any = {
                 SparePartName: sparePart.sparePartName,
                 SparePartGroup: sparePart.sparePartGroup,
@@ -558,13 +593,56 @@ const SparePartMasterEnhanced: React.FC = () => {
                 Narration: sparePart.narration
             };
 
-            worksheet.addRow(rowValues);
+            const excelRow = worksheet.addRow(rowValues);
+
+            // Apply validation colors if validation results exist
+            if (validationResult && validationMap.has(rowIndex)) {
+                const rowValidation = validationMap.get(rowIndex);
+
+                if (rowValidation) {
+                    // For duplicate rows, color the entire row red
+                    if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
+                        excelRow.eachCell((cell) => {
+                            cell.fill = {
+                                type: 'pattern',
+                                pattern: 'solid',
+                                fgColor: { argb: colors.duplicate }
+                            };
+                        });
+                    } else {
+                        // For other validations, color specific cells
+                        rowValidation.cellValidations?.forEach((cellVal: any) => {
+                            const colIndex = exportColumns.indexOf(cellVal.columnName) + 1;
+                            if (colIndex > 0) {
+                                const cell = excelRow.getCell(colIndex);
+                                let fillColor = '';
+
+                                if (cellVal.status === ValidationStatus.MissingData) {
+                                    fillColor = colors.missing;
+                                } else if (cellVal.status === ValidationStatus.Mismatch) {
+                                    fillColor = colors.mismatch;
+                                } else if (cellVal.status === ValidationStatus.InvalidContent) {
+                                    fillColor = colors.invalid;
+                                }
+
+                                if (fillColor) {
+                                    cell.fill = {
+                                        type: 'pattern',
+                                        pattern: 'solid',
+                                        fgColor: { argb: fillColor }
+                                    };
+                                }
+                            }
+                        });
+                    }
+                }
+            }
         });
 
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `Spare Part Master.xlsx`);
-        toast.success('Data exported successfully');
+        toast.success('Data exported successfully with validation colors');
     };
 
     return (
@@ -780,6 +858,35 @@ const SparePartMasterEnhanced: React.FC = () => {
                                 --ag-checkbox-checked-color: #3b82f6 !important;
                                 color-scheme: dark;
                             }
+                            /* Force dark mode backgrounds */
+                            .ag-theme-quartz-dark .ag-root-wrapper {
+                                background-color: #0f172a !important;
+                            }
+                            .ag-theme-quartz-dark .ag-body-viewport,
+                            .ag-theme-quartz-dark .ag-body-horizontal-scroll-viewport,
+                            .ag-theme-quartz-dark .ag-center-cols-viewport {
+                                background-color: #0f172a !important;
+                            }
+                            .ag-theme-quartz-dark .ag-row {
+                                background-color: #0f172a !important;
+                                color: #f1f5f9 !important;
+                            }
+                            .ag-theme-quartz-dark .ag-row-odd {
+                                background-color: #0f172a !important;
+                            }
+                            .ag-theme-quartz-dark .ag-row-even {
+                                background-color: #0f172a !important;
+                            }
+                            .ag-theme-quartz-dark .ag-cell {
+                                color: #f1f5f9 !important;
+                            }
+                            .ag-theme-quartz-dark .ag-header {
+                                background-color: #1e293b !important;
+                            }
+                            .ag-theme-quartz-dark .ag-header-cell {
+                                background-color: #1e293b !important;
+                                color: #cbd5e1 !important;
+                            }
                             .ag-header-cell {
                                 border-right: 1px solid var(--ag-border-color);
                             }
@@ -850,6 +957,34 @@ const SparePartMasterEnhanced: React.FC = () => {
                             {clearFlowStep === 2 && "Discussed with the client that the data needs to be cleared?"}
                             {clearFlowStep === 3 && "Have you received an email from your client asking to clear the data?"}
                         </p>
+
+                        {/* CAPTCHA */}
+                        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-2 border-blue-300 dark:border-blue-700">
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                Security Verification - Solve this:
+                            </label>
+                            <div className="text-2xl font-mono font-bold text-center mb-3 text-blue-600 dark:text-blue-400">
+                                {captchaQuestion.num1} - {captchaQuestion.num2} = ?
+                            </div>
+                            <input
+                                type="number"
+                                value={captchaInput}
+                                onChange={(e) => {
+                                    setCaptchaInput(e.target.value);
+                                    setCaptchaError(false);
+                                }}
+                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
+                                    captchaError
+                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                } dark:text-white`}
+                                placeholder="Enter answer"
+                                autoFocus
+                            />
+                            {captchaError && (
+                                <p className="text-red-600 dark:text-red-400 text-sm mt-2">Incorrect answer. Please try again.</p>
+                            )}
+                        </div>
 
                         <div className="flex justify-end gap-3">
                             <button

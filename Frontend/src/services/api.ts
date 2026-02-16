@@ -628,6 +628,7 @@ export interface SparePartValidationResultDto {
 export interface HSNGroupDto {
     productHSNID: number;
     displayName: string;
+    hsnCode?: string;
 }
 
 export interface UnitDto {
@@ -678,3 +679,128 @@ export const clearAllSparePartData = async (username: string, password: string, 
     return response.data;
 };
 
+// ==================== ITEM MASTER ====================
+
+export interface ItemMasterDto {
+    itemID?: number;
+    itemName?: string;
+    itemCode?: string;
+    itemGroupID?: number;
+    itemGroupName?: string;
+    productHSNID?: number;
+    hsnGroup?: string;
+    stockUnit?: string;
+    purchaseUnit?: string;
+    estimationUnit?: string;
+    unitPerPacking?: number;
+    wtPerPacking?: number;
+    conversionFactor?: number;
+    itemSubGroupID?: number;
+    stockType?: string;
+    stockCategory?: string;
+    sizeW?: number;
+    sizeL?: number;
+    itemSize?: string;
+    purchaseRate?: number;
+    stockRefCode?: string;
+    itemDescription?: string;
+    isDeletedTransaction?: boolean;
+    dynamicFields?: Record<string, any>;
+
+    // Paper-specific fields
+    quality?: string;
+    gsm?: number;
+    manufecturer?: string;
+    finish?: string;
+    manufecturerItemCode?: string;
+    caliper?: number;
+    shelfLife?: number;
+    estimationRate?: number;
+    minimumStockQty?: number;
+    isStandardItem?: boolean;
+    isRegularItem?: boolean;
+    packingType?: string;
+    certificationType?: string;
+    productHSNName?: string;
+    hsnCode?: string;
+
+    // REEL-specific field
+    bf?: string;
+
+    // INK & ADDITIVES-specific fields
+    itemSubGroupName?: string;
+    itemType?: string;
+    inkColour?: string;
+    pantoneCode?: string;
+    purchaseOrderQuantity?: number;
+}
+
+export interface ItemSubGroupDto {
+    itemSubGroupID: number;
+    itemSubGroupName: string;
+}
+
+export interface ItemValidationResultDto {
+    isValid: boolean;
+    rows: ItemRowValidation[];
+    summary: ValidationSummary;
+}
+
+export interface ItemRowValidation {
+    rowIndex: number;
+    data: ItemMasterDto;
+    cellValidations: CellValidation[];
+    rowStatus: ValidationStatus;
+    errorMessage?: string;
+}
+
+export const getAllItems = async (itemGroupId: number): Promise<ItemMasterDto[]> => {
+    const response = await api.get(`/item?itemGroupId=${itemGroupId}`);
+    return response.data;
+};
+
+export const getItemHSNGroups = async (): Promise<HSNGroupDto[]> => {
+    const response = await api.get('/item/hsn-groups');
+    return response.data;
+};
+
+export const getItemUnits = async (): Promise<UnitDto[]> => {
+    const response = await api.get('/item/units');
+    return response.data;
+};
+
+export const getItemSubGroups = async (): Promise<ItemSubGroupDto[]> => {
+    const response = await api.get('/item/item-sub-groups');
+    return response.data;
+};
+
+export const softDeleteItem = async (itemId: number): Promise<any> => {
+    const response = await api.delete(`/item/${itemId}`);
+    return response.data;
+};
+
+export const validateItems = async (items: ItemMasterDto[], itemGroupId: number): Promise<ItemValidationResultDto> => {
+    const response = await api.post('/item/validate', {
+        items,
+        itemGroupId
+    });
+    return response.data.validationResult;
+};
+
+export const importItems = async (items: ItemMasterDto[], itemGroupId: number): Promise<ImportResultDto> => {
+    const response = await api.post('/item/import', {
+        items,
+        itemGroupId
+    });
+    return response.data;
+};
+
+export const clearAllItemData = async (username: string, password: string, reason: string, itemGroupId: number): Promise<any> => {
+    const response = await api.post('/item/clear-all-data', {
+        username,
+        password,
+        reason,
+        itemGroupId
+    });
+    return response.data;
+};

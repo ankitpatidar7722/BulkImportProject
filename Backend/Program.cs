@@ -34,6 +34,7 @@ builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<ILedgerService, LedgerService>();
 builder.Services.AddScoped<IHSNService, HSNService>();
 builder.Services.AddScoped<ISparePartService, SparePartService>();
+builder.Services.AddScoped<IItemService, ItemService>();
 
 // Configure EPPlus license
 OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;
@@ -306,6 +307,54 @@ using (var scope = builder.Services.BuildServiceProvider().CreateScope())
     catch(Exception ex) {
          Console.WriteLine($"CountryStateMaster Init Error: {ex.Message}");
          System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] CountryStateMaster Init Error: {ex.Message}\n");
+    }
+
+    // ItemMaster Schema Migration (BF column for REEL support + INK columns)
+    try
+    {
+        var conn = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+        conn.Open();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMaster Init Started\n");
+
+        // Check if ItemMaster table exists
+        var tableExistsCmd = "SELECT COUNT(*) FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ItemMaster]') AND type in (N'U')";
+        using (var cmd = new SqlCommand(tableExistsCmd, conn))
+        {
+            int tableExists = (int)cmd.ExecuteScalar();
+            if (tableExists > 0)
+            {
+                // Add columns for REEL and INK & ADDITIVES support
+                var itemMasterCols = new[]
+                {
+                    "BF NVARCHAR(100) NULL",
+                    "InkColour NVARCHAR(100) NULL",
+                    "PantoneCode NVARCHAR(50) NULL",
+                    "PurchaseOrderQuantity DECIMAL(18, 2) DEFAULT 0 NULL"
+                };
+
+                foreach (var colDef in itemMasterCols)
+                {
+                    var colName = colDef.Split(' ')[0];
+                    var alterCmd = $@"
+                        IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'{colName}' AND Object_ID = Object_ID(N'ItemMaster'))
+                        BEGIN
+                            ALTER TABLE ItemMaster ADD {colDef};
+                        END";
+                    using (var cmd2 = new SqlCommand(alterCmd, conn))
+                    {
+                        cmd2.ExecuteNonQuery();
+                    }
+                }
+                System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMaster columns check/add completed\n");
+            }
+        }
+
+        conn.Close();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMaster Init Completed\n");
+    }
+    catch(Exception ex) {
+         Console.WriteLine($"ItemMaster Init Error: {ex.Message}");
+         System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMaster Init Error: {ex.Message}\n");
     }
 }
 

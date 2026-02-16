@@ -3164,10 +3164,53 @@ public class ExcelService : IExcelService
 
     private List<MasterColumnDto> GetDefaultItemColumns(int itemGroupId)
     {
-        // Default columns for Item Master (similar to Ledger Master pattern)
         var columns = new List<MasterColumnDto>();
         int seq = 1;
+        
+        // Get ItemGroupName to determine which columns to return
+        string? itemGroupName = null;
+        try
+        {
+            var groupQuery = "SELECT ItemGroupName FROM ItemGroupMaster WHERE ItemGroupID = @ItemGroupID AND CompanyID = 2";
+            itemGroupName = _connection.QueryFirstOrDefault<string>(groupQuery, new { ItemGroupID = itemGroupId });
+        }
+        catch
+        {
+            // If error, return generic columns
+        }
+        
+        // PAPER-specific columns
+        if (!string.IsNullOrEmpty(itemGroupName) && itemGroupName.Equals("PAPER", StringComparison.OrdinalIgnoreCase))
+        {
+            columns.Add(new MasterColumnDto { FieldName = "Quality", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "GSM", DataType = "decimal", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Manufecturer", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Finish", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ManufecturerItemCode", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "Caliper", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "SizeW", DataType = "decimal", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "SizeL", DataType = "decimal", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PurchaseUnit", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PurchaseRate", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ShelfLife", DataType = "int", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "EstimationUnit", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "EstimationRate", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "StockUnit", DataType = "string", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "MinimumStockQty", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "IsStandardItem", DataType = "bit", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "IsRegularItem", DataType = "bit", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "PackingType", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "UnitPerPacking", DataType = "decimal", IsRequired = true, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "WtPerPacking", DataType = "decimal", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ItemSize", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ItemName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "ProductHSNName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            columns.Add(new MasterColumnDto { FieldName = "CertificationType", DataType = "string", IsRequired = false, SequenceNo = seq++ });
+            
+            return columns;
+        }
 
+        // Default columns for Item Master (similar to Ledger Master pattern)
         // Common columns for all items
         columns.Add(new MasterColumnDto { FieldName = "ItemName", DataType = "string", IsRequired = false, SequenceNo = seq++ });
         columns.Add(new MasterColumnDto { FieldName = "StockUnit", DataType = "string", IsRequired = false, SequenceNo = seq++ });
@@ -3348,6 +3391,34 @@ public class ExcelService : IExcelService
                     else if (itemGroup.ItemGroupName.Equals("REEL", StringComparison.OrdinalIgnoreCase))
                     {
                         rowData["PaperGroup"] = "Reel";
+                    }
+                }
+
+                // APPLY DEFAULTS for PAPER Item Group
+                if (!string.IsNullOrEmpty(itemGroup.ItemGroupName) && itemGroup.ItemGroupName.Equals("PAPER", StringComparison.OrdinalIgnoreCase))
+                {
+                    // ShelfLife default = 365 days
+                    if (!rowData.ContainsKey("ShelfLife") || string.IsNullOrEmpty(rowData["ShelfLife"]?.ToString()))
+                    {
+                        rowData["ShelfLife"] = 365;
+                    }
+                    
+                    // IsStandardItem default = True
+                    if (!rowData.ContainsKey("IsStandardItem") || string.IsNullOrEmpty(rowData["IsStandardItem"]?.ToString()))
+                    {
+                        rowData["IsStandardItem"] = true;
+                    }
+                    
+                    // IsRegularItem default = True
+                    if (!rowData.ContainsKey("IsRegularItem") || string.IsNullOrEmpty(rowData["IsRegularItem"]?.ToString()))
+                    {
+                        rowData["IsRegularItem"] = true;
+                    }
+                    
+                    // CertificationType default = NONE
+                    if (!rowData.ContainsKey("CertificationType") || string.IsNullOrEmpty(rowData["CertificationType"]?.ToString()))
+                    {
+                        rowData["CertificationType"] = "NONE";
                     }
                 }
 

@@ -62,6 +62,21 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     const [clearFlowStep, setClearFlowStep] = useState<0 | 1 | 2 | 3 | 4>(0);
     const [clearCredentials, setClearCredentials] = useState({ username: '', password: '', reason: '' });
 
+    // CAPTCHA State
+    const [captchaQuestion, setCaptchaQuestion] = useState({ num1: 0, num2: 0, answer: 0 });
+    const [captchaInput, setCaptchaInput] = useState('');
+    const [captchaError, setCaptchaError] = useState(false);
+
+    // Generate CAPTCHA
+    const generateCaptcha = () => {
+        const num1 = Math.floor(Math.random() * 50) + 20; // 20-70
+        const num2 = Math.floor(Math.random() * 30) + 10; // 10-40
+        const answer = num1 - num2;
+        setCaptchaQuestion({ num1, num2, answer });
+        setCaptchaInput('');
+        setCaptchaError(false);
+    };
+
     // Validation Modal State
     const [showValidationModal, setShowValidationModal] = useState(false);
     const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
@@ -71,11 +86,21 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     const handleClearAllDataTrigger = (type: 'clearOnly' | 'freshUpload') => {
         setClearActionType(type);
         setClearFlowStep(1);
+        generateCaptcha();
     };
 
     const handleClearConfirm = () => {
+        // Validate CAPTCHA
+        const userAnswer = parseInt(captchaInput);
+        if (isNaN(userAnswer) || userAnswer !== captchaQuestion.answer) {
+            setCaptchaError(true);
+            toast.error('❌ Incorrect CAPTCHA answer. Please try again.');
+            return;
+        }
+
         if (clearFlowStep < 3) {
             setClearFlowStep((prev) => (prev + 1) as any);
+            generateCaptcha();
         } else {
             setClearFlowStep(4); // Show Credential Popup
         }
@@ -84,6 +109,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     const handleClearCancel = () => {
         setClearFlowStep(0);
         setClearCredentials({ username: '', password: '', reason: '' });
+        setCaptchaInput('');
+        setCaptchaError(false);
     };
 
     const handleCredentialSubmit = async (e: React.FormEvent) => {
@@ -1225,6 +1252,34 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             {clearFlowStep === 2 && "Discussed with the client that the data needs to be cleared?"}
                             {clearFlowStep === 3 && "Have you received an email from your client asking to clear the data?"}
                         </p>
+
+                        {/* CAPTCHA */}
+                        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border-2 border-blue-300 dark:border-blue-700">
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                Security Verification - Solve this:
+                            </label>
+                            <div className="text-2xl font-mono font-bold text-center mb-3 text-blue-600 dark:text-blue-400">
+                                {captchaQuestion.num1} - {captchaQuestion.num2} = ?
+                            </div>
+                            <input
+                                type="number"
+                                value={captchaInput}
+                                onChange={(e) => {
+                                    setCaptchaInput(e.target.value);
+                                    setCaptchaError(false);
+                                }}
+                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
+                                    captchaError
+                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                } dark:text-white`}
+                                placeholder="Enter answer"
+                                autoFocus
+                            />
+                            {captchaError && (
+                                <p className="text-red-600 dark:text-red-400 text-sm mt-2">Incorrect answer. Please try again.</p>
+                            )}
+                        </div>
 
                         <div className="flex justify-end gap-3">
                             <button
