@@ -25,6 +25,7 @@ public class ItemService : IItemService
                 ig.ItemGroupName,
                 i.ProductHSNID,
                 hsn.DisplayName as HSNGroup,
+                hsn.DisplayName as ProductHSNName,
                 i.StockUnit,
                 i.PurchaseUnit,
                 i.EstimationUnit,
@@ -184,27 +185,31 @@ public class ItemService : IItemService
         // Get valid HSN Groups
         var validHSNGroups = await GetHSNGroupsAsync();
         var hsnGroupLookup = new HashSet<string>(
-            validHSNGroups.Select(h => h.DisplayName.Trim()),
-            StringComparer.OrdinalIgnoreCase
+            validHSNGroups.Select(h => h.DisplayName.Trim())
         );
 
         // Get valid Units
         var validUnits = await GetUnitsAsync();
         var unitLookup = new HashSet<string>(
-            validUnits.Select(u => u.UnitSymbol.Trim()),
-            StringComparer.OrdinalIgnoreCase
+            validUnits.Select(u => u.UnitSymbol.Trim())
         );
 
         // Get valid Packing Types
         var validPackingTypes = new HashSet<string>(
-            new[] { "Ream", "Box", "Bundle", "Carton", "Pallet", "Roll", "Sheet" },
+            new[] { "Ream", "Box", "Bundle", "Carton", "Pallet", "Roll", "Sheet" }
+        );
+
+        // Get valid Item Sub Groups (dynamic from ItemGroupFieldMaster)
+        var validItemSubGroups = await GetItemSubGroupsAsync(itemGroupId);
+        var itemSubGroupLookup = new HashSet<string>(
+            validItemSubGroups.Select(sg => sg.ItemSubGroupName.Trim()),
             StringComparer.OrdinalIgnoreCase
         );
 
         // Item group-specific required fields
         string[] requiredFields;
 
-        if (itemGroupId == 14) // REEL
+        if (itemGroupId == 2) // REEL
         {
             requiredFields = new[] {
                 "Quality", "BF", "SizeW", "GSM", "Manufecturer", "Finish",
@@ -216,6 +221,14 @@ public class ItemService : IItemService
         {
             requiredFields = new[] {
                 "ItemSubGroupName", "ItemType", "Manufecturer",
+                "PurchaseUnit", "PurchaseRate", "EstimationUnit", "EstimationRate",
+                "StockUnit", "ProductHSNName"
+            };
+        }
+        else if (itemGroupId == 8) // OTHER MATERIAL
+        {
+            requiredFields = new[] {
+                "ItemSubGroupName", "Quality",
                 "PurchaseUnit", "PurchaseRate", "EstimationUnit", "EstimationRate",
                 "StockUnit", "ProductHSNName"
             };
@@ -283,7 +296,7 @@ public class ItemService : IItemService
             // 2. Check for duplicates (RED) - Item group specific logic
             bool IsDuplicate(ItemMasterDto a, ItemMasterDto b)
             {
-                if (itemGroupId == 14) // REEL: BF + Quality + GSM + Manufacturer + Finish + SizeW
+                if (itemGroupId == 2) // REEL: BF + Quality + GSM + Manufacturer + Finish + SizeW
                 {
                     var bfA = a.BF?.Trim() ?? "";
                     var bfB = b.BF?.Trim() ?? "";
@@ -324,6 +337,21 @@ public class ItemService : IItemService
                     return string.Equals(itemTypeA, itemTypeB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(inkColourA, inkColourB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(pantoneCodeA, pantoneCodeB, StringComparison.OrdinalIgnoreCase);
+                }
+                else if (itemGroupId == 8) // OTHER MATERIAL: ItemSubGroupName + Quality + Manufacturer
+                {
+                    var subGroupA = a.ItemSubGroupName?.Trim() ?? "";
+                    var subGroupB = b.ItemSubGroupName?.Trim() ?? "";
+
+                    var qualityA = a.Quality?.Trim() ?? "";
+                    var qualityB = b.Quality?.Trim() ?? "";
+
+                    var manufA = a.Manufecturer?.Trim() ?? "";
+                    var manufB = b.Manufecturer?.Trim() ?? "";
+
+                    return string.Equals(subGroupA, subGroupB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(manufA, manufB, StringComparison.OrdinalIgnoreCase);
                 }
                 else // PAPER (default): Quality + GSM + Manufacturer + Finish + ItemSize
                 {
@@ -430,7 +458,28 @@ public class ItemService : IItemService
                 }
             }
 
-            // 4c. Check ProductHSNName (HSNGroup) mismatch - rename for clarity
+            // 4c. Check ItemSubGroupName mismatch (YELLOW) - for INK & ADDITIVES and OTHER MATERIAL
+            if ((itemGroupId == 3 || itemGroupId == 8) && !string.IsNullOrWhiteSpace(item.ItemSubGroupName))
+            {
+                var isValidSubGroup = itemSubGroupLookup.Contains(item.ItemSubGroupName.Trim());
+
+                if (!isValidSubGroup)
+                {
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = "ItemSubGroupName",
+                        ValidationMessage = "ItemSubGroupName does not match valid values from database",
+                        Status = ValidationStatus.Mismatch
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                        rowValidation.RowStatus = ValidationStatus.Mismatch;
+
+                    hasMismatch = true;
+                }
+            }
+
+            // 4d. Check ProductHSNName (HSNGroup) mismatch - rename for clarity
             if (!string.IsNullOrWhiteSpace(item.ProductHSNName))
             {
                 var isValidProductHSN = hsnGroupLookup.Contains(item.ProductHSNName.Trim());
@@ -515,7 +564,7 @@ public class ItemService : IItemService
             }
         }
 
-        var itemSubGroups = await GetItemSubGroupsAsync();
+        var itemSubGroups = await GetItemSubGroupsAsync(itemGroupId);
         var itemSubGroupMapping = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var subGroup in itemSubGroups)
         {
@@ -616,7 +665,8 @@ public class ItemService : IItemService
                 string itemDescription = string.Join(", ", descriptionParts);
 
                 // Use provided ItemType or derive from context
-                string itemType = item.ItemType ?? item.StockCategory?.ToUpper() ?? "PAPER";
+                string itemType = item.ItemType ?? item.StockCategory?.ToUpper() ??
+                    (itemGroupId == 8 ? "OTHER MATERIAL" : "PAPER");
 
                 // Lookup ProductHSNID
                 int productHSNID = 0;
@@ -903,17 +953,29 @@ public class ItemService : IItemService
         }
     }
 
-    public async Task<List<ItemSubGroupDto>> GetItemSubGroupsAsync()
+    public async Task<List<ItemSubGroupDto>> GetItemSubGroupsAsync(int itemGroupId)
     {
-        var query = @"
-            SELECT ItemSubGroupID, ItemSubGroupName
-            FROM ItemSubGroupMaster
-            WHERE IsDeletedTransaction = 0
-            AND ItemSubGroupName IS NOT NULL
-            AND ItemSubGroupName <> ''
-            ORDER BY ItemSubGroupName";
+        // Step 1: Fetch the dynamic query from ItemGroupFieldMaster
+        var fieldQuery = @"
+            SELECT SelectBoxQueryDB
+            FROM ItemGroupFieldMaster
+            WHERE ItemGroupID = @ItemGroupID
+            AND FieldName = 'ItemSubGroupID'
+            AND ISNULL(IsDeletedTransaction, 0) <> 1";
 
-        var results = await _connection.QueryAsync<ItemSubGroupDto>(query);
+        var selectBoxQuery = await _connection.QueryFirstOrDefaultAsync<string>(
+            fieldQuery, new { ItemGroupID = itemGroupId });
+
+        if (string.IsNullOrWhiteSpace(selectBoxQuery))
+        {
+            return new List<ItemSubGroupDto>();
+        }
+
+        // Step 2: Replace # placeholders with single quotes (legacy DB pattern)
+        var dynamicQuery = selectBoxQuery.Replace("#", "'");
+
+        // Step 3: Execute the dynamic query and map results
+        var results = await _connection.QueryAsync<ItemSubGroupDto>(dynamicQuery);
         return results.ToList();
     }
 

@@ -61,7 +61,7 @@ public class HSNService : IHSNService
         var existingDisplayNames = await _connection.QueryAsync<string>(
             "SELECT DisplayName FROM ProductHSNMaster WHERE IsDeletedTransaction = 0 AND DisplayName IS NOT NULL AND DisplayName <> ''");
         
-        var existingNamesSet = new HashSet<string>(existingDisplayNames, StringComparer.OrdinalIgnoreCase);
+        var existingNamesSet = new HashSet<string>(existingDisplayNames);
         
         // Fetch valid Item Groups for Lookup Validation
         var existingItemGroups = await _connection.QueryAsync<(int Id, string Name)>(
@@ -69,8 +69,8 @@ public class HSNService : IHSNService
         
         var itemGroupsMap = existingItemGroups
             .Where(x => !string.IsNullOrWhiteSpace(x.Name))
-            .GroupBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(x => x.Name)
+            .ToDictionary(g => g.Key, g => g.First().Id);
 
         // Required columns validation configuration
         // Group Name (ProductHSNName), Display Name, HSN Code, Product Type (ProductCategory), GST % (GSTTaxPercentage)
@@ -176,7 +176,7 @@ public class HSNService : IHSNService
                 }
                 
                 // Check in current batch (previous rows)
-                if (hsns.Take(i).Any(x => string.Equals(x.DisplayName, hsn.DisplayName, StringComparison.OrdinalIgnoreCase)))
+                if (hsns.Take(i).Any(x => string.Equals(x.DisplayName, hsn.DisplayName, StringComparison.Ordinal)))
                 {
                     rowValidation.RowStatus = ValidationStatus.Duplicate;
                     rowValidation.ErrorMessage = "Duplicate DisplayName in File";

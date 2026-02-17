@@ -59,6 +59,11 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     const [captchaInput, setCaptchaInput] = useState('');
     const [captchaError, setCaptchaError] = useState(false);
 
+    // Validation Modal State
+    const [showValidationModal, setShowValidationModal] = useState(false);
+    const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
+    const [filenameError, setFilenameError] = useState<string | null>(null);
+
     // Generate CAPTCHA
     const generateCaptcha = () => {
         const num1 = Math.floor(Math.random() * 50) + 20; // 20-70
@@ -81,7 +86,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             const [hsnData, unitData, subGroupData] = await Promise.all([
                 getItemHSNGroups(),
                 getItemUnits(),
-                getItemSubGroups()
+                getItemSubGroups(itemGroupId)
             ]);
             setHSNGroups(hsnData);
             setUnits(unitData);
@@ -118,7 +123,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         // Validate filename
         const expectedFilename = `${itemGroupName}.xlsx`;
         if (file.name !== expectedFilename) {
-            toast.error(`Invalid filename. Please use: ${expectedFilename}`);
+            setFilenameError(`Please correct your Excel file name according to the selected Item Group. Expected: ${expectedFilename}`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
@@ -250,6 +255,22 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     }
                 }
 
+                // Auto-calculations and defaults for OTHER MATERIAL group
+                if (itemGroupName === 'OTHER MATERIAL') {
+                    // Apply defaults
+                    if (!item.shelfLife) item.shelfLife = 365;
+                    if (!item.minimumStockQty && item.minimumStockQty !== 0) item.minimumStockQty = 0;
+                    if (!item.stockType) item.stockType = 'JOB CONSUMABLES';
+                    if (item.isStandardItem === undefined) item.isStandardItem = true;
+                    if (item.isRegularItem === undefined) item.isRegularItem = true;
+                    if (!item.purchaseOrderQuantity && item.purchaseOrderQuantity !== 0) item.purchaseOrderQuantity = 0;
+
+                    // ItemName auto-generation if missing (Quality)
+                    if (!item.itemName) {
+                        item.itemName = item.quality || '';
+                    }
+                }
+
                 return item;
             });
 
@@ -298,9 +319,49 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             setMode('validated');
 
             if (result.isValid) {
-                toast.success('✅ All data is valid!');
+                toast.success('All validations passed! Ready to import.');
             } else {
-                toast.error(`❌ Validation failed: ${result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount} issues found`);
+                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
+
+                // Aggregate failures by column
+                const columnFailures = new Map<string, Set<string>>();
+
+                result.rows.forEach((row: ItemRowValidation) => {
+                    // 1. Handle Duplicates (Row Level)
+                    if (row.rowStatus === ValidationStatus.Duplicate) {
+                        // Attribute duplicate to ItemName as primary indicator
+                        const col = 'ItemName';
+                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                        columnFailures.get(col)!.add('Duplicate data found');
+                    }
+
+                    // 2. Handle Cell Validations
+                    if (row.cellValidations && row.cellValidations.length > 0) {
+                        row.cellValidations.forEach((cell: any) => {
+                            const col = cell.columnName || 'Unknown';
+                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+
+                            let reason = cell.validationMessage;
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+
+                            columnFailures.get(col)!.add(reason);
+                        });
+                    }
+                });
+
+                // Construct Message
+                const messages: string[] = [];
+                columnFailures.forEach((reasons, col) => {
+                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
+                });
+
+                setValidationModalContent({
+                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
+                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues that were not attributed to specific columns.']
+                });
+                setShowValidationModal(true);
             }
         } catch (error: any) {
             console.error('[Validation Error] Full error:', error);
@@ -396,6 +457,13 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 'StockType', 'IsStandardItem', 'IsRegularItem', 'PurchaseOrderQuantity',
                 'StockRefCode', 'ProductHSNName', 'ItemName'
             ];
+        } else if (itemGroupName === 'OTHER MATERIAL') {
+            exportColumns = [
+                'ItemSubGroupName', 'Quality', 'Manufecturer', 'ManufecturerItemCode',
+                'ShelfLife', 'PurchaseUnit', 'PurchaseRate', 'EstimationUnit', 'EstimationRate',
+                'StockUnit', 'MinimumStockQty', 'StockType', 'IsStandardItem', 'IsRegularItem',
+                'PurchaseOrderQuantity', 'StockRefCode', 'ProductHSNName', 'ItemName'
+            ];
         } else {
             // Default columns
             exportColumns = [
@@ -480,6 +548,27 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     ItemType: item.itemType,
                     InkColour: item.inkColour,
                     PantoneCode: item.pantoneCode,
+                    Manufecturer: item.manufecturer,
+                    ManufecturerItemCode: item.manufecturerItemCode,
+                    ShelfLife: item.shelfLife,
+                    PurchaseUnit: item.purchaseUnit,
+                    PurchaseRate: item.purchaseRate,
+                    EstimationUnit: item.estimationUnit,
+                    EstimationRate: item.estimationRate,
+                    StockUnit: item.stockUnit,
+                    MinimumStockQty: item.minimumStockQty,
+                    StockType: item.stockType,
+                    IsStandardItem: item.isStandardItem,
+                    IsRegularItem: item.isRegularItem,
+                    PurchaseOrderQuantity: item.purchaseOrderQuantity,
+                    StockRefCode: item.stockRefCode,
+                    ProductHSNName: item.productHSNName,
+                    ItemName: item.itemName
+                };
+            } else if (itemGroupName === 'OTHER MATERIAL') {
+                rowValues = {
+                    ItemSubGroupName: item.itemSubGroupName,
+                    Quality: item.quality,
                     Manufecturer: item.manufecturer,
                     ManufecturerItemCode: item.manufecturerItemCode,
                     ShelfLife: item.shelfLife,
@@ -841,6 +930,59 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             ];
         }
 
+        // OTHER MATERIAL Group Columns
+        if (itemGroupName === 'OTHER MATERIAL') {
+            return [
+                ...baseCols,
+                {
+                    field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                },
+                { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
+                { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
+                { field: 'manufecturerItemCode', headerName: 'ManufacturerItemCode', editable: isEditable, width: 180 },
+                { field: 'shelfLife', headerName: 'ShelfLife', editable: isEditable, width: 100, type: 'numericColumn' },
+                {
+                    field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
+                {
+                    field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
+                {
+                    field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
+                { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
+                {
+                    field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                {
+                    field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
+                { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
+                {
+                    field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                },
+                { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
+            ];
+        }
+
         const cols: ColDef[] = [
             ...baseCols,
             { field: 'itemName', headerName: 'Item Name', editable: isEditable, width: 250 },
@@ -1096,15 +1238,15 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                             // Check status using both string comparison and enum comparison
                             const status = cellVal.status;
 
-                            if (status === ValidationStatus.MissingData || status === 'MissingData') {
+                            if (status === ValidationStatus.MissingData) {
                                 console.log(`[CellStyle] Applying BLUE to ${colHeader} at row ${rowIndex}`);
                                 return { backgroundColor: colors.missing };
                             }
-                            if (status === ValidationStatus.Mismatch || status === 'Mismatch') {
+                            if (status === ValidationStatus.Mismatch) {
                                 console.log(`[CellStyle] Applying YELLOW to ${colHeader} at row ${rowIndex}`);
                                 return { backgroundColor: colors.mismatch };
                             }
-                            if (status === ValidationStatus.InvalidContent || status === 'InvalidContent') {
+                            if (status === ValidationStatus.InvalidContent) {
                                 console.log(`[CellStyle] Applying PURPLE to ${colHeader} at row ${rowIndex}`);
                                 return { backgroundColor: colors.invalid };
                             }
@@ -1422,11 +1564,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                                     setCaptchaInput(e.target.value);
                                     setCaptchaError(false);
                                 }}
-                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
-                                    captchaError
-                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-                                        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
-                                } dark:text-white`}
+                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${captchaError
+                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                    } dark:text-white`}
                                 placeholder="Enter answer"
                                 autoFocus
                             />
@@ -1470,11 +1611,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                                     setCaptchaInput(e.target.value);
                                     setCaptchaError(false);
                                 }}
-                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
-                                    captchaError
-                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-                                        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
-                                } dark:text-white`}
+                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${captchaError
+                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                    } dark:text-white`}
                                 placeholder="Enter answer"
                                 autoFocus
                             />
@@ -1518,11 +1658,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                                     setCaptchaInput(e.target.value);
                                     setCaptchaError(false);
                                 }}
-                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
-                                    captchaError
-                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-                                        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
-                                } dark:text-white`}
+                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${captchaError
+                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                    } dark:text-white`}
                                 placeholder="Enter answer"
                                 autoFocus
                             />
@@ -1603,6 +1742,60 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                             </button>
                         </div>
                     </form>
+                </div>
+            )}
+
+            {/* Filename Error Popup */}
+            {filenameError && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400">
+                            <AlertCircle className="w-8 h-8" />
+                            <h3 className="text-lg font-bold">Invalid File Name</h3>
+                        </div>
+
+                        <p className="mb-6 text-gray-700 dark:text-gray-300 text-lg">
+                            {filenameError}
+                        </p>
+
+                        <div className="flex justify-end">
+                            <button
+                                onClick={() => setFilenameError(null)}
+                                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                            >
+                                Ok
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Validation Result Modal */}
+            {showValidationModal && validationModalContent && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-700 max-h-[90vh] flex flex-col">
+                        <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400 shrink-0">
+                            <AlertCircle className="w-8 h-8" />
+                            <h3 className="text-xl font-bold">{validationModalContent.title}</h3>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto mb-6 pr-2">
+                            <ul className="list-disc list-inside space-y-2 text-gray-700 dark:text-gray-300 text-lg">
+                                {validationModalContent.messages.map((msg, idx) => (
+                                    <li key={idx} className="whitespace-pre-wrap leading-relaxed">{msg}</li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className="flex justify-center shrink-0">
+                            <button
+                                onClick={() => setShowValidationModal(false)}
+                                className="px-8 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-lg min-w-[120px]"
+                            >
+                                Ok
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

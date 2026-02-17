@@ -769,8 +769,8 @@ export const getItemUnits = async (): Promise<UnitDto[]> => {
     return response.data;
 };
 
-export const getItemSubGroups = async (): Promise<ItemSubGroupDto[]> => {
-    const response = await api.get('/item/item-sub-groups');
+export const getItemSubGroups = async (itemGroupId: number): Promise<ItemSubGroupDto[]> => {
+    const response = await api.get(`/item/item-sub-groups?itemGroupId=${itemGroupId}`);
     return response.data;
 };
 

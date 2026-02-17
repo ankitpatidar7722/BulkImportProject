@@ -11,6 +11,6 @@ public interface IItemService
     Task<List<ItemGroupDto>> GetItemGroupsAsync();
     Task<List<HSNGroupDto>> GetHSNGroupsAsync();
     Task<List<UnitDto>> GetUnitsAsync();
-    Task<List<ItemSubGroupDto>> GetItemSubGroupsAsync();
+    Task<List<ItemSubGroupDto>> GetItemSubGroupsAsync(int itemGroupId);
     Task<int> ClearAllItemDataAsync(string username, string password, string reason, int itemGroupId);
 }

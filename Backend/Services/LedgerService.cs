@@ -228,8 +228,8 @@ public class LedgerService : ILedgerService
             if (!string.IsNullOrWhiteSpace(ledger.Country) && !string.IsNullOrWhiteSpace(ledger.State))
             {
                 var isValidCountryState = validCountryStates.Any(cs =>
-                    string.Equals(cs.Country, ledger.Country, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(cs.State, ledger.State, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(cs.Country, ledger.Country, StringComparison.Ordinal) &&
+                    string.Equals(cs.State, ledger.State, StringComparison.Ordinal));
 
                 if (!isValidCountryState)
                 {
@@ -258,7 +258,7 @@ public class LedgerService : ILedgerService
             // Check ClientName mismatch (Consignee)
             if (!string.IsNullOrWhiteSpace(ledger.ClientName))
             {
-                var isValidClient = validClients.Any(c => string.Equals(c.LedgerName, ledger.ClientName, StringComparison.OrdinalIgnoreCase));
+                var isValidClient = validClients.Any(c => string.Equals(c.LedgerName, ledger.ClientName, StringComparison.Ordinal));
                 
                 if (!isValidClient)
                 {

@@ -77,11 +77,16 @@ public class ItemController : ControllerBase
     }
 
     [HttpGet("item-sub-groups")]
-    public async Task<IActionResult> GetItemSubGroups()
+    public async Task<IActionResult> GetItemSubGroups([FromQuery] int itemGroupId)
     {
         try
         {
-            var itemSubGroups = await _itemService.GetItemSubGroupsAsync();
+            if (itemGroupId <= 0)
+            {
+                return BadRequest(new { message = "ItemGroupId is required" });
+            }
+
+            var itemSubGroups = await _itemService.GetItemSubGroupsAsync(itemGroupId);
             return Ok(itemSubGroups);
         }
         catch (Exception ex)
