@@ -733,6 +733,15 @@ export interface ItemMasterDto {
     inkColour?: string;
     pantoneCode?: string;
     purchaseOrderQuantity?: number;
+
+    // LAMINATION FILM-specific fields
+    thickness?: number;
+    density?: number;
+
+    // ROLL-specific fields
+    releaseGSM?: number;
+    adhesiveGSM?: number;
+    totalGSM?: number;
 }
 
 export interface ItemSubGroupDto {

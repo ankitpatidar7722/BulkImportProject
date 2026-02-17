@@ -63,6 +63,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     const [showValidationModal, setShowValidationModal] = useState(false);
     const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
     const [filenameError, setFilenameError] = useState<string | null>(null);
+    const [clearActionType, setClearActionType] = useState<'clearOnly' | 'freshUpload'>('freshUpload');
 
     // Generate CAPTCHA
     const generateCaptcha = () => {
@@ -181,7 +182,16 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     itemType: toStringOrUndefined(row.ItemType || row.itemType),
                     inkColour: toStringOrUndefined(row.InkColour || row.inkColour),
                     pantoneCode: toStringOrUndefined(row.PantoneCode || row.pantoneCode),
-                    purchaseOrderQuantity: row.PurchaseOrderQuantity || row.purchaseOrderQuantity
+                    purchaseOrderQuantity: row.PurchaseOrderQuantity || row.purchaseOrderQuantity,
+
+                    // LAMINATION FILM-specific fields
+                    thickness: row.Thickness || row.thickness,
+                    density: row.Density || row.density,
+
+                    // ROLL-specific fields
+                    releaseGSM: row.ReleaseGSM || row.releaseGSM,
+                    adhesiveGSM: row.AdhesiveGSM || row.adhesiveGSM,
+                    totalGSM: row.TotalGSM || row.totalGSM
                 };
 
                 // Auto-calculations for PAPER group
@@ -251,6 +261,78 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         if (item.itemType) parts.push(item.itemType);
                         if (item.inkColour) parts.push(item.inkColour);
                         if (item.pantoneCode) parts.push(item.pantoneCode);
+                        item.itemName = parts.join(', ');
+                    }
+                }
+
+                // Auto-calculations and defaults for VARNISHES & COATINGS group
+                if (itemGroupName === 'VARNISHES & COATINGS') {
+                    // Apply defaults
+                    if (!item.itemType) item.itemType = 'Varnish';
+                    if (!item.shelfLife) item.shelfLife = 365;
+                    if (!item.minimumStockQty && item.minimumStockQty !== 0) item.minimumStockQty = 0;
+                    if (!item.stockType) item.stockType = 'JOB CONSUMABLES';
+                    if (item.isStandardItem === undefined) item.isStandardItem = true;
+                    if (item.isRegularItem === undefined) item.isRegularItem = true;
+                    if (!item.purchaseOrderQuantity && item.purchaseOrderQuantity !== 0) item.purchaseOrderQuantity = 0;
+
+                    // ItemName auto-generation if missing (ItemType + Quality)
+                    if (!item.itemName) {
+                        const parts = [];
+                        if (item.itemType) parts.push(item.itemType);
+                        if (item.quality) parts.push(item.quality);
+                        item.itemName = parts.join(', ');
+                    }
+                }
+
+                // Auto-calculations and defaults for LAMINATION FILM group
+                if (itemGroupName === 'LAMINATION FILM') {
+                    // Apply defaults
+                    if (!item.sizeW && item.sizeW !== 0) item.sizeW = 0;
+                    if (!item.thickness && item.thickness !== 0) item.thickness = 0;
+                    if (!item.density && item.density !== 0) item.density = 0;
+                    if (!item.shelfLife) item.shelfLife = 365;
+                    if (!item.minimumStockQty && item.minimumStockQty !== 0) item.minimumStockQty = 0;
+                    if (!item.stockType) item.stockType = 'JOB CONSUMABLES';
+                    if (item.isStandardItem === undefined) item.isStandardItem = true;
+                    if (item.isRegularItem === undefined) item.isRegularItem = true;
+                    if (!item.purchaseOrderQuantity && item.purchaseOrderQuantity !== 0) item.purchaseOrderQuantity = 0;
+
+                    // ItemName auto-generation if missing (Quality + SizeW MM + Thickness MICRON + Manufacturer)
+                    if (!item.itemName) {
+                        const parts = [];
+                        if (item.quality) parts.push(item.quality);
+                        if (item.sizeW) parts.push(`${item.sizeW} MM`);
+                        if (item.thickness) parts.push(`${item.thickness} MICRON`);
+                        if (item.manufecturer) parts.push(item.manufecturer);
+                        item.itemName = parts.join(', ');
+                    }
+                }
+
+                // Auto-calculations and defaults for ROLL group
+                if (itemGroupName === 'ROLL') {
+                    // Apply defaults
+                    if (!item.itemType) item.itemType = 'Paper';
+                    if (!item.sizeW && item.sizeW !== 0) item.sizeW = 0;
+                    if (!item.thickness && item.thickness !== 0) item.thickness = 0;
+                    if (!item.density && item.density !== 0) item.density = 0;
+                    if (!item.shelfLife) item.shelfLife = 365;
+                    if (!item.minimumStockQty && item.minimumStockQty !== 0) item.minimumStockQty = 0;
+                    if (item.isStandardItem === undefined) item.isStandardItem = true;
+                    if (item.isRegularItem === undefined) item.isRegularItem = true;
+
+                    // TotalGSM auto-calculation (GSM + ReleaseGSM + AdhesiveGSM)
+                    item.totalGSM = (item.gsm || 0) + (item.releaseGSM || 0) + (item.adhesiveGSM || 0);
+
+                    // ItemName auto-generation if missing (Quality, GSM GSM, ReleaseGSM GSM, AdhesiveGSM GSM, Manufacturer, SizeW MM)
+                    if (!item.itemName) {
+                        const parts = [];
+                        if (item.quality) parts.push(item.quality);
+                        if (item.gsm) parts.push(`${item.gsm} GSM`);
+                        if (item.releaseGSM) parts.push(`${item.releaseGSM} GSM`);
+                        if (item.adhesiveGSM) parts.push(`${item.adhesiveGSM} GSM`);
+                        if (item.manufecturer) parts.push(item.manufecturer);
+                        if (item.sizeW) parts.push(`${item.sizeW} MM`);
                         item.itemName = parts.join(', ');
                     }
                 }
@@ -457,6 +539,29 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 'StockType', 'IsStandardItem', 'IsRegularItem', 'PurchaseOrderQuantity',
                 'StockRefCode', 'ProductHSNName', 'ItemName'
             ];
+        } else if (itemGroupName === 'VARNISHES & COATINGS') {
+            exportColumns = [
+                'ItemType', 'Quality', 'ItemSubGroupName', 'Manufecturer', 'ManufecturerItemCode',
+                'ShelfLife', 'PurchaseUnit', 'PurchaseRate', 'EstimationUnit', 'EstimationRate',
+                'StockUnit', 'MinimumStockQty', 'StockType', 'IsStandardItem', 'IsRegularItem',
+                'PurchaseOrderQuantity', 'StockRefCode', 'ProductHSNName', 'ItemName'
+            ];
+        } else if (itemGroupName === 'LAMINATION FILM') {
+            exportColumns = [
+                'Quality', 'ItemSubGroupName', 'Manufecturer', 'ManufecturerItemCode', 'SizeW',
+                'Thickness', 'Density', 'ShelfLife', 'PurchaseUnit', 'PurchaseRate',
+                'EstimationUnit', 'EstimationRate', 'StockUnit', 'MinimumStockQty', 'StockType',
+                'IsStandardItem', 'IsRegularItem', 'PurchaseOrderQuantity', 'StockRefCode',
+                'ProductHSNName', 'ItemName'
+            ];
+        } else if (itemGroupName === 'ROLL') {
+            exportColumns = [
+                'ItemType', 'Quality', 'Manufecturer', 'ManufecturerItemCode', 'GSM',
+                'ReleaseGSM', 'AdhesiveGSM', 'SizeW', 'Thickness', 'Density', 'TotalGSM',
+                'ShelfLife', 'PurchaseUnit', 'PurchaseRate', 'EstimationUnit', 'EstimationRate',
+                'StockUnit', 'MinimumStockQty', 'IsStandardItem', 'IsRegularItem',
+                'StockRefCode', 'ProductHSNName', 'ItemName'
+            ];
         } else if (itemGroupName === 'OTHER MATERIAL') {
             exportColumns = [
                 'ItemSubGroupName', 'Quality', 'Manufecturer', 'ManufecturerItemCode',
@@ -561,6 +666,78 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     IsStandardItem: item.isStandardItem,
                     IsRegularItem: item.isRegularItem,
                     PurchaseOrderQuantity: item.purchaseOrderQuantity,
+                    StockRefCode: item.stockRefCode,
+                    ProductHSNName: item.productHSNName,
+                    ItemName: item.itemName
+                };
+            } else if (itemGroupName === 'VARNISHES & COATINGS') {
+                rowValues = {
+                    ItemType: item.itemType,
+                    Quality: item.quality,
+                    ItemSubGroupName: item.itemSubGroupName,
+                    Manufecturer: item.manufecturer,
+                    ManufecturerItemCode: item.manufecturerItemCode,
+                    ShelfLife: item.shelfLife,
+                    PurchaseUnit: item.purchaseUnit,
+                    PurchaseRate: item.purchaseRate,
+                    EstimationUnit: item.estimationUnit,
+                    EstimationRate: item.estimationRate,
+                    StockUnit: item.stockUnit,
+                    MinimumStockQty: item.minimumStockQty,
+                    StockType: item.stockType,
+                    IsStandardItem: item.isStandardItem,
+                    IsRegularItem: item.isRegularItem,
+                    PurchaseOrderQuantity: item.purchaseOrderQuantity,
+                    StockRefCode: item.stockRefCode,
+                    ProductHSNName: item.productHSNName,
+                    ItemName: item.itemName
+                };
+            } else if (itemGroupName === 'LAMINATION FILM') {
+                rowValues = {
+                    Quality: item.quality,
+                    ItemSubGroupName: item.itemSubGroupName,
+                    Manufecturer: item.manufecturer,
+                    ManufecturerItemCode: item.manufecturerItemCode,
+                    SizeW: item.sizeW,
+                    Thickness: item.thickness,
+                    Density: item.density,
+                    ShelfLife: item.shelfLife,
+                    PurchaseUnit: item.purchaseUnit,
+                    PurchaseRate: item.purchaseRate,
+                    EstimationUnit: item.estimationUnit,
+                    EstimationRate: item.estimationRate,
+                    StockUnit: item.stockUnit,
+                    MinimumStockQty: item.minimumStockQty,
+                    StockType: item.stockType,
+                    IsStandardItem: item.isStandardItem,
+                    IsRegularItem: item.isRegularItem,
+                    PurchaseOrderQuantity: item.purchaseOrderQuantity,
+                    StockRefCode: item.stockRefCode,
+                    ProductHSNName: item.productHSNName,
+                    ItemName: item.itemName
+                };
+            } else if (itemGroupName === 'ROLL') {
+                rowValues = {
+                    ItemType: item.itemType,
+                    Quality: item.quality,
+                    Manufecturer: item.manufecturer,
+                    ManufecturerItemCode: item.manufecturerItemCode,
+                    GSM: item.gsm,
+                    ReleaseGSM: item.releaseGSM,
+                    AdhesiveGSM: item.adhesiveGSM,
+                    SizeW: item.sizeW,
+                    Thickness: item.thickness,
+                    Density: item.density,
+                    TotalGSM: item.totalGSM,
+                    ShelfLife: item.shelfLife,
+                    PurchaseUnit: item.purchaseUnit,
+                    PurchaseRate: item.purchaseRate,
+                    EstimationUnit: item.estimationUnit,
+                    EstimationRate: item.estimationRate,
+                    StockUnit: item.stockUnit,
+                    MinimumStockQty: item.minimumStockQty,
+                    IsStandardItem: item.isStandardItem,
+                    IsRegularItem: item.isRegularItem,
                     StockRefCode: item.stockRefCode,
                     ProductHSNName: item.productHSNName,
                     ItemName: item.itemName
@@ -674,7 +851,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         toast.success(`Removed ${selectedRows.size} row(s)`);
     };
 
-    const handleClearAllData = () => {
+    const handleClearAllDataTrigger = (type: 'clearOnly' | 'freshUpload') => {
+        setClearActionType(type);
         setClearFlowStep(1);
         generateCaptcha();
     };
@@ -711,10 +889,17 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 itemGroupId
             );
             toast.success(`✅ Cleared ${result.deletedCount} record(s)`);
-            handleClearCancel();
             setItemData([]);
             setValidationResult(null);
             setMode('idle');
+
+            if (clearActionType === 'freshUpload' && fileInputRef.current) {
+                fileInputRef.current.value = '';
+                // Automatically trigger file selection after fresh load
+                fileInputRef.current.click();
+            }
+
+            handleClearCancel();
         } catch (error: any) {
             if (error?.response?.status === 401) {
                 toast.error('❌ Invalid credentials');
@@ -983,6 +1168,177 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             ];
         }
 
+        // VARNISHES & COATINGS Group Columns
+        if (itemGroupName === 'VARNISHES & COATINGS') {
+            return [
+                ...baseCols,
+                { field: 'itemType', headerName: 'ItemType', editable: isEditable, width: 150 },
+                { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
+                {
+                    field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                },
+                { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
+                { field: 'manufecturerItemCode', headerName: 'ManufacturerItemCode', editable: isEditable, width: 180 },
+                { field: 'shelfLife', headerName: 'ShelfLife', editable: isEditable, width: 100, type: 'numericColumn' },
+                {
+                    field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
+                {
+                    field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
+                {
+                    field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
+                { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
+                {
+                    field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                {
+                    field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
+                { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
+                {
+                    field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                },
+                { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
+            ];
+        }
+
+        // LAMINATION FILM Group Columns
+        if (itemGroupName === 'LAMINATION FILM') {
+            return [
+                ...baseCols,
+                { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
+                {
+                    field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                },
+                { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
+                { field: 'manufecturerItemCode', headerName: 'ManufacturerItemCode', editable: isEditable, width: 180 },
+                { field: 'sizeW', headerName: 'SizeW', editable: isEditable, width: 100, type: 'numericColumn' },
+                { field: 'thickness', headerName: 'Thickness', editable: isEditable, width: 110, type: 'numericColumn' },
+                { field: 'density', headerName: 'Density', editable: isEditable, width: 100, type: 'numericColumn' },
+                { field: 'shelfLife', headerName: 'ShelfLife', editable: isEditable, width: 100, type: 'numericColumn' },
+                {
+                    field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
+                {
+                    field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
+                {
+                    field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
+                { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
+                {
+                    field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                {
+                    field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
+                { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
+                {
+                    field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                },
+                { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
+            ];
+        }
+
+        // ROLL Group Columns
+        if (itemGroupName === 'ROLL') {
+            return [
+                ...baseCols,
+                {
+                    field: 'itemType', headerName: 'ItemType', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: ['Paper', 'Film'] }
+                },
+                { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
+                { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
+                { field: 'manufecturerItemCode', headerName: 'ManufacturerItemCode', editable: isEditable, width: 180 },
+                { field: 'gsm', headerName: 'GSM', editable: isEditable, width: 90, type: 'numericColumn' },
+                { field: 'releaseGSM', headerName: 'ReleaseGSM', editable: isEditable, width: 110, type: 'numericColumn' },
+                { field: 'adhesiveGSM', headerName: 'AdhesiveGSM', editable: isEditable, width: 120, type: 'numericColumn' },
+                { field: 'sizeW', headerName: 'SizeW', editable: isEditable, width: 100, type: 'numericColumn' },
+                { field: 'thickness', headerName: 'Thickness', editable: isEditable, width: 110, type: 'numericColumn' },
+                { field: 'density', headerName: 'Density', editable: isEditable, width: 100, type: 'numericColumn' },
+                {
+                    field: 'totalGSM', headerName: 'TotalGSM', editable: false, width: 110, type: 'numericColumn',
+                    cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
+                },
+                { field: 'shelfLife', headerName: 'ShelfLife', editable: isEditable, width: 100, type: 'numericColumn' },
+                {
+                    field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
+                {
+                    field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
+                {
+                    field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
+                {
+                    field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                {
+                    field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
+                {
+                    field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                },
+                { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
+            ];
+        }
+
         const cols: ColDef[] = [
             ...baseCols,
             { field: 'itemName', headerName: 'Item Name', editable: isEditable, width: 250 },
@@ -1132,6 +1488,34 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             }
         }
 
+        // ROLL Calculations - Excel-like live updates
+        if (itemGroupName === 'ROLL') {
+            const changedField = params.colDef.field;
+
+            // Recalculate TotalGSM (GSM + ReleaseGSM + AdhesiveGSM)
+            if (['gsm', 'releaseGSM', 'adhesiveGSM'].includes(changedField)) {
+                item.totalGSM = (item.gsm || 0) + (item.releaseGSM || 0) + (item.adhesiveGSM || 0);
+            }
+
+            // Recalculate ItemName (Quality, GSM GSM, ReleaseGSM GSM, AdhesiveGSM GSM, Manufacturer, SizeW MM)
+            if (['quality', 'gsm', 'releaseGSM', 'adhesiveGSM', 'manufecturer', 'sizeW'].includes(changedField)) {
+                // Ensure TotalGSM is updated first if any GSM field changed
+                if (['gsm', 'releaseGSM', 'adhesiveGSM'].includes(changedField)) {
+                    item.totalGSM = (item.gsm || 0) + (item.releaseGSM || 0) + (item.adhesiveGSM || 0);
+                }
+
+                const parts = [];
+                if (item.quality) parts.push(item.quality);
+                if (item.gsm) parts.push(`${item.gsm} GSM`);
+                if (item.releaseGSM) parts.push(`${item.releaseGSM} GSM`);
+                if (item.adhesiveGSM) parts.push(`${item.adhesiveGSM} GSM`);
+                if (item.manufecturer) parts.push(item.manufecturer);
+                if (item.sizeW) parts.push(`${item.sizeW} MM`);
+
+                item.itemName = parts.join(', ');
+            }
+        }
+
         // Update data using stable index
         updatedData[rowIndex] = item;
         setItemData(updatedData);
@@ -1278,7 +1662,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 </button>
 
                 <button
-                    onClick={handleClearAllData}
+                    onClick={() => handleClearAllDataTrigger('clearOnly')}
                     disabled={isLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium disabled:opacity-50"
                 >
@@ -1295,23 +1679,20 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     Remove Row ({selectedRows.size})
                 </button>
 
-                <label className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium cursor-pointer">
+                <button
+                    onClick={() => handleClearAllDataTrigger('freshUpload')}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium disabled:opacity-50"
+                >
                     <Upload className="w-5 h-5" />
                     Fresh Upload
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={(e) => handleFileUpload(e, false)}
-                        className="hidden"
-                        disabled={isLoading}
-                    />
-                </label>
+                </button>
 
                 <label className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium cursor-pointer">
                     <FilePlus2 className="w-5 h-5" />
                     Existing Upload
                     <input
+                        ref={fileInputRef}
                         type="file"
                         accept=".xlsx,.xls"
                         onChange={(e) => handleFileUpload(e, true)}

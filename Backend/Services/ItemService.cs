@@ -59,6 +59,11 @@ public class ItemService : IItemService
                 i.InkColour,
                 i.PantoneCode,
                 i.PurchaseOrderQuantity,
+                i.Thickness,
+                i.Density,
+                i.ReleaseGSM,
+                i.AdhesiveGSM,
+                i.TotalGSM,
                 hsn.HSNCode,
                 CAST(ISNULL(i.IsDeletedTransaction, 0) AS BIT) as IsDeletedTransaction
             FROM ItemMaster i
@@ -151,6 +156,26 @@ public class ItemService : IItemService
                         if (decimal.TryParse(fieldValue, out decimal poQty))
                             item.PurchaseOrderQuantity = poQty;
                         break;
+                    case "Thickness":
+                        if (decimal.TryParse(fieldValue, out decimal thickness))
+                            item.Thickness = thickness;
+                        break;
+                    case "Density":
+                        if (decimal.TryParse(fieldValue, out decimal density))
+                            item.Density = density;
+                        break;
+                    case "ReleaseGSM":
+                        if (decimal.TryParse(fieldValue, out decimal releaseGsm))
+                            item.ReleaseGSM = releaseGsm;
+                        break;
+                    case "AdhesiveGSM":
+                        if (decimal.TryParse(fieldValue, out decimal adhesiveGsm))
+                            item.AdhesiveGSM = adhesiveGsm;
+                        break;
+                    case "TotalGSM":
+                        if (decimal.TryParse(fieldValue, out decimal totalGsm))
+                            item.TotalGSM = totalGsm;
+                        break;
                 }
             }
         }
@@ -225,10 +250,34 @@ public class ItemService : IItemService
                 "StockUnit", "ProductHSNName"
             };
         }
+        else if (itemGroupId == 4) // VARNISHES & COATINGS
+        {
+            requiredFields = new[] {
+                "ItemType", "Quality", "ItemSubGroupName",
+                "PurchaseUnit", "PurchaseRate", "EstimationUnit", "EstimationRate",
+                "StockUnit", "ProductHSNName"
+            };
+        }
+        else if (itemGroupId == 5) // LAMINATION FILM
+        {
+            requiredFields = new[] {
+                "Quality", "ItemSubGroupName",
+                "PurchaseUnit", "PurchaseRate", "EstimationUnit", "EstimationRate",
+                "StockUnit", "ProductHSNName"
+            };
+        }
         else if (itemGroupId == 8) // OTHER MATERIAL
         {
             requiredFields = new[] {
                 "ItemSubGroupName", "Quality",
+                "PurchaseUnit", "PurchaseRate", "EstimationUnit", "EstimationRate",
+                "StockUnit", "ProductHSNName"
+            };
+        }
+        else if (itemGroupId == 13) // ROLL
+        {
+            requiredFields = new[] {
+                "ItemType", "Quality", "Manufecturer", "GSM",
                 "PurchaseUnit", "PurchaseRate", "EstimationUnit", "EstimationRate",
                 "StockUnit", "ProductHSNName"
             };
@@ -338,6 +387,32 @@ public class ItemService : IItemService
                            string.Equals(inkColourA, inkColourB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(pantoneCodeA, pantoneCodeB, StringComparison.OrdinalIgnoreCase);
                 }
+                else if (itemGroupId == 4) // VARNISHES & COATINGS: ItemType + Quality
+                {
+                    var itemTypeA = a.ItemType?.Trim() ?? "";
+                    var itemTypeB = b.ItemType?.Trim() ?? "";
+
+                    var qualityA = a.Quality?.Trim() ?? "";
+                    var qualityB = b.Quality?.Trim() ?? "";
+
+                    return string.Equals(itemTypeA, itemTypeB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase);
+                }
+                else if (itemGroupId == 5) // LAMINATION FILM: Quality + SizeW + Thickness
+                {
+                    var qualityA = a.Quality?.Trim() ?? "";
+                    var qualityB = b.Quality?.Trim() ?? "";
+
+                    var sizeWA = a.SizeW?.ToString() ?? "";
+                    var sizeWB = b.SizeW?.ToString() ?? "";
+
+                    var thicknessA = a.Thickness?.ToString() ?? "";
+                    var thicknessB = b.Thickness?.ToString() ?? "";
+
+                    return string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(thicknessA, thicknessB, StringComparison.OrdinalIgnoreCase);
+                }
                 else if (itemGroupId == 8) // OTHER MATERIAL: ItemSubGroupName + Quality + Manufacturer
                 {
                     var subGroupA = a.ItemSubGroupName?.Trim() ?? "";
@@ -352,6 +427,25 @@ public class ItemService : IItemService
                     return string.Equals(subGroupA, subGroupB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(manufA, manufB, StringComparison.OrdinalIgnoreCase);
+                }
+                else if (itemGroupId == 13) // ROLL: Quality + GSM + Manufacturer + SizeW
+                {
+                    var qualityA = a.Quality?.Trim() ?? "";
+                    var qualityB = b.Quality?.Trim() ?? "";
+
+                    var gsmA = a.GSM?.ToString() ?? "";
+                    var gsmB = b.GSM?.ToString() ?? "";
+
+                    var manufA = a.Manufecturer?.Trim() ?? "";
+                    var manufB = b.Manufecturer?.Trim() ?? "";
+
+                    var sizeWA = a.SizeW?.ToString() ?? "";
+                    var sizeWB = b.SizeW?.ToString() ?? "";
+
+                    return string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(gsmA, gsmB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(manufA, manufB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase);
                 }
                 else // PAPER (default): Quality + GSM + Manufacturer + Finish + ItemSize
                 {
@@ -458,8 +552,8 @@ public class ItemService : IItemService
                 }
             }
 
-            // 4c. Check ItemSubGroupName mismatch (YELLOW) - for INK & ADDITIVES and OTHER MATERIAL
-            if ((itemGroupId == 3 || itemGroupId == 8) && !string.IsNullOrWhiteSpace(item.ItemSubGroupName))
+            // 4c. Check ItemSubGroupName mismatch (YELLOW) - for groups with ItemSubGroupName
+            if ((itemGroupId == 3 || itemGroupId == 4 || itemGroupId == 5 || itemGroupId == 8) && !string.IsNullOrWhiteSpace(item.ItemSubGroupName))
             {
                 var isValidSubGroup = itemSubGroupLookup.Contains(item.ItemSubGroupName.Trim());
 
@@ -613,6 +707,8 @@ public class ItemService : IItemService
                     Quality, GSM, Manufecturer, Finish, ManufecturerItemCode, Caliper,
                     ShelfLife, MinimumStockQty, IsStandardItem, IsRegularItem, PackingType, BF,
                     InkColour, PantoneCode, PurchaseOrderQuantity,
+                    Thickness, Density,
+                    ReleaseGSM, AdhesiveGSM, TotalGSM,
                     ISItemActive, CompanyID, UserID, FYear, CreatedBy, CreatedDate, IsDeletedTransaction
                 )
                 OUTPUT INSERTED.ItemID
@@ -625,6 +721,8 @@ public class ItemService : IItemService
                     @Quality, @GSM, @Manufecturer, @Finish, @ManufecturerItemCode, @Caliper,
                     @ShelfLife, @MinimumStockQty, @IsStandardItem, @IsRegularItem, @PackingType, @BF,
                     @InkColour, @PantoneCode, @PurchaseOrderQuantity,
+                    @Thickness, @Density,
+                    @ReleaseGSM, @AdhesiveGSM, @TotalGSM,
                     @ISItemActive, @CompanyID, @UserID, @FYear, @CreatedBy, @CreatedDate, 0
                 )";
 
@@ -657,6 +755,8 @@ public class ItemService : IItemService
                 if (!string.IsNullOrEmpty(item.PantoneCode)) descriptionParts.Add($"PantoneCode:{item.PantoneCode}");
                 if (!string.IsNullOrEmpty(item.Quality)) descriptionParts.Add($"Quality:{item.Quality}");
                 if (item.GSM.HasValue) descriptionParts.Add($"GSM:{item.GSM}");
+                if (item.ReleaseGSM.HasValue) descriptionParts.Add($"ReleaseGSM:{item.ReleaseGSM}");
+                if (item.AdhesiveGSM.HasValue) descriptionParts.Add($"AdhesiveGSM:{item.AdhesiveGSM}");
                 if (!string.IsNullOrEmpty(item.Manufecturer)) descriptionParts.Add($"Manufecturer:{item.Manufecturer}");
                 if (!string.IsNullOrEmpty(item.Finish)) descriptionParts.Add($"Finish:{item.Finish}");
                 if (item.SizeW.HasValue) descriptionParts.Add($"SizeW:{item.SizeW}");
@@ -666,7 +766,7 @@ public class ItemService : IItemService
 
                 // Use provided ItemType or derive from context
                 string itemType = item.ItemType ?? item.StockCategory?.ToUpper() ??
-                    (itemGroupId == 8 ? "OTHER MATERIAL" : "PAPER");
+                    (itemGroupId == 4 ? "Varnish" : itemGroupId == 5 ? "LAMINATION FILM" : itemGroupId == 8 ? "OTHER MATERIAL" : itemGroupId == 13 ? "Paper" : "PAPER");
 
                 // Lookup ProductHSNID
                 int productHSNID = 0;
@@ -731,6 +831,11 @@ public class ItemService : IItemService
                     InkColour = item.InkColour ?? (object)DBNull.Value,
                     PantoneCode = item.PantoneCode ?? (object)DBNull.Value,
                     PurchaseOrderQuantity = item.PurchaseOrderQuantity ?? (object)DBNull.Value,
+                    Thickness = item.Thickness ?? (object)DBNull.Value,
+                    Density = item.Density ?? (object)DBNull.Value,
+                    ReleaseGSM = item.ReleaseGSM ?? (object)DBNull.Value,
+                    AdhesiveGSM = item.AdhesiveGSM ?? (object)DBNull.Value,
+                    TotalGSM = item.TotalGSM ?? (object)DBNull.Value,
                     ISItemActive = 1,
                     CompanyID = 2,
                     UserID = 2,
@@ -808,6 +913,16 @@ public class ItemService : IItemService
                     // Insert ProductHSNName with ProductHSNID as value
                     detailFields.Add(("ProductHSNName", productHSNID.ToString()));
                 }
+                if (item.Thickness.HasValue)
+                    detailFields.Add(("Thickness", item.Thickness.ToString()!));
+                if (item.Density.HasValue)
+                    detailFields.Add(("Density", item.Density.ToString()!));
+                if (item.ReleaseGSM.HasValue)
+                    detailFields.Add(("ReleaseGSM", item.ReleaseGSM.ToString()!));
+                if (item.AdhesiveGSM.HasValue)
+                    detailFields.Add(("AdhesiveGSM", item.AdhesiveGSM.ToString()!));
+                if (item.TotalGSM.HasValue)
+                    detailFields.Add(("TotalGSM", item.TotalGSM.ToString()!));
                 if (!string.IsNullOrEmpty(item.StockRefCode))
                     detailFields.Add(("StockRefCode", item.StockRefCode));
                 if (!string.IsNullOrEmpty(item.CertificationType))

@@ -55,6 +55,15 @@ public class ItemMasterDto
     public string? PantoneCode { get; set; }
     public decimal? PurchaseOrderQuantity { get; set; }
 
+    // LAMINATION FILM-specific fields
+    public decimal? Thickness { get; set; }
+    public decimal? Density { get; set; }
+
+    // ROLL-specific fields
+    public decimal? ReleaseGSM { get; set; }
+    public decimal? AdhesiveGSM { get; set; }
+    public decimal? TotalGSM { get; set; }
+
     // Dynamic fields from ItemMasterDetails
     public Dictionary<string, object?>? DynamicFields { get; set; }
 }
