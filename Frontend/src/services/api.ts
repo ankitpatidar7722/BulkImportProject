@@ -6,6 +6,28 @@ const api = axios.create({
     baseURL: API_BASE_URL,
 });
 
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('authToken');
+    const companyToken = localStorage.getItem('companyToken');
+    const activeToken = token || companyToken;
+
+    if (activeToken) {
+        config.headers.Authorization = `Bearer ${activeToken}`;
+    }
+    return config;
+});
+
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response?.status === 401) {
+            // Optional: Dispatch event or handle logout
+            console.warn('Unauthorized access. Session might be expired.');
+        }
+        return Promise.reject(error);
+    }
+);
+
 export interface ModuleDto {
     moduleId: number;
     moduleName: string;
@@ -812,4 +834,55 @@ export const clearAllItemData = async (username: string, password: string, reaso
         itemGroupId
     });
     return response.data;
+};
+
+// ==================== AUTH API ====================
+
+export interface CompanyLoginRequest {
+    companyUserID: string;
+    password: string;
+}
+
+export interface CompanyLoginResponse {
+    success: boolean;
+    message: string;
+    companyToken: string;
+    companyName: string;
+}
+
+export interface UserLoginRequest {
+    userName: string;
+    password: string;
+    fYear: string;
+}
+
+export interface UserLoginResponse {
+    success: boolean;
+    message: string;
+    token: string;
+    userID: number;
+    userName: string;
+    companyID: number;
+    branchID: number;
+    fYear: string;
+    isAdmin: boolean;
+    companyName: string;
+}
+
+export const companyLogin = async (data: CompanyLoginRequest): Promise<CompanyLoginResponse> => {
+    const response = await api.post('/auth/company-login', data);
+    return response.data;
+};
+
+export const userLogin = async (data: UserLoginRequest): Promise<UserLoginResponse> => {
+    const response = await api.post('/auth/user-login', data);
+    return response.data;
+};
+
+export const logout = async (): Promise<void> => {
+    try {
+        await api.post('/auth/logout');
+    } catch {
+        // Ignore error if logout fails
+    }
 };

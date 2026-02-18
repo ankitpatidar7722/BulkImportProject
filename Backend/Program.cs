@@ -1,5 +1,9 @@
 using Backend.Services;
+using BulkImport.Services;
 using Microsoft.Data.SqlClient;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 
 Console.WriteLine("!!! BACKEND STARTING - VERSION DEBUG !!!");
@@ -23,11 +27,56 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register connection string
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddScoped(_ => new SqlConnection(connectionString));
+// Register Authentication Services
+builder.Services.AddSingleton<ICompanySessionStore, CompanySessionStore>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddHttpContextAccessor();
 
-// Register services
+// Configure JWT Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? "ThisIsSamplesecretKey12345678901234567890"))
+        };
+    });
+
+// Register Dynamic Connection String
+builder.Services.AddScoped<SqlConnection>(sp =>
+{
+    var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    var sessionStore = sp.GetRequiredService<ICompanySessionStore>();
+    
+    var httpContext = httpContextAccessor.HttpContext;
+    var defaultConn = config.GetConnectionString("DefaultConnection");
+
+    if (httpContext == null || httpContext.User == null)
+         return new SqlConnection(defaultConn);
+    
+    var sessionIdClaim = httpContext.User.FindFirst("sessionId")?.Value;
+    
+    if (!string.IsNullOrEmpty(sessionIdClaim) && Guid.TryParse(sessionIdClaim, out var sessionId))
+    {
+        if (sessionStore.TryGetSession(sessionId, out var session) && session != null)
+        {
+            var connBuilder = new SqlConnectionStringBuilder(session.ConnectionString);
+            connBuilder.TrustServerCertificate = true;
+            return new SqlConnection(connBuilder.ConnectionString);
+        }
+    }
+    
+    return new SqlConnection(defaultConn);
+});
+
+// Register Application Services
 builder.Services.AddScoped<IModuleService, ModuleService>();
 builder.Services.AddScoped<IExcelService, ExcelService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
@@ -369,6 +418,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("AllowAll");
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

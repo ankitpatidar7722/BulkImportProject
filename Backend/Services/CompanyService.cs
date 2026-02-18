@@ -38,7 +38,7 @@ public class CompanyService : ICompanyService
                 JobScheduleReleaseRequired, ChallanPrintRDLC, PWOPrintRDLC, ProductionEntryBackDay, 
                 ProductionUnitID, SalesReturnPrintRDLC, IndusMailAPIBaseUrl, ApiBasicAuthUserName, 
                 ApiBasicAuthPassword, IsWastageAddInPrintingRate, MessageShow, Description, 
-                Time, Is_Book_Half_Form_Wastage, end_time, LastShownTime, Duration, 
+                Is_Book_Half_Form_Wastage, end_time, LastShownTime, Duration, 
                 JobReleasedChecklistFeature, IsInvoicePrintProductWise, COAPrintRDLC, 
                 IsInvoiceBlockFeatureRequired, PurchaseTolerance, IsSalesOrderApprovalRequired, 
                 IsJobReleaseFeatureRequired, DesktopConnString, MSMENo, OTPVerificationExcludedDevices, 
@@ -49,7 +49,7 @@ public class CompanyService : ICompanyService
                 RoundOffImpressionValue, AutoRoundOffNotApplicable, ShowPlanUptoWastagePerc, 
                 PWOFlexoPrintRDLC, IsSupplierItemAllocationRequired, ByPassCostApproval, 
                 PWOGangPrintRDLC, QCAndPackingSlip, ItemSalesOrderBookingPrint, 
-                RefCompanyCode, RefSalesOfficeCode, ISOTPREQUIRED, CompanyStaticIP, Phone
+                RefCompanyCode, RefSalesOfficeCode, ISOTPREQUIRED, CompanyStaticIP
             FROM CompanyMaster 
             WHERE IsDeletedTransaction = 0 
             ORDER BY CompanyId DESC";
@@ -80,7 +80,6 @@ public class CompanyService : ICompanyService
                 Pincode = @Pincode,
                 ContactNO = @ContactNO,
                 MobileNO = @MobileNO,
-                Phone = @Phone,
                 Email = @Email,
                 Website = @Website,
                 ConcerningPerson = @ConcerningPerson,
@@ -173,7 +172,6 @@ public class CompanyService : ICompanyService
                 End_Time = @End_Time,
                 LastShownTime = @LastShownTime,
                 MessageShow = @MessageShow,
-                Time = @Time,
                 OTPVerificationFeatureEnabled = @OTPVerificationFeatureEnabled,
                 OTPVerificationExcludedDevices = @OTPVerificationExcludedDevices,
                 MultipleFYearNotRequired = @MultipleFYearNotRequired,

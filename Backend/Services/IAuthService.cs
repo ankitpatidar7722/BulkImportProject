@@ -1,0 +1,9 @@
+using BulkImport.DTOs;
+
+namespace BulkImport.Services;
+
+public interface IAuthService
+{
+    Task<CompanyLoginResponse> CompanyLoginAsync(CompanyLoginRequest request);
+    Task<UserLoginResponse> UserLoginAsync(UserLoginRequest request, Guid sessionId);
+}

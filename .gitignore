@@ -11,6 +11,7 @@ obj/
 node_modules/
 dist/
 .vite/
+Frontend/node_modules/
 
 # IDE
 .vscode/
@@ -20,6 +21,7 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+nul
 
 # Logs
 *.log
