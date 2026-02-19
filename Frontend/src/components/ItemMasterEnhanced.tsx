@@ -18,7 +18,8 @@ import {
     ItemSubGroupDto,
     getItemHSNGroups,
     getItemUnits,
-    getItemSubGroups
+    getItemSubGroups,
+    softDeleteItem
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 
@@ -49,6 +50,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     const [units, setUnits] = useState<UnitDto[]>([]);
     const [itemSubGroups, setItemSubGroups] = useState<ItemSubGroupDto[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [pendingMode, setPendingMode] = useState<{ type: 'load' | 'upload'; action: () => void } | null>(null);
+    const [showModeSwitchModal, setShowModeSwitchModal] = useState(false);
 
     // Clear Data Flow State
     const [clearFlowStep, setClearFlowStep] = useState<0 | 1 | 2 | 3 | 4>(0);
@@ -64,6 +67,21 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
     const [filenameError, setFilenameError] = useState<string | null>(null);
     const [clearActionType, setClearActionType] = useState<'clearOnly' | 'freshUpload'>('freshUpload');
+
+    // Re-Upload Confirmation State
+    const [showReUploadModal, setShowReUploadModal] = useState(false);
+
+    // Standard Error Modal State
+    const [showErrorModal, setShowErrorModal] = useState(false);
+    const [errorModalMessage, setErrorModalMessage] = useState<string>('');
+
+    const showError = (message: string) => {
+        setErrorModalMessage(message);
+        setShowErrorModal(true);
+    };
+
+    // Success Popup State
+    const [successInfo, setSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
 
     // Generate CAPTCHA
     const generateCaptcha = () => {
@@ -82,6 +100,13 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         loadDropdownData();
     }, []);
 
+    // Force redraw when validation result changes to ensure highlights are cleared/updated
+    useEffect(() => {
+        if (gridApi) {
+            gridApi.redrawRows();
+        }
+    }, [validationResult, gridApi]);
+
     const loadDropdownData = async () => {
         try {
             const [hsnData, unitData, subGroupData] = await Promise.all([
@@ -99,21 +124,82 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
     const handleLoadData = async () => {
         if (itemGroupId <= 0) {
-            toast.error('Please select an Item Group first');
+            showError('Please select an Item Group first');
             return;
         }
 
+        // Strict Mode Check
+        if (mode === 'preview' || mode === 'validated') {
+            setPendingMode({
+                type: 'load',
+                action: () => performLoadData()
+            });
+            setShowModeSwitchModal(true);
+            return;
+        }
+        performLoadData();
+    };
+
+    const performLoadData = async () => {
         setIsLoading(true);
         try {
             const data = await getAllItems(itemGroupId);
-            setItemData(data);
-            setMode('loaded');
-            setValidationResult(null);
-            toast.success(`Loaded ${data.length} item(s) from database`);
+            if (data.length === 0) {
+                setItemData([]);
+                setMode('idle');
+                showError(`No data found in database against the selected ${itemGroupName}`);
+            } else {
+                setItemData(data);
+                setMode('loaded');
+                setValidationResult(null);
+                setSelectedRows(new Set()); // Clear selection
+                toast.success(`Loaded ${data.length} item(s) from database`);
+            }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to load data');
+            showError(error?.response?.data?.error || 'Failed to load data');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleFileSelectTrigger = () => {
+        // Strict Mode Check: If in Loaded mode, confirm switch
+        if (mode === 'loaded') {
+            setPendingMode({
+                type: 'upload',
+                action: () => {
+                    // Reset state for upload
+                    setItemData([]);
+                    setMode('idle');
+                    setValidationResult(null);
+                    setSelectedRows(new Set());
+                    // Open file dialog
+                    if (fileInputRef.current) fileInputRef.current.click();
+                }
+            });
+            setShowModeSwitchModal(true);
+            return;
+        }
+
+        // Re-Upload Confirmation (Excel Mode)
+        if (itemData.length > 0 && (mode === 'preview' || mode === 'validated')) {
+            setShowReUploadModal(true);
+            return;
+        }
+
+        // Otherwise just click
+        if (fileInputRef.current) fileInputRef.current.click();
+    };
+
+    const confirmReUpload = () => {
+        setShowReUploadModal(false);
+        setItemData([]);
+        setValidationResult(null);
+        setMode('idle');
+        setSelectedRows(new Set());
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''; // Reset input
+            fileInputRef.current.click();
         }
     };
 
@@ -142,8 +228,9 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 return String(value);
             };
 
-            const mappedData: ItemMasterDto[] = jsonData.map((row: any) => {
+            const mappedData: ItemMasterDto[] = jsonData.map((row: any, index: number) => {
                 const item: ItemMasterDto = {
+                    tempId: `temp-${Date.now()}-${index}`,
                     itemName: toStringOrUndefined(row.ItemName || row.itemName),
                     itemGroupID: itemGroupId,
                     hsnGroup: toStringOrUndefined(row.HSNGroup || row.hsnGroup),
@@ -309,6 +396,29 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     }
                 }
 
+                // Auto-calculations and defaults for FOIL group
+                if (itemGroupName === 'FOIL') {
+                    // Apply defaults
+                    if (!item.sizeW && item.sizeW !== 0) item.sizeW = 0;
+                    if (!item.thickness && item.thickness !== 0) item.thickness = 0;
+                    if (!item.density && item.density !== 0) item.density = 0;
+                    if (!item.shelfLife) item.shelfLife = 365;
+                    if (!item.minimumStockQty && item.minimumStockQty !== 0) item.minimumStockQty = 0;
+                    if (!item.stockType) item.stockType = 'JOB CONSUMABLES';
+                    if (item.isStandardItem === undefined) item.isStandardItem = true;
+                    if (item.isRegularItem === undefined) item.isRegularItem = true;
+                    if (!item.purchaseOrderQuantity && item.purchaseOrderQuantity !== 0) item.purchaseOrderQuantity = 0;
+
+                    // ItemName auto-generation if missing (ManufacturerItemCode + Quality + SizeW)
+                    if (!item.itemName) {
+                        const parts = [];
+                        if (item.manufecturerItemCode) parts.push(item.manufecturerItemCode);
+                        if (item.quality) parts.push(item.quality);
+                        if (item.sizeW) parts.push(`${item.sizeW} mm`);
+                        item.itemName = parts.join(', ');
+                    }
+                }
+
                 // Auto-calculations and defaults for ROLL group
                 if (itemGroupName === 'ROLL') {
                     // Apply defaults
@@ -380,6 +490,9 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             return;
         }
 
+        // Step 1: Clear all existing validation states immediately
+        setValidationResult(null);
+
         setIsLoading(true);
         try {
             // Remove hsnCode and undefined/null values from items before sending
@@ -450,24 +563,75 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             console.error('[Validation Error] Response data:', error?.response?.data);
             const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Validation failed';
             const errorDetails = error?.response?.data?.path ? ` (at ${error?.response?.data?.path})` : '';
-            toast.error(errorMsg + errorDetails);
+            showError(errorMsg + errorDetails);
         } finally {
             setIsLoading(false);
         }
     };
 
     const handleImport = async () => {
-        if (!validationResult?.isValid) {
-            toast.error('Please fix all validation errors before importing');
-            return;
-        }
-
-        if (!window.confirm(`Import ${itemData.length} item(s)?`)) {
+        if (itemData.length === 0) {
+            showError('No data to import');
             return;
         }
 
         setIsLoading(true);
         try {
+            // 1. Full Re-Validation
+            const result = await validateItems(itemData, itemGroupId);
+            setValidationResult(result);
+
+            if (!result.isValid) {
+                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
+
+                // Aggregate failures by column
+                const columnFailures = new Map<string, Set<string>>();
+
+                result.rows.forEach((row: ItemRowValidation) => {
+                    // 1. Handle Duplicates
+                    if (row.rowStatus === ValidationStatus.Duplicate) {
+                        const col = 'ItemName';
+                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                        columnFailures.get(col)!.add('Duplicate data found');
+                    }
+
+                    // 2. Handle Cell Validations
+                    if (row.cellValidations && row.cellValidations.length > 0) {
+                        row.cellValidations.forEach((cell: any) => {
+                            const col = cell.columnName || 'Unknown';
+                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+
+                            let reason = cell.validationMessage;
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+
+                            columnFailures.get(col)!.add(reason);
+                        });
+                    }
+                });
+
+                // Construct Message
+                const messages: string[] = [];
+                columnFailures.forEach((reasons, col) => {
+                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
+                });
+
+                setValidationModalContent({
+                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
+                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues that were not attributed to specific columns.']
+                });
+                setShowValidationModal(true);
+                showError('Validation failed. Please correct highlighted errors before saving.');
+                return; // ABORT
+            }
+
+            // 2. Confirmation
+            if (!window.confirm(`Validation passed. Import ${itemData.length} item(s)?`)) {
+                return;
+            }
+
+            // 3. Import
             // Remove hsnCode and undefined/null values from items before sending
             const cleanedData = itemData.map(item => {
                 const { hsnCode, ...rest } = item;
@@ -483,21 +647,29 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             });
 
             console.log('[ItemImport] Sending data:', cleanedData);
-            console.log('[ItemImport] Data count:', cleanedData.length);
-            console.log('[ItemImport] ItemGroupId:', itemGroupId);
-            const result = await importItems(cleanedData, itemGroupId);
-            console.log('[ItemImport] Success:', result);
-            toast.success(result.message);
-            setItemData([]);
-            setValidationResult(null);
-            setMode('idle');
-            if (fileInputRef.current) fileInputRef.current.value = '';
+            console.log('[ItemImport] Sending data:', cleanedData);
+            const importRes = await importItems(cleanedData, itemGroupId);
+
+            if (importRes.success) {
+                console.log('[ItemImport] Success:', importRes);
+                // Show success popup instead of toast
+                setSuccessInfo({ rowCount: importRes.importedRows ?? cleanedData.length, groupName: itemGroupName });
+                // Grid + state reset happens after user clicks OK
+            } else {
+                if (importRes.errorMessages && importRes.errorMessages.length > 0) {
+                    setValidationModalContent({
+                        title: 'Import Failed',
+                        messages: importRes.errorMessages
+                    });
+                    setShowValidationModal(true);
+                } else {
+                    showError(importRes.message || 'Import failed');
+                }
+            }
         } catch (error: any) {
             console.error('[ItemImport] Error:', error);
-            console.error('[ItemImport] Error response:', error?.response);
-            console.error('[ItemImport] Error data:', error?.response?.data);
             const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Import failed';
-            toast.error(errorMsg);
+            showError(errorMsg);
         } finally {
             setIsLoading(false);
         }
@@ -505,7 +677,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
     const handleExport = async () => {
         if (itemData.length === 0) {
-            toast.error('No data to export');
+            showError('No data to export');
             return;
         }
 
@@ -547,6 +719,14 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 'PurchaseOrderQuantity', 'StockRefCode', 'ProductHSNName', 'ItemName'
             ];
         } else if (itemGroupName === 'LAMINATION FILM') {
+            exportColumns = [
+                'Quality', 'ItemSubGroupName', 'Manufecturer', 'ManufecturerItemCode', 'SizeW',
+                'Thickness', 'Density', 'ShelfLife', 'PurchaseUnit', 'PurchaseRate',
+                'EstimationUnit', 'EstimationRate', 'StockUnit', 'MinimumStockQty', 'StockType',
+                'IsStandardItem', 'IsRegularItem', 'PurchaseOrderQuantity', 'StockRefCode',
+                'ProductHSNName', 'ItemName'
+            ];
+        } else if (itemGroupName === 'FOIL') {
             exportColumns = [
                 'Quality', 'ItemSubGroupName', 'Manufecturer', 'ManufecturerItemCode', 'SizeW',
                 'Thickness', 'Density', 'ShelfLife', 'PurchaseUnit', 'PurchaseRate',
@@ -716,6 +896,30 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     ProductHSNName: item.productHSNName,
                     ItemName: item.itemName
                 };
+            } else if (itemGroupName === 'FOIL') {
+                rowValues = {
+                    Quality: item.quality,
+                    ItemSubGroupName: item.itemSubGroupName,
+                    Manufecturer: item.manufecturer,
+                    ManufecturerItemCode: item.manufecturerItemCode,
+                    SizeW: item.sizeW,
+                    Thickness: item.thickness,
+                    Density: item.density,
+                    ShelfLife: item.shelfLife,
+                    PurchaseUnit: item.purchaseUnit,
+                    PurchaseRate: item.purchaseRate,
+                    EstimationUnit: item.estimationUnit,
+                    EstimationRate: item.estimationRate,
+                    StockUnit: item.stockUnit,
+                    MinimumStockQty: item.minimumStockQty,
+                    StockType: item.stockType,
+                    IsStandardItem: item.isStandardItem,
+                    IsRegularItem: item.isRegularItem,
+                    PurchaseOrderQuantity: item.purchaseOrderQuantity,
+                    StockRefCode: item.stockRefCode,
+                    ProductHSNName: item.productHSNName,
+                    ItemName: item.itemName
+                };
             } else if (itemGroupName === 'ROLL') {
                 rowValues = {
                     ItemType: item.itemType,
@@ -838,23 +1042,96 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         toast.success('Data exported successfully with validation colors');
     };
 
-    const handleRemoveSelectedRows = () => {
+    const handleRemoveSelectedRows = async () => {
         if (selectedRows.size === 0) {
             toast.error('Please select rows to remove');
             return;
         }
 
-        const newData = itemData.filter((_, index) => !selectedRows.has(index));
-        setItemData(newData);
-        setSelectedRows(new Set());
-        setValidationResult(null);
-        toast.success(`Removed ${selectedRows.size} row(s)`);
+        if (!window.confirm(`Are you sure you want to remove ${selectedRows.size} Item(s)?`)) {
+            return;
+        }
+
+        if (mode === 'preview' || mode === 'validated') {
+            const newData = itemData.filter((_, index) => !selectedRows.has(index));
+            setItemData(newData);
+            setSelectedRows(new Set());
+            setValidationResult(null);
+            setMode('preview'); // Ensure mode stays in preview/edit
+            toast.success(`Removed ${selectedRows.size} row(s) from preview`);
+            return;
+        }
+
+        // Backend Deletion Logic (for Loaded Data)
+        setIsLoading(true);
+        try {
+            const selectedIndices = Array.from(selectedRows);
+            const itemsToDelete = selectedIndices.map(index => itemData[index]).filter(item => item && item.itemID);
+
+            let deletedCount = 0;
+            for (const item of itemsToDelete) {
+                if (item.itemID) {
+                    await softDeleteItem(item.itemID);
+                    deletedCount++;
+                }
+            }
+
+            if (deletedCount > 0) {
+                toast.success(`Successfully removed ${deletedCount} item(s) from database`);
+                await handleLoadData();
+                setSelectedRows(new Set());
+            } else {
+                // Fallback if no valid IDs found in selection
+                if (itemsToDelete.length === 0 && selectedRows.size > 0) {
+                    toast.error('Selected rows do not have valid IDs or are not saved yet.');
+                } else {
+                    toast.error('No items were deleted.');
+                }
+            }
+        } catch (error: any) {
+            toast.error(error?.response?.data?.error || 'Failed to remove items');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleClearAllDataTrigger = (type: 'clearOnly' | 'freshUpload') => {
-        setClearActionType(type);
-        setClearFlowStep(1);
-        generateCaptcha();
+    const handleClearAllDataTrigger = async (type: 'clearOnly' | 'freshUpload') => {
+        // If local data is present, proceed directly
+        if (itemData.length > 0) {
+            setClearActionType(type);
+            setClearFlowStep(1);
+            generateCaptcha();
+            return;
+        }
+
+        // If local data is empty, check DB first
+        setIsLoading(true);
+        try {
+            const data = await getAllItems(itemGroupId);
+            if (data.length === 0) {
+                if (type === 'clearOnly') {
+                    showError(`No data found in database against the selected ${itemGroupName}`);
+                } else {
+                    toast.success("Database is already empty. Proceeding to upload.");
+                    if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                        fileInputRef.current.click();
+                    }
+                }
+                setIsLoading(false);
+                return;
+            }
+
+            // Data exists, proceed to confirmation
+            setClearActionType(type);
+            setClearFlowStep(1);
+            generateCaptcha();
+        } catch (error) {
+            console.error(error);
+            showError("Failed to verify database data.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleClearConfirm = (step: 1 | 2 | 3) => {
@@ -862,7 +1139,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         const userAnswer = parseInt(captchaInput);
         if (isNaN(userAnswer) || userAnswer !== captchaQuestion.answer) {
             setCaptchaError(true);
-            toast.error('❌ Incorrect CAPTCHA answer. Please try again.');
+            showError('❌ Incorrect CAPTCHA answer. Please try again.');
             return;
         }
 
@@ -902,9 +1179,9 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             handleClearCancel();
         } catch (error: any) {
             if (error?.response?.status === 401) {
-                toast.error('❌ Invalid credentials');
+                showError('❌ Invalid credentials');
             } else {
-                toast.error('Failed to clear data');
+                showError('Failed to clear data');
             }
         } finally {
             setIsLoading(false);
@@ -920,6 +1197,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             {
                 headerName: '#',
                 headerCheckboxSelection: true,
+                headerCheckboxSelectionFilteredOnly: true,
                 checkboxSelection: true,
                 width: 50,
                 pinned: 'left'
@@ -1278,6 +1556,62 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             ];
         }
 
+        // FOIL Group Columns
+        if (itemGroupName === 'FOIL') {
+            return [
+                ...baseCols,
+                { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
+                {
+                    field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                },
+                { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
+                { field: 'manufecturerItemCode', headerName: 'ManufacturerItemCode', editable: isEditable, width: 180 },
+                { field: 'sizeW', headerName: 'SizeW', editable: isEditable, width: 100, type: 'numericColumn' },
+                { field: 'thickness', headerName: 'Thickness', editable: isEditable, width: 110, type: 'numericColumn' },
+                { field: 'density', headerName: 'Density', editable: isEditable, width: 100, type: 'numericColumn' },
+                { field: 'shelfLife', headerName: 'ShelfLife', editable: isEditable, width: 100, type: 'numericColumn' },
+                {
+                    field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
+                {
+                    field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
+                {
+                    field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                },
+                { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
+                { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
+                {
+                    field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                {
+                    field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: [true, false] }
+                },
+                { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
+                { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
+                {
+                    field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
+                    cellEditor: 'agSelectCellEditor',
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                },
+                { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
+            ];
+        }
+
         // ROLL Group Columns
         if (itemGroupName === 'ROLL') {
             return [
@@ -1395,9 +1729,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     const onSelectionChanged = useCallback(() => {
         if (!gridApi) return;
         const selectedNodes = gridApi.getSelectedNodes();
-        const indices = new Set(selectedNodes.map(node => node.rowIndex!));
+        // Use itemData.indexOf to get the stable index in the source array, NOT the view index
+        const indices = new Set(selectedNodes.map(node => itemData.indexOf(node.data)).filter(i => i !== -1));
         setSelectedRows(indices);
-    }, [gridApi]);
+    }, [gridApi, itemData]);
 
     const onCellValueChanged = useCallback((params: any) => {
         // Use stable index lookup (works correctly with filtered/sorted grids)
@@ -1519,13 +1854,6 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         // Update data using stable index
         updatedData[rowIndex] = item;
         setItemData(updatedData);
-        // Don't clear validation result - keep filtered view stable during editing
-        // User can manually re-run validation to update colors
-
-        // Force refresh of the row to display calculated values immediately
-        if (params.api) {
-            params.api.refreshCells({ rowNodes: [params.node], force: true });
-        }
     }, [itemData, itemGroupName]);
 
     const validationMap = useMemo(() => {
@@ -1644,6 +1972,50 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
     return (
         <div className="space-y-4">
+
+            {/* ✅ Success Popup Modal */}
+            {successInfo && (
+                <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full border border-gray-100 dark:border-gray-700 overflow-hidden">
+                        {/* Green header bar */}
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 w-full" />
+                        <div className="p-8 text-center">
+                            {/* Animated check icon */}
+                            <div className="mx-auto mb-5 w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center ring-8 ring-green-50 dark:ring-green-900/10">
+                                <svg className="w-10 h-10 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </div>
+
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Import Successful!</h2>
+
+                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-1">
+                                Successfully imported
+                            </p>
+                            <p className="text-4xl font-extrabold text-green-600 dark:text-green-400 mb-1">
+                                {successInfo.rowCount}
+                            </p>
+                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-6">
+                                {successInfo.rowCount === 1 ? 'row' : 'rows'} into <span className="font-semibold text-gray-800 dark:text-white">{successInfo.groupName} Item Group</span>
+                            </p>
+
+                            <button
+                                onClick={() => {
+                                    setSuccessInfo(null);
+                                    setItemData([]);
+                                    setValidationResult(null);
+                                    setMode('idle');
+                                    if (fileInputRef.current) fileInputRef.current.value = '';
+                                }}
+                                className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                     Item Master - {itemGroupName}
@@ -1663,43 +2035,59 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
                 <button
                     onClick={() => handleClearAllDataTrigger('clearOnly')}
-                    disabled={isLoading}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium disabled:opacity-50"
+                    disabled={isLoading || selectedRows.size > 0}
+                    className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium disabled:opacity-50"
                 >
                     <ShieldAlert className="w-5 h-5" />
                     Clear All Data
                 </button>
 
-                <button
-                    onClick={handleRemoveSelectedRows}
-                    disabled={isLoading || selectedRows.size === 0}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium disabled:opacity-50"
-                >
-                    <Trash2 className="w-5 h-5" />
-                    Remove Row ({selectedRows.size})
-                </button>
+                {mode === 'loaded' ? (
+                    <button
+                        onClick={handleRemoveSelectedRows}
+                        disabled={isLoading || selectedRows.size === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#D2691E] hover:bg-[#A55217] text-white rounded-lg font-medium disabled:opacity-50"
+                    >
+                        <Trash2 className="w-5 h-5" />
+                        Soft Delete ({selectedRows.size})
+                    </button>
+                ) : (mode === 'preview' || mode === 'validated') && (
+                    <button
+                        onClick={handleRemoveSelectedRows}
+                        disabled={isLoading || selectedRows.size === 0}
+                        className="flex items-center gap-2 px-4 py-2 bg-[#D2691E] hover:bg-[#A55217] text-white rounded-lg font-medium disabled:opacity-50"
+                    >
+                        <Trash2 className="w-5 h-5" />
+                        Delete Excel Row ({selectedRows.size})
+                    </button>
+                )}
 
                 <button
                     onClick={() => handleClearAllDataTrigger('freshUpload')}
                     disabled={isLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium disabled:opacity-50"
                 >
-                    <Upload className="w-5 h-5" />
+                    <FilePlus2 className="w-5 h-5" />
                     Fresh Upload
                 </button>
 
-                <label className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium cursor-pointer">
-                    <FilePlus2 className="w-5 h-5" />
+                <button
+                    onClick={handleFileSelectTrigger}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                    <Upload className="w-5 h-5" />
                     Existing Upload
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={(e) => handleFileUpload(e, true)}
-                        className="hidden"
-                        disabled={isLoading}
-                    />
-                </label>
+                </button>
+
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={(e) => handleFileUpload(e, true)}
+                    className="hidden"
+                    disabled={isLoading}
+                />
 
                 {(mode === 'loaded' || mode === 'preview' || mode === 'validated') && (
                     <button
@@ -1907,6 +2295,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         columnDefs={columnsWithStyle}
                         defaultColDef={defaultColDef}
                         onGridReady={onGridReady}
+                        getRowId={(params) => params.data.itemID?.toString() || params.data.tempId}
                         rowSelection="multiple"
                         onSelectionChanged={onSelectionChanged}
                         onCellValueChanged={onCellValueChanged}
@@ -2151,6 +2540,101 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 </div>
             )}
 
+            {/* Mode Switch Confirmation Modal */}
+            {showModeSwitchModal && pendingMode && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                            {pendingMode.type === 'load' ? 'Leave Excel Upload?' : 'Leave Database View?'}
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-300 mb-6">
+                            {pendingMode.type === 'load'
+                                ? 'You have unsaved Excel data. Switching to Database View will discard your current upload.'
+                                : 'Switching to Excel Upload will clear the current database view.'}
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowModeSwitchModal(false);
+                                    setPendingMode(null);
+                                }}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    pendingMode.action();
+                                    setShowModeSwitchModal(false);
+                                    setPendingMode(null);
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Re-Upload Confirmation Modal */}
+            {showReUploadModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-gray-100 dark:border-gray-700 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-yellow-50 dark:bg-yellow-900/20 rounded-full flex items-center justify-center mb-4">
+                                <AlertCircle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                                Do you want to Re-upload Excel?
+                            </h3>
+                            <p className="text-gray-500 dark:text-gray-400 mb-6">
+                                Uploading a new file will replace the current data. Previous changes will be lost.
+                            </p>
+                            <div className="flex gap-3 w-full">
+                                <button
+                                    onClick={() => setShowReUploadModal(false)}
+                                    className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-medium"
+                                >
+                                    No
+                                </button>
+                                <button
+                                    onClick={confirmReUpload}
+                                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                                >
+                                    Yes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Standard Error Popup Modal */}
+            {showErrorModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100 dark:border-red-900/30 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
+                                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                                Error
+                            </h3>
+                            <div className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center whitespace-pre-wrap">
+                                {errorModalMessage}
+                            </div>
+                            <button
+                                onClick={() => setShowErrorModal(false)}
+                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Validation Result Modal */}
             {showValidationModal && validationModalContent && (
                 <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
@@ -2161,6 +2645,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         </div>
 
                         <div className="flex-1 overflow-y-auto mb-6 pr-2">
+
                             <ul className="list-disc list-inside space-y-2 text-gray-700 dark:text-gray-300 text-lg">
                                 {validationModalContent.messages.map((msg, idx) => (
                                     <li key={idx} className="whitespace-pre-wrap leading-relaxed">{msg}</li>

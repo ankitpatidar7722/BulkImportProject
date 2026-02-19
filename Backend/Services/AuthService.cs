@@ -5,9 +5,9 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-using BulkImport.DTOs;
+using Backend.DTOs;
 
-namespace BulkImport.Services;
+namespace Backend.Services;
 
 public class AuthService : IAuthService
 {

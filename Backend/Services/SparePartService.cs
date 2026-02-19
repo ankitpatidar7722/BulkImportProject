@@ -313,7 +313,7 @@ public class SparePartService : ISparePartService
                     VoucherDate, CreatedBy, CreatedDate, IsDeletedTransaction
                 ) VALUES (
                     @SparePartName, @SparePartCode, @MaxSparePartCode, @ProductHSNID,
-                    @SparePartGroup, @SparePartType, @HSNCode, @Unit, @Rate, @HSNGroup,
+                    @SparePartGroup, @SparePartType, @Unit, @Rate, @HSNGroup,
                     @SupplierReference, @StockRefCode, @PurchaseOrderQuantity,
                     @MinimumStockQty, @Narration,
                     @VoucherPrefix, @CompanyID, @UserID,
@@ -341,7 +341,6 @@ public class SparePartService : ISparePartService
                     ProductHSNID = productHSNID,
                     SparePartGroup = sparePart.SparePartGroup ?? (object)DBNull.Value,
                     SparePartType = sparePart.SparePartType ?? (object)DBNull.Value,
-                    HSNCode = "" ?? (object)DBNull.Value, // HSNCode not provided in columns, use empty or derive
                     Unit = sparePart.Unit ?? (object)DBNull.Value,
                     Rate = sparePart.Rate ?? (object)DBNull.Value,
                     HSNGroup = sparePart.HSNGroup ?? (object)DBNull.Value,
@@ -386,6 +385,7 @@ public class SparePartService : ISparePartService
             WHERE IsDeletedTransaction = 0 
             AND DisplayName IS NOT NULL 
             AND DisplayName <> ''
+            AND ProductCategory = 'Spare Parts'
             ORDER BY DisplayName";
 
         var results = await _connection.QueryAsync<HSNGroupDto>(query);

@@ -1,6 +1,6 @@
-using BulkImport.DTOs;
+using Backend.DTOs;
 
-namespace BulkImport.Services;
+namespace Backend.Services;
 
 public interface IAuthService
 {

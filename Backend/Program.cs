@@ -49,6 +49,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 // Register Dynamic Connection String
+// Register Dynamic Connection String
 builder.Services.AddScoped<SqlConnection>(sp =>
 {
     var httpContextAccessor = sp.GetRequiredService<IHttpContextAccessor>();
@@ -56,24 +57,34 @@ builder.Services.AddScoped<SqlConnection>(sp =>
     var sessionStore = sp.GetRequiredService<ICompanySessionStore>();
     
     var httpContext = httpContextAccessor.HttpContext;
-    var defaultConn = config.GetConnectionString("DefaultConnection");
-
-    if (httpContext == null || httpContext.User == null)
-         return new SqlConnection(defaultConn);
     
-    var sessionIdClaim = httpContext.User.FindFirst("sessionId")?.Value;
-    
-    if (!string.IsNullOrEmpty(sessionIdClaim) && Guid.TryParse(sessionIdClaim, out var sessionId))
+    // First, try to get connection from Session (Preferred)
+    if (httpContext != null && httpContext.User != null)
     {
-        if (sessionStore.TryGetSession(sessionId, out var session) && session != null)
+        var sessionIdClaim = httpContext.User.FindFirst("sessionId")?.Value;
+        
+        if (!string.IsNullOrEmpty(sessionIdClaim) && Guid.TryParse(sessionIdClaim, out var sessionId))
         {
-            var connBuilder = new SqlConnectionStringBuilder(session.ConnectionString);
-            connBuilder.TrustServerCertificate = true;
-            return new SqlConnection(connBuilder.ConnectionString);
+            if (sessionStore.TryGetSession(sessionId, out var session) && session != null)
+            {
+                var connBuilder = new SqlConnectionStringBuilder(session.ConnectionString);
+                connBuilder.TrustServerCertificate = true;
+                return new SqlConnection(connBuilder.ConnectionString);
+            }
         }
     }
+
+    // Fallback: Check if DefaultConnection exists (e.g. for development or initial setup)
+    var defaultConn = config.GetConnectionString("DefaultConnection");
+    if (!string.IsNullOrEmpty(defaultConn))
+    {
+        return new SqlConnection(defaultConn);
+    }
     
-    return new SqlConnection(defaultConn);
+    // If neither session nor default connection is available, we cannot proceed.
+    // Instead of failing immediately here (which might break startup), let's return a closed connection 
+    // or throw a specific exception when Open() is attempted, but for now throwing here is safer to debug configuration issues.
+    throw new InvalidOperationException("No valid database connection string found in Session or Configuration (DefaultConnection is missing).");
 });
 
 // Register Application Services
@@ -378,7 +389,8 @@ using (var scope = builder.Services.BuildServiceProvider().CreateScope())
                     "BF NVARCHAR(100) NULL",
                     "InkColour NVARCHAR(100) NULL",
                     "PantoneCode NVARCHAR(50) NULL",
-                    "PurchaseOrderQuantity DECIMAL(18, 2) DEFAULT 0 NULL"
+                    "PurchaseOrderQuantity DECIMAL(18, 2) DEFAULT 0 NULL",
+                    "IsDeletedTransaction BIT DEFAULT 0 NOT NULL"
                 };
 
                 foreach (var colDef in itemMasterCols)
@@ -404,6 +416,40 @@ using (var scope = builder.Services.BuildServiceProvider().CreateScope())
     catch(Exception ex) {
          Console.WriteLine($"ItemMaster Init Error: {ex.Message}");
          System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMaster Init Error: {ex.Message}\n");
+    }
+
+    // ItemMasterDetails Schema Migration
+    try
+    {
+        var conn = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+        conn.Open();
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMasterDetails Init Started\n");
+
+        var tableExistsCmd = "SELECT COUNT(*) FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ItemMasterDetails]') AND type in (N'U')";
+        using (var cmd = new SqlCommand(tableExistsCmd, conn))
+        {
+            int tableExists = (int)cmd.ExecuteScalar();
+            if (tableExists > 0)
+            {
+                var colDef = "IsDeletedTransaction BIT DEFAULT 0 NOT NULL";
+                var colName = "IsDeletedTransaction";
+                var alterCmd = $@"
+                    IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'{colName}' AND Object_ID = Object_ID(N'ItemMasterDetails'))
+                    BEGIN
+                        ALTER TABLE ItemMasterDetails ADD {colDef};
+                    END";
+                using (var cmd2 = new SqlCommand(alterCmd, conn))
+                {
+                    cmd2.ExecuteNonQuery();
+                }
+                System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMasterDetails IsDeletedTransaction column check/add completed\n");
+            }
+        }
+        conn.Close();
+    }
+    catch(Exception ex) {
+         Console.WriteLine($"ItemMasterDetails Init Error: {ex.Message}");
+         System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMasterDetails Init Error: {ex.Message}\n");
     }
 }
 

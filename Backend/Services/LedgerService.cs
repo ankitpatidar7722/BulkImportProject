@@ -113,6 +113,20 @@ public class LedgerService : ILedgerService
             validClients = await GetClientsAsync();
         }
 
+        // Get field metadata from LedgerGroupFieldMaster for dynamic datatype validation
+        var fieldMetadataQuery = @"SELECT FieldName, FieldDataType
+            FROM LedgerGroupFieldMaster
+            WHERE LedgerGroupID = @LedgerGroupID
+              AND ISNULL(IsDeletedTransaction, 0) <> 1
+              AND FieldName IS NOT NULL
+              AND FieldDataType IS NOT NULL";
+        var fieldMetadata = (await _connection.QueryAsync<dynamic>(fieldMetadataQuery, new { LedgerGroupID = ledgerGroupId }))
+            .ToDictionary(
+                f => (string)f.FieldName,
+                f => ((string)f.FieldDataType).Trim().ToLower(),
+                StringComparer.OrdinalIgnoreCase
+            );
+
         // Required fields
         var requiredList = new List<string> { "LedgerName", "MailingName", "Address1", "Country", "State", "City", "MobileNo" };
         
@@ -291,13 +305,92 @@ public class LedgerService : ILedgerService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = prop.Name,
-                        ValidationMessage = "Special characters are found in this row and column.",
+                        ValidationMessage = "Single quote (') and double quote (\") are not allowed.",
                         Status = ValidationStatus.InvalidContent
                     });
 
                     if (rowValidation.RowStatus == ValidationStatus.Valid)
                         rowValidation.RowStatus = ValidationStatus.InvalidContent;
                     
+                    hasInvalidContent = true;
+                }
+            }
+
+            // 5. Dynamic datatype validation from LedgerGroupFieldMaster (InvalidContent - PURPLE)
+            foreach (var fieldEntry in fieldMetadata)
+            {
+                var fieldName = fieldEntry.Key;
+                var fieldDataType = fieldEntry.Value;
+
+                var rawValue = GetPropertyValue(ledger, fieldName);
+                if (rawValue == null) continue;
+
+                var strValue = rawValue.ToString()?.Trim();
+                if (string.IsNullOrEmpty(strValue)) continue;
+
+                bool isValid = true;
+                string validationMsg = "";
+
+                switch (fieldDataType)
+                {
+                    case "integer":
+                    case "int":
+                        if (!long.TryParse(strValue, out _))
+                        {
+                            isValid = false;
+                            validationMsg = $"Invalid Content in {fieldName} — Only Integer values allowed.";
+                        }
+                        break;
+
+                    case "real":
+                    case "decimal":
+                    case "float":
+                    case "numeric":
+                    case "money":
+                        if (!decimal.TryParse(strValue, out _))
+                        {
+                            isValid = false;
+                            validationMsg = $"Invalid Content in {fieldName} — Only Numeric values allowed.";
+                        }
+                        break;
+
+                    case "bit":
+                    case "boolean":
+                        var boolValues = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                            { "true", "false", "0", "1", "yes", "no" };
+                        if (!boolValues.Contains(strValue))
+                        {
+                            isValid = false;
+                            validationMsg = $"Invalid Content in {fieldName} — Only True/False values allowed.";
+                        }
+                        break;
+
+                    case "date":
+                    case "datetime":
+                        if (!DateTime.TryParse(strValue, out _))
+                        {
+                            isValid = false;
+                            validationMsg = $"Invalid Content in {fieldName} — Only valid Date values allowed.";
+                        }
+                        break;
+
+                    // varchar, string, nvarchar, text — no numeric validation needed
+                    default:
+                        break;
+                }
+
+                if (!isValid)
+                {
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = fieldName,
+                        ValidationMessage = validationMsg,
+                        Status = ValidationStatus.InvalidContent
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                        rowValidation.RowStatus = ValidationStatus.InvalidContent;
+
                     hasInvalidContent = true;
                 }
             }
@@ -316,8 +409,8 @@ public class LedgerService : ILedgerService
         }
 
         result.Summary.ValidRows = result.Rows.Count(r => r.RowStatus == ValidationStatus.Valid);
-        result.IsValid = result.Summary.DuplicateCount == 0 && 
-                        result.Summary.MissingDataCount == 0 && 
+        result.IsValid = result.Summary.DuplicateCount == 0 &&
+                        result.Summary.MissingDataCount == 0 &&
                         result.Summary.MismatchCount == 0 &&
                         result.Summary.InvalidContentCount == 0;
 
@@ -544,6 +637,7 @@ public class LedgerService : ILedgerService
                         ("SupplyTypeCode", supplyTypeCode, 20),
                         ("RefCode", ledger.RefCode, 21),
                         ("DeliveredQtyTolerance", ledger.DeliveredQtyTolerance?.ToString(), 22),
+                        ("GSTRegistrationType", ledger.GSTRegistrationType, 24),
                         ("ISLedgerActive", "True", 0)
                     };
 

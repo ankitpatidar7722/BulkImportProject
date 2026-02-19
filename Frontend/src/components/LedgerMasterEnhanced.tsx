@@ -57,10 +57,27 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     const [departments, setDepartments] = useState<DepartmentDto[]>([]);
     const [clients, setClients] = useState<ClientDto[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [pendingMode, setPendingMode] = useState<{ type: 'load' | 'upload'; action: () => void } | null>(null);
+    const [showModeSwitchModal, setShowModeSwitchModal] = useState(false);
 
     // Clear Data Flow State
     const [clearFlowStep, setClearFlowStep] = useState<0 | 1 | 2 | 3 | 4>(0);
     const [clearCredentials, setClearCredentials] = useState({ username: '', password: '', reason: '' });
+
+    // Re-Upload Confirmation State
+    const [showReUploadModal, setShowReUploadModal] = useState(false);
+
+    // Standard Error Modal State
+    const [showErrorModal, setShowErrorModal] = useState(false);
+    const [errorModalMessage, setErrorModalMessage] = useState<string>('');
+
+    const showError = (message: string) => {
+        setErrorModalMessage(message);
+        setShowErrorModal(true);
+    };
+
+    // Success Popup State
+    const [successInfo, setSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
 
     // CAPTCHA State
     const [captchaQuestion, setCaptchaQuestion] = useState({ num1: 0, num2: 0, answer: 0 });
@@ -82,11 +99,46 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
     const [filenameError, setFilenameError] = useState<string | null>(null);
     const [clearActionType, setClearActionType] = useState<'clearOnly' | 'freshUpload'>('freshUpload');
+    const [noDataMessage, setNoDataMessage] = useState<string | null>(null);
 
-    const handleClearAllDataTrigger = (type: 'clearOnly' | 'freshUpload') => {
-        setClearActionType(type);
-        setClearFlowStep(1);
-        generateCaptcha();
+    const handleClearAllDataTrigger = async (type: 'clearOnly' | 'freshUpload') => {
+        // If local data is present, proceed directly
+        if (ledgerData.length > 0) {
+            setClearActionType(type);
+            setClearFlowStep(1);
+            generateCaptcha();
+            return;
+        }
+
+        // If local data is empty, check DB first
+        setIsLoading(true);
+        try {
+            const data = await getLedgersByGroup(ledgerGroupId);
+            if (data.length === 0) {
+                if (type === 'clearOnly') {
+                    setNoDataMessage(`No data found in database against the selected ${ledgerGroupName}`);
+                } else {
+                    // freshUpload case: DB empty, just proceed to upload
+                    toast.success("Database is already empty. Proceeding to upload.");
+                    if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                        fileInputRef.current.click();
+                    }
+                }
+                setIsLoading(false);
+                return;
+            }
+
+            // Data exists, proceed to confirmation
+            setClearActionType(type);
+            setClearFlowStep(1);
+            generateCaptcha();
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to verify database data.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleClearConfirm = () => {
@@ -147,7 +199,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 setCountryStates(data);
             } catch (error) {
                 console.error('Failed to load country/state data', error);
-                toast.error('Failed to load Country/State master data');
+                showError('Failed to load Country/State master data');
             }
         };
 
@@ -168,11 +220,11 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                     setDepartments(data);
                 } else {
                     console.error('Departments data is not an array:', data);
-                    toast.error('Failed to load departments: Invalid data format');
+                    showError('Failed to load departments: Invalid data format');
                 }
             } catch (error) {
                 console.error('Failed to load departments', error);
-                toast.error('Failed to load Department master data');
+                showError('Failed to load Department master data');
             }
         };
 
@@ -248,6 +300,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 headerName: '',
                 checkboxSelection: true,
                 headerCheckboxSelection: true,
+                headerCheckboxSelectionFilteredOnly: true,
                 width: 20,
                 pinned: 'left',
                 lockPosition: false,
@@ -426,8 +479,15 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     }, []);
 
     const onCellValueChanged = useCallback((params: any) => {
-        const { node, colDef, newValue } = params;
-        const rowIndex = node.rowIndex;
+        const { colDef, newValue, data } = params;
+        const rowIndex = ledgerData.indexOf(data);
+
+        // Safety check to ensure we found the row
+        if (rowIndex === -1) {
+            console.error('Row data not found in state');
+            return;
+        }
+
         const field = colDef.field as keyof LedgerMasterDto;
 
         if (field === 'country') {
@@ -435,7 +495,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         } else {
             handleCellEdit(rowIndex, field, newValue);
         }
-    }, [handleCountryChange, handleCellEdit]);
+    }, [handleCountryChange, handleCellEdit, ledgerData]);
 
     const onSelectionChanged = useCallback((event: any) => {
         const selectedNodes = event.api.getSelectedNodes();
@@ -505,16 +565,75 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
 
     const handleLoadData = async () => {
+        // Strict Mode Check
+        if (mode === 'preview' || mode === 'validated') {
+            setPendingMode({
+                type: 'load',
+                action: () => performLoadData()
+            });
+            setShowModeSwitchModal(true);
+            return;
+        }
+        performLoadData();
+    };
+
+    const performLoadData = async () => {
         setIsLoading(true);
         try {
             const data = await getLedgersByGroup(ledgerGroupId);
             setLedgerData(data);
-            setMode('loaded');
-            toast.success(`Loaded ${data.length} ledger(s)`);
+            setMode(data.length > 0 ? 'loaded' : 'idle');
+            setValidationResult(null); // Clear validation
+            setSelectedRows(new Set()); // Clear selection
+            if (data.length === 0) {
+                setNoDataMessage(`No data found in database against the selected ${ledgerGroupName}`);
+            } else {
+                toast.success(`Loaded ${data.length} ledger(s)`);
+            }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to load data');
+            showError(error?.response?.data?.error || 'Failed to load data');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleFileSelectTrigger = () => {
+        // Strict Mode Check: If in Loaded mode, confirm switch
+        if (mode === 'loaded') {
+            setPendingMode({
+                type: 'upload',
+                action: () => {
+                    // Reset state for upload
+                    setLedgerData([]);
+                    setMode('idle');
+                    setValidationResult(null);
+                    setSelectedRows(new Set());
+                    if (fileInputRef.current) fileInputRef.current.click();
+                }
+            });
+            setShowModeSwitchModal(true);
+            return;
+        }
+
+        // Re-Upload Confirmation (Excel Mode)
+        if (ledgerData.length > 0 && (mode === 'preview' || mode === 'validated')) {
+            setShowReUploadModal(true);
+            return;
+        }
+
+        // Otherwise just click
+        if (fileInputRef.current) fileInputRef.current.click();
+    };
+
+    const confirmReUpload = () => {
+        setShowReUploadModal(false);
+        setLedgerData([]);
+        setValidationResult(null);
+        setMode('idle');
+        setSelectedRows(new Set());
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''; // Reset input
+            fileInputRef.current.click();
         }
     };
 
@@ -523,7 +642,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     const handleRemoveRow = async () => {
         const selectedNodes = gridApiRef.current?.getSelectedNodes() || [];
         if (selectedNodes.length === 0) {
-            toast.error('Please select at least one row to remove');
+            showError('Please select at least one row to remove');
             return;
         }
 
@@ -570,7 +689,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 toast.error('No database records were selected for deletion');
             }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to remove ledgers');
+            showError(error?.response?.data?.error || 'Failed to remove ledgers');
         } finally {
             setIsLoading(false);
         }
@@ -676,9 +795,9 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                         mailingName: row.MailingName,
                         legalName: legalName ? String(legalName) : undefined,
                         mailingAddress: mailingAddress,
-                        address1: row.Address1,
-                        address2: row.Address2,
-                        address3: row.Address3,
+                        address1: row.Address1 !== undefined && row.Address1 !== null ? String(row.Address1) : undefined,
+                        address2: row.Address2 !== undefined && row.Address2 !== null ? String(row.Address2) : undefined,
+                        address3: row.Address3 !== undefined && row.Address3 !== null ? String(row.Address3) : undefined,
                         country: country,
                         state: state,
                         city: row.City,
@@ -712,7 +831,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 setMode('preview');
                 toast.success(`Loaded ${ledgers.length} rows from Excel`);
             } catch (error) {
-                toast.error('Failed to parse Excel file');
+                showError('Failed to parse Excel file');
                 console.error(error);
             }
         };
@@ -721,7 +840,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
     const handleCheckValidation = async () => {
         if (ledgerData.length === 0) {
-            toast.error('No data to validate');
+            showError('No data to validate');
             return;
         }
 
@@ -758,7 +877,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             let reason = cell.validationMessage;
                             if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
                             else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
-                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = "Single quote (') and double quote (\") are not allowed.";
 
                             columnFailures.get(col)!.add(reason);
                         });
@@ -778,32 +897,90 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 setShowValidationModal(true);
             }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Validation failed');
+            showError(error?.response?.data?.error || 'Validation failed');
         } finally {
             setIsLoading(false);
         }
     };
 
     const handleImport = async () => {
-        if (!validationResult?.isValid) {
-            toast.error('Please fix all validation errors before importing');
-            return;
-        }
-
-        if (!window.confirm(`Import ${ledgerData.length} ledger(s)?`)) {
+        if (ledgerData.length === 0) {
+            showError('No data to import');
             return;
         }
 
         setIsLoading(true);
         try {
-            const result = await importLedgers(ledgerData, ledgerGroupId);
-            toast.success(result.message);
-            setLedgerData([]);
-            setValidationResult(null);
-            setMode('idle');
-            if (fileInputRef.current) fileInputRef.current.value = '';
+            // 1. Full Re-Validation
+            const result = await validateLedgers(ledgerData, ledgerGroupId);
+            setValidationResult(result);
+
+            if (!result.isValid) {
+                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
+
+                // Aggregate failures by column (Copy of Check Validation Logic)
+                const columnFailures = new Map<string, Set<string>>();
+
+                result.rows.forEach((row: LedgerRowValidation) => {
+                    // 1. Handle Duplicates (Row Level)
+                    if (row.rowStatus === ValidationStatus.Duplicate) {
+                        const col = 'LedgerName';
+                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                        columnFailures.get(col)!.add('Duplicate data found');
+                    }
+
+                    // 2. Handle Cell Validations
+                    if (row.cellValidations && row.cellValidations.length > 0) {
+                        row.cellValidations.forEach((cell: any) => {
+                            const col = cell.columnName || 'Unknown';
+                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+
+                            let reason = cell.validationMessage;
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = "Single quote (') and double quote (\") are not allowed.";
+
+                            columnFailures.get(col)!.add(reason);
+                        });
+                    }
+                });
+
+                // Construct Message
+                const messages: string[] = [];
+                columnFailures.forEach((reasons, col) => {
+                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
+                });
+
+                setValidationModalContent({
+                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
+                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues that were not attributed to specific columns.']
+                });
+                setShowValidationModal(true);
+                showError('Validation failed. Please correct highlighted errors before saving.');
+                return; // ABORT SAVE
+            }
+
+            // 3. Perform Import
+            // 3. Perform Import
+            const importRes = await importLedgers(ledgerData, ledgerGroupId);
+
+            if (importRes.success) {
+                // Show success popup
+                setSuccessInfo({ rowCount: importRes.importedRows ?? ledgerData.length, groupName: ledgerGroupName });
+                // State reset happens on OK click
+            } else {
+                if (importRes.errorMessages && importRes.errorMessages.length > 0) {
+                    setValidationModalContent({
+                        title: 'Import Failed',
+                        messages: importRes.errorMessages
+                    });
+                    setShowValidationModal(true);
+                } else {
+                    showError(importRes.message || 'Import failed');
+                }
+            }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Import failed');
+            showError(error?.response?.data?.error || 'Import failed');
         } finally {
             setIsLoading(false);
         }
@@ -811,7 +988,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
     const handleExport = async () => {
         if (ledgerData.length === 0) {
-            toast.error('No data to export');
+            showError('No data to export');
             return;
         }
 
@@ -951,6 +1128,41 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
     return (
         <div className="space-y-4">
+
+            {/* ✅ Success Popup Modal */}
+            {successInfo && (
+                <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full border border-gray-100 dark:border-gray-700 overflow-hidden">
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 w-full" />
+                        <div className="p-8 text-center">
+                            <div className="mx-auto mb-5 w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center ring-8 ring-green-50 dark:ring-green-900/10">
+                                <svg className="w-10 h-10 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Import Successful!</h2>
+                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-1">Successfully imported</p>
+                            <p className="text-4xl font-extrabold text-green-600 dark:text-green-400 mb-1">{successInfo.rowCount}</p>
+                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-6">
+                                {successInfo.rowCount === 1 ? 'row' : 'rows'} into <span className="font-semibold text-gray-800 dark:text-white">{successInfo.groupName} Ledger Group</span>
+                            </p>
+                            <button
+                                onClick={() => {
+                                    setSuccessInfo(null);
+                                    setLedgerData([]);
+                                    setValidationResult(null);
+                                    setMode('idle');
+                                    if (fileInputRef.current) fileInputRef.current.value = '';
+                                }}
+                                className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="flex flex-wrap gap-2">
                 <button
                     onClick={handleLoadData}
@@ -963,21 +1175,32 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
                 <button
                     onClick={() => handleClearAllDataTrigger('clearOnly')}
-                    disabled={isLoading || ledgerData.length === 0}
-                    className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                    disabled={isLoading || selectedRows.size > 0}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
                 >
                     <XCircle className="w-4 h-4" />
                     Clear All Data
                 </button>
 
-                <button
-                    onClick={handleRemoveRow}
-                    disabled={isLoading}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
-                >
-                    <Trash2 className="w-4 h-4" />
-                    Remove Row ({selectedRows.size})
-                </button>
+                {mode === 'loaded' ? (
+                    <button
+                        onClick={handleRemoveRow}
+                        disabled={isLoading || selectedRows.size === 0}
+                        className="px-4 py-2 bg-[#D2691E] text-white rounded-lg hover:bg-[#A55217] disabled:opacity-50 flex items-center gap-2 transition-colors"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                        Soft Delete ({selectedRows.size})
+                    </button>
+                ) : (mode === 'preview' || mode === 'validated') && (
+                    <button
+                        onClick={handleRemoveRow}
+                        disabled={isLoading || selectedRows.size === 0}
+                        className="px-4 py-2 bg-[#D2691E] text-white rounded-lg hover:bg-[#A55217] disabled:opacity-50 flex items-center gap-2 transition-colors"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                        Delete Excel Row ({selectedRows.size})
+                    </button>
+                )}
 
                 <button
                     onClick={() => handleClearAllDataTrigger('freshUpload')}
@@ -991,7 +1214,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
 
                 <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={handleFileSelectTrigger}
                     disabled={isLoading}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
                 >
@@ -1172,9 +1395,35 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                                 --ag-row-hover-color: #1e293b !important;
                                 --ag-selected-row-background-color: rgba(59, 130, 246, 0.2) !important;
                                 --ag-checkbox-checked-color: #3b82f6 !important;
-                                
-                                /* Ensure control backgrounds are dark */
                                 color-scheme: dark;
+                            }
+                            .ag-theme-quartz-dark .ag-root-wrapper {
+                                background-color: #0f172a !important;
+                            }
+                            .ag-theme-quartz-dark .ag-body-viewport,
+                            .ag-theme-quartz-dark .ag-body-horizontal-scroll-viewport,
+                            .ag-theme-quartz-dark .ag-center-cols-viewport {
+                                background-color: #0f172a !important;
+                            }
+                            .ag-theme-quartz-dark .ag-row {
+                                background-color: #0f172a !important;
+                                color: #f1f5f9 !important;
+                            }
+                            .ag-theme-quartz-dark .ag-row-odd {
+                                background-color: #0f172a !important;
+                            }
+                            .ag-theme-quartz-dark .ag-row-even {
+                                background-color: #0f172a !important;
+                            }
+                            .ag-theme-quartz-dark .ag-cell {
+                                color: #f1f5f9 !important;
+                            }
+                            .ag-theme-quartz-dark .ag-header {
+                                background-color: #1e293b !important;
+                            }
+                            .ag-theme-quartz-dark .ag-header-cell {
+                                background-color: #1e293b !important;
+                                color: #cbd5e1 !important;
                             }
 
                             /* Universal Improvements */
@@ -1268,11 +1517,10 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                                     setCaptchaInput(e.target.value);
                                     setCaptchaError(false);
                                 }}
-                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
-                                    captchaError
-                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-                                        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
-                                } dark:text-white`}
+                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${captchaError
+                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                    } dark:text-white`}
                                 placeholder="Enter answer"
                                 autoFocus
                             />
@@ -1381,6 +1629,122 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
                             >
                                 Ok
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Mode Switch Confirmation Modal */}
+            {showModeSwitchModal && pendingMode && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                            {pendingMode.type === 'load' ? 'Leave Excel Upload?' : 'Leave Database View?'}
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-300 mb-6">
+                            {pendingMode.type === 'load'
+                                ? 'You have unsaved Excel data. Switching to Database View will discard your current upload.'
+                                : 'Switching to Excel Upload will clear the current database view.'}
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowModeSwitchModal(false);
+                                    setPendingMode(null);
+                                }}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    pendingMode.action();
+                                    setShowModeSwitchModal(false);
+                                    setPendingMode(null);
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* No Data Found Modal */}
+            {noDataMessage && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl max-w-md w-full border border-gray-200 dark:border-gray-700 text-center animate-in fade-in zoom-in duration-200">
+                        <div className="mx-auto w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-6">
+                            <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Data Found</h3>
+                        <p className="text-gray-600 dark:text-gray-300 mb-8 text-lg leading-relaxed">
+                            {noDataMessage}
+                        </p>
+                        <button
+                            onClick={() => setNoDataMessage(null)}
+                            className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-lg transition-colors shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
+                        >
+                            OK
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Re-Upload Confirmation Modal */}
+            {showReUploadModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-gray-100 dark:border-gray-700 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-yellow-50 dark:bg-yellow-900/20 rounded-full flex items-center justify-center mb-4">
+                                <AlertCircle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                                Do you want to Re-upload Excel?
+                            </h3>
+                            <p className="text-gray-500 dark:text-gray-400 mb-6">
+                                Uploading a new file will replace the current data. Previous changes will be lost.
+                            </p>
+                            <div className="flex gap-3 w-full">
+                                <button
+                                    onClick={() => setShowReUploadModal(false)}
+                                    className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-medium"
+                                >
+                                    No
+                                </button>
+                                <button
+                                    onClick={confirmReUpload}
+                                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                                >
+                                    Yes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Standard Error Popup Modal */}
+            {showErrorModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100 dark:border-red-900/30 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
+                                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                                Error
+                            </h3>
+                            <div className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center whitespace-pre-wrap">
+                                {errorModalMessage}
+                            </div>
+                            <button
+                                onClick={() => setShowErrorModal(false)}
+                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+                            >
+                                OK
                             </button>
                         </div>
                     </div>

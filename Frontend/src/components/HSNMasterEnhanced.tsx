@@ -44,6 +44,8 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     const [showFileNameError, setShowFileNameError] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [pendingMode, setPendingMode] = useState<{ type: 'load' | 'upload'; action: () => void } | null>(null);
+    const [showModeSwitchModal, setShowModeSwitchModal] = useState(false);
 
     // Clear Data Flow State
     const [clearFlowStep, setClearFlowStep] = useState<0 | 1 | 2 | 3 | 4>(0);
@@ -69,6 +71,21 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     const [showValidationModal, setShowValidationModal] = useState(false);
     const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
 
+    // Re-Upload Confirmation State
+    const [showReUploadModal, setShowReUploadModal] = useState(false);
+
+    // Standard Error Modal State
+    const [showErrorModal, setShowErrorModal] = useState(false);
+    const [errorModalMessage, setErrorModalMessage] = useState<string>('');
+
+    const showError = (message: string) => {
+        setErrorModalMessage(message);
+        setShowErrorModal(true);
+    };
+
+    // Success Popup State
+    const [successInfo, setSuccessInfo] = useState<{ rowCount: number } | null>(null);
+
     // --- AG Grid Setup ---
     const gridApiRef = useRef<GridApi | null>(null);
 
@@ -80,7 +97,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 setItemGroups(groups);
             } catch (error) {
                 console.error("Failed to fetch item groups", error);
-                toast.error("Failed to load Item Group list");
+                showError("Failed to load Item Group list");
             }
         };
         fetchItemGroups();
@@ -108,7 +125,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     }, []);
 
     const onCellValueChanged = useCallback((params: any) => {
-        const { node, colDef, newValue, data, api } = params;
+        const { colDef, newValue, data } = params;
 
         // Use hsnData.indexOf(data) because node.rowIndex may be relative to filtered view
         const rowIndex = hsnData.indexOf(data);
@@ -126,13 +143,6 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
             if (!isRawMaterial && data.itemGroupName) {
                 // Clear state
                 handleCellEdit(rowIndex, 'itemGroupName', '');
-                // Update grid immediately to reflect change
-                node.setDataValue('itemGroupName', '');
-            }
-
-            // Refresh Item Group Name cell to update editable state/renderer visibility
-            if (api) {
-                api.refreshCells({ rowNodes: [node], columns: ['itemGroupName'], force: true });
             }
         }
 
@@ -203,6 +213,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 headerName: '',
                 checkboxSelection: true,
                 headerCheckboxSelection: true,
+                headerCheckboxSelectionFilteredOnly: true,
                 width: 40,
                 pinned: 'left',
                 lockPosition: true,
@@ -226,6 +237,10 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 headerName: 'Product Type',
                 width: 130,
                 editable: isEditable,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: {
+                    values: ['Raw Material', 'Finish Goods', 'Spare Parts', 'Service', 'Tool']
+                },
                 cellClassRules: commonCellRules
             },
             { field: 'gstTaxPercentage', headerName: 'GST %', width: 90, editable: isEditable, cellClassRules: commonCellRules },
@@ -239,8 +254,9 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 // Only editable if Product Type is 'Raw Material'
                 editable: (params) => {
                     if (!isEditable) return false;
-                    const productType = params.data?.productCategory;
-                    return (productType || '').trim().toLowerCase() === 'raw material';
+                    const productType = (params.data?.productCategory || '').trim();
+                    // Case-insensitive check
+                    return productType.toLowerCase() === 'raw material';
                 },
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: {
@@ -317,26 +333,125 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     // --- Actions ---
 
     const loadData = async () => {
+        // Strict Mode Check
+        if (mode === 'preview' || mode === 'validated') {
+            setPendingMode({
+                type: 'load',
+                action: () => performLoadData()
+            });
+            setShowModeSwitchModal(true);
+            return;
+        }
+        performLoadData();
+    };
+
+    const performLoadData = async () => {
         setIsLoading(true);
         try {
             const data = await getHSNs();
-            setHsnData(data);
-            setMode('loaded');
-            setValidationResult(null);
-            setFilterType('all');
-            toast.success(`Loaded ${data.length} records`);
-        } catch (error) {
+            if (data.length === 0) {
+                showError('No data found in database');
+                setHsnData([]);
+                setMode('idle');
+                setValidationResult(null); // Ensure validation is cleared
+            } else {
+                setHsnData(data);
+                setMode('loaded');
+                setValidationResult(null);
+                setFilterType('all');
+                toast.success(`Loaded ${data.length} records`);
+            }
+        } catch (error: any) {
             console.error(error);
-            toast.error('Failed to load HSN data');
+            showError(error?.response?.data?.error || 'Failed to load HSN data');
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleClearAllDataTrigger = (type: 'clearOnly' | 'freshUpload') => {
-        setClearActionType(type);
-        setClearFlowStep(1);
-        generateCaptcha();
+    const handleFileSelectTrigger = () => {
+        // Strict Mode Check: If in Loaded mode, confirm switch
+        if (mode === 'loaded') {
+            setPendingMode({
+                type: 'upload',
+                action: () => {
+                    // Reset state for upload
+                    setHsnData([]);
+                    setMode('idle');
+                    setValidationResult(null);
+                    setSelectedRows(new Set());
+                    // Open file dialog
+                    if (fileInputRef.current) fileInputRef.current.click();
+                }
+            });
+            setShowModeSwitchModal(true);
+            return;
+        }
+
+        // Re-Upload Confirmation (Excel Mode)
+        if (hsnData.length > 0 && (mode === 'preview' || mode === 'validated')) {
+            setShowReUploadModal(true);
+            return;
+        }
+
+        // Otherwise just click
+        if (fileInputRef.current) fileInputRef.current.click();
+    };
+
+    const confirmReUpload = () => {
+        setShowReUploadModal(false);
+        setHsnData([]);
+        setValidationResult(null);
+        setMode('idle');
+        setSelectedRows(new Set());
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''; // Reset input
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleClearAllDataTrigger = async (type: 'clearOnly' | 'freshUpload') => {
+        // If local data exists, proceed
+        if (hsnData.length > 0) {
+            setClearActionType(type);
+            setClearFlowStep(1);
+            generateCaptcha();
+            return;
+        }
+
+        // Check DB
+        setIsLoading(true);
+        try {
+            const data = await getHSNs();
+            if (data.length === 0) {
+                if (type === 'clearOnly') {
+                    showError('No data found in database');
+                } else {
+                    toast.success('Database is already empty. Proceeding to upload.');
+                    if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                        fileInputRef.current.click();
+                    }
+                }
+                setIsLoading(false);
+                return;
+            }
+            // Proceed
+            setClearActionType(type);
+            setClearFlowStep(1);
+            generateCaptcha();
+        } catch (e) {
+            showError('Failed to verify database data');
+            setIsLoading(false);
+        } finally {
+            // Loading state handled in catch block if error, else continues? 
+            // Ideally we want to keep Loading true while transitioning? 
+            // No, generateCaptcha is instantaneous.
+            if (hsnData.length > 0) setIsLoading(false); // Only disable here if we didn't enter the try block logic which returns.
+        }
+        // Correction: The finally block runs always. If we successfully proceeded to setClearFlowStep, we want loading to stop.
+        // But wait, if we call async, we set isLoading(true). We must set isLoading(false) at the end.
+        setIsLoading(false);
     };
 
     const handleClearConfirm = () => {
@@ -344,7 +459,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         const userAnswer = parseInt(captchaInput);
         if (isNaN(userAnswer) || userAnswer !== captchaQuestion.answer) {
             setCaptchaError(true);
-            toast.error('❌ Incorrect CAPTCHA answer. Please try again.');
+            showError('❌ Incorrect CAPTCHA answer. Please try again.');
             return;
         }
 
@@ -383,7 +498,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
             handleClearCancel();
         } catch (error: any) {
             console.error(error);
-            toast.error(error.response?.data?.message || 'Failed to clear data. Check credentials.');
+            showError(error.response?.data?.message || 'Failed to clear data. Check credentials.');
         } finally {
             setIsLoading(false);
         }
@@ -394,7 +509,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         if (!file) return;
 
         if (!file.name.endsWith('.xlsx')) {
-            toast.error('Only .xlsx files are supported');
+            showError('Only .xlsx files are supported');
             return;
         }
 
@@ -461,14 +576,14 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 } catch (validError: any) {
                     console.error(validError);
                     const errorMsg = validError.response?.data?.message || validError.message || 'Validation failed to run.';
-                    toast.error(`Data loaded, but validation failed: ${errorMsg}`);
+                    showError(`Data loaded, but validation failed: ${errorMsg}`);
                 } finally {
                     setIsLoading(false);
                 }
 
             } catch (error) {
                 console.error(error);
-                toast.error('Failed to parse Excel file');
+                showError('Failed to parse Excel file');
                 setIsLoading(false);
             }
         };
@@ -486,11 +601,11 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
             if (result.isValid) {
                 toast.success("Validation Successful! You can now save.");
             } else {
-                toast.error(`Validation Failed: Found ${result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount} errors.`);
+                showError(`Validation Failed: Found ${result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount} errors.`);
             }
         } catch (error) {
             console.error(error);
-            toast.error('Validation failed');
+            showError('Validation failed');
         } finally {
             setIsLoading(false);
         }
@@ -498,29 +613,83 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
 
     // Actual Import/Save
     const handleSave = async () => {
-        if (hsnData.length === 0) return;
+        if (hsnData.length === 0) {
+            showError('No data to import');
+            return;
+        }
+
         setIsLoading(true);
         try {
-            // We pass already validated data.
-            // Backend might re-validate or just insert.
-            const result = await importHSNs(hsnData);
-            if (result.success) {
-                toast.success(result.message);
-                loadData(); // Reload actual DB data, sets mode to 'loaded' (read-only)
+            // 1. Full Re-Validation
+            const result = await validateHSNs(hsnData);
+            setValidationResult(result);
+
+            if (!result.isValid) {
+                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
+
+                // Aggregate failures by column
+                const columnFailures = new Map<string, Set<string>>();
+
+                result.rows.forEach((row: HSNRowValidation) => {
+                    // 1. Handle Duplicates
+                    if (row.rowStatus === ValidationStatus.Duplicate) {
+                        const col = 'HSNCode'; // Assuming HSNCode or DisplayName is key
+                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                        columnFailures.get(col)!.add('Duplicate data found');
+                    }
+
+                    // 2. Handle Cell Validations
+                    if (row.cellValidations && row.cellValidations.length > 0) {
+                        row.cellValidations.forEach((cell: any) => {
+                            const col = cell.columnName || 'Unknown';
+                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+
+                            let reason = cell.validationMessage;
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+
+                            columnFailures.get(col)!.add(reason);
+                        });
+                    }
+                });
+
+                // Construct Message
+                const messages: string[] = [];
+                columnFailures.forEach((reasons, col) => {
+                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
+                });
+
+                setValidationModalContent({
+                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
+                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues that were not attributed to specific columns.']
+                });
+                setShowValidationModal(true);
+                showError('Validation failed. Please correct highlighted errors before saving.');
+                return; // ABORT
+            }
+
+            // 3. Import
+            const importRes = await importHSNs(hsnData);
+            if (importRes.success) {
+                // Show success popup
+                setSuccessInfo({ rowCount: importRes.importedRows ?? hsnData.length });
+                loadData();
+                setValidationResult(null);
             } else {
-                if (result.errorMessages && result.errorMessages.length > 0) {
+                if (importRes.errorMessages && importRes.errorMessages.length > 0) {
                     setValidationModalContent({
                         title: 'Import Failed',
-                        messages: result.errorMessages
+                        messages: importRes.errorMessages
                     });
                     setShowValidationModal(true);
                 } else {
-                    toast.error(result.message);
+                    toast.error(importRes.message);
                 }
             }
         } catch (error: any) {
             console.error(error);
-            toast.error(error.response?.data?.message || 'Import Failed');
+            showError(error.response?.data?.message || 'Import Failed');
         } finally {
             setIsLoading(false);
         }
@@ -529,7 +698,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     const handleRemoveRow = async () => {
         const selectedNodes = gridApiRef.current?.getSelectedNodes() || [];
         if (selectedNodes.length === 0) {
-            toast.error('Please select at least one row to remove');
+            showError('Please select at least one row to remove');
             return;
         }
 
@@ -552,7 +721,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 loadData();
             } catch (e) {
                 console.error(e);
-                toast.error('Failed to delete records');
+                showError('Failed to delete records');
             } finally {
                 setIsLoading(false);
             }
@@ -607,6 +776,35 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
 
     return (
         <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 flex flex-col h-[calc(100vh-180px)]">
+
+            {/* ✅ Success Popup Modal */}
+            {successInfo && (
+                <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full border border-gray-100 dark:border-gray-700 overflow-hidden">
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 w-full" />
+                        <div className="p-8 text-center">
+                            <div className="mx-auto mb-5 w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center ring-8 ring-green-50 dark:ring-green-900/10">
+                                <svg className="w-10 h-10 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Import Successful!</h2>
+                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-1">Successfully imported</p>
+                            <p className="text-4xl font-extrabold text-green-600 dark:text-green-400 mb-1">{successInfo.rowCount}</p>
+                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-6">
+                                {successInfo.rowCount === 1 ? 'row' : 'rows'} into <span className="font-semibold text-gray-800 dark:text-white">HSN Master</span>
+                            </p>
+                            <button
+                                onClick={() => setSuccessInfo(null)}
+                                className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Toolbar */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-3 items-center justify-between bg-white dark:bg-[#0f172a] sticky top-0 z-10 rounded-t-lg">
                 <div className="flex flex-wrap items-center gap-3">
@@ -614,13 +812,19 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         <Database className="w-4 h-4" /> Load Data
                     </button>
 
-                    <button onClick={() => handleClearAllDataTrigger('clearOnly')} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 text-sm font-medium shadow-sm">
+                    <button onClick={() => handleClearAllDataTrigger('clearOnly')} disabled={isLoading || selectedRows.size > 0} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 text-sm font-medium shadow-sm">
                         <XCircle className="w-4 h-4" /> Clear All Data
                     </button>
 
-                    <button onClick={handleRemoveRow} disabled={selectedRows.size === 0} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 text-sm font-medium shadow-sm">
-                        <Trash2 className="w-4 h-4" /> Remove Row ({selectedRows.size})
-                    </button>
+                    {mode === 'loaded' ? (
+                        <button onClick={handleRemoveRow} disabled={isLoading || selectedRows.size === 0} className="flex items-center gap-2 px-4 py-2 bg-[#D2691E] text-white rounded-lg hover:bg-[#A55217] transition-colors disabled:opacity-50 text-sm font-medium shadow-sm">
+                            <Trash2 className="w-4 h-4" /> Soft Delete ({selectedRows.size})
+                        </button>
+                    ) : (mode === 'preview' || mode === 'validated') && (
+                        <button onClick={handleRemoveRow} disabled={isLoading || selectedRows.size === 0} className="flex items-center gap-2 px-4 py-2 bg-[#D2691E] text-white rounded-lg hover:bg-[#A55217] transition-colors disabled:opacity-50 text-sm font-medium shadow-sm">
+                            <Trash2 className="w-4 h-4" /> Delete Excel Row ({selectedRows.size})
+                        </button>
+                    )}
 
                     <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 mx-1 mobile-hide"></div>
 
@@ -629,7 +833,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                     </button>
 
                     <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".xlsx" className="hidden" />
-                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium shadow-sm">
+                    <button onClick={handleFileSelectTrigger} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium shadow-sm">
                         <Upload className="w-4 h-4" /> Existing Upload
                     </button>
 
@@ -719,7 +923,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                             Please correct your Excel name as <strong>"HSN Master.xlsx"</strong> to proceed with the import.
                         </p>
                     </div>
-                ) : (
+                ) : (mode === 'loaded' || mode === 'preview' || mode === 'validated') && (
                     <AgGridReact
                         onGridReady={(params) => gridApiRef.current = params.api}
                         rowData={hsnData}
@@ -791,11 +995,10 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                                                 setCaptchaInput(e.target.value);
                                                 setCaptchaError(false);
                                             }}
-                                            className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
-                                                captchaError
-                                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-                                                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
-                                            } dark:text-white`}
+                                            className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${captchaError
+                                                ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                                : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                                } dark:text-white`}
                                             placeholder="Enter answer"
                                             autoFocus
                                         />
@@ -843,11 +1046,10 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                                                 setCaptchaInput(e.target.value);
                                                 setCaptchaError(false);
                                             }}
-                                            className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
-                                                captchaError
-                                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-                                                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
-                                            } dark:text-white`}
+                                            className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${captchaError
+                                                ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                                : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                                } dark:text-white`}
                                             placeholder="Enter answer"
                                             autoFocus
                                         />
@@ -895,11 +1097,10 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                                                 setCaptchaInput(e.target.value);
                                                 setCaptchaError(false);
                                             }}
-                                            className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
-                                                captchaError
-                                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-                                                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
-                                            } dark:text-white`}
+                                            className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${captchaError
+                                                ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                                : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                                } dark:text-white`}
                                             placeholder="Enter answer"
                                             autoFocus
                                         />
@@ -984,6 +1185,64 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                     </div>
                 </div>
             )}
+            {/* Re-Upload Confirmation Modal */}
+            {showReUploadModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-gray-100 dark:border-gray-700 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-yellow-50 dark:bg-yellow-900/20 rounded-full flex items-center justify-center mb-4">
+                                <AlertCircle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                                Do you want to Re-upload Excel?
+                            </h3>
+                            <p className="text-gray-500 dark:text-gray-400 mb-6">
+                                Uploading a new file will replace the current data. Previous changes will be lost.
+                            </p>
+                            <div className="flex gap-3 w-full">
+                                <button
+                                    onClick={() => setShowReUploadModal(false)}
+                                    className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-medium"
+                                >
+                                    No
+                                </button>
+                                <button
+                                    onClick={confirmReUpload}
+                                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                                >
+                                    Yes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Standard Error Popup Modal */}
+            {showErrorModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100 dark:border-red-900/30 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
+                                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                                Error
+                            </h3>
+                            <div className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center whitespace-pre-wrap">
+                                {errorModalMessage}
+                            </div>
+                            <button
+                                onClick={() => setShowErrorModal(false)}
+                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Validation Error Modal */}
             {showValidationModal && validationModalContent && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -998,6 +1257,43 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                                     <li key={i} className="text-sm text-red-600">• {msg}</li>
                                 ))}
                             </ul>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Mode Switch Confirmation Modal */}
+            {showModeSwitchModal && pendingMode && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                            {pendingMode.type === 'load' ? 'Leave Excel Upload?' : 'Leave Database View?'}
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-300 mb-6">
+                            {pendingMode.type === 'load'
+                                ? 'You have unsaved Excel data. Switching to Database View will discard your current upload.'
+                                : 'Switching to Excel Upload will clear the current database view.'}
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowModeSwitchModal(false);
+                                    setPendingMode(null);
+                                }}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    pendingMode.action();
+                                    setShowModeSwitchModal(false);
+                                    setPendingMode(null);
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                            >
+                                Confirm
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload } from 'lucide-react';
+import { Upload, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LedgerMasterEnhanced from '../components/LedgerMasterEnhanced';
 import HSNMasterEnhanced from '../components/HSNMasterEnhanced';
@@ -47,6 +47,7 @@ const ImportMaster: React.FC = () => {
     // Column resize states for Excel Preview Table
     const [previewColWidths, setPreviewColWidths] = useState<Record<number, number>>({});
     const previewResizeRef = useRef<{ colIndex: number; startX: number; startWidth: number; active: boolean }>({ colIndex: -1, startX: 0, startWidth: 0, active: false });
+    const [refreshKey, setRefreshKey] = useState(0);
 
     // Initialize column widths when preview data changes
     useEffect(() => {
@@ -439,6 +440,33 @@ const ImportMaster: React.FC = () => {
         }
     };
 
+    const handleRefresh = () => {
+        // 1. Reset File & Preview
+        setUploadedFile(null);
+        setPreviewData(null);
+        setIsPreviewShown(false);
+        setShowErrorModal(false);
+        setErrorList([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+
+        // 2. Reset Mode-Specific Selections
+        if (isLedgerMode) {
+            setSelectedLedgerGroup(0);
+            setIsFileUploadEnabled(false);
+        } else if (isItemMode) {
+            setSelectedItemGroup(0);
+            setIsFileUploadEnabled(false);
+        } else if (showSubModuleDropdown) {
+            setSelectedSubModule('');
+            setIsFileUploadEnabled(false);
+        } else {
+            // For modules without sub-selection (HSN, SparePart), force remount
+            setRefreshKey(prev => prev + 1);
+            setIsFileUploadEnabled(true);
+        }
+        // toast.success('Module Refreshed');
+    };
+
     // Error Modal Helper
     const ErrorModal = () => {
         if (!showErrorModal || errorList.length === 0) return null;
@@ -639,6 +667,18 @@ const ImportMaster: React.FC = () => {
                         </div>
                     )}
 
+                    {/* Refresh Button */}
+                    <div className="flex items-end">
+                        <button
+                            onClick={handleRefresh}
+                            className="w-full md:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white border border-transparent rounded-lg transition-all shadow-sm hover:shadow-indigo-200 dark:hover:shadow-indigo-900/30 flex items-center justify-center gap-2 h-[38px] mt-6 md:mt-0 active:scale-95 transform font-medium"
+                            title="Reset Module"
+                        >
+                            <RefreshCw className="w-4 h-4 animate-in spin-in-180 duration-300" />
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+
                     {/* File Upload - HIDDEN BY USER REQUEST */}
                     {(false && selectedModule && !isLedgerMode) && (
                         <div className="md:col-span-2">
@@ -759,6 +799,7 @@ const ImportMaster: React.FC = () => {
             {isHSNMode && (
                 <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
                     <HSNMasterEnhanced
+                        key={`${selectedModule}-${refreshKey}`}
                         moduleId={parseInt(selectedModule)}
                     />
                 </div>
@@ -767,7 +808,7 @@ const ImportMaster: React.FC = () => {
             {/* Spare Part Master Enhanced Component */}
             {isSparePartMode && (
                 <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
-                    <SparePartMasterEnhanced />
+                    <SparePartMasterEnhanced key={refreshKey} />
                 </div>
             )}
 

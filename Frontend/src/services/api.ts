@@ -728,6 +728,7 @@ export interface ItemMasterDto {
     itemDescription?: string;
     isDeletedTransaction?: boolean;
     dynamicFields?: Record<string, any>;
+    tempId?: string;
 
     // Paper-specific fields
     quality?: string;

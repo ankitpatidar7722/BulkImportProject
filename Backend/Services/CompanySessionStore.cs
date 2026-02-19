@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace BulkImport.Services;
+namespace Backend.Services;
 
 public class CompanySessionStore : ICompanySessionStore
 {

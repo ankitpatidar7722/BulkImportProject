@@ -11,6 +11,7 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false }) => {
     const { isDark, toggleTheme } = useTheme();
     const { companyName, userName, logout } = useAuth();
+    const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
 
     return (
         <header className={`h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 z-10 transition-all duration-300 ${isSidebarCollapsed ? 'left-0 md:left-20' : 'left-0 md:left-64'}`}>
@@ -77,7 +78,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false
                                 </button>
                                 <div className="my-1 border-t border-gray-200 dark:border-gray-700"></div>
                                 <button
-                                    onClick={logout}
+                                    onClick={() => setShowLogoutConfirm(true)}
                                     className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                                 >
                                     <LogOut className="w-4 h-4" />
@@ -88,6 +89,43 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false
                     </div>
                 </div>
             </div>
+
+
+            {/* Logout Confirmation Modal */}
+            {
+                showLogoutConfirm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-sm border border-gray-200 dark:border-gray-700 transform transition-all scale-100">
+                            <div className="p-6 text-center">
+                                <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/20 mb-4">
+                                    <LogOut className="h-6 w-6 text-red-600 dark:text-red-400" />
+                                </div>
+                                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Confirm Logout</h3>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                                    Do you want to logout?
+                                </p>
+                                <div className="flex justify-center gap-3">
+                                    <button
+                                        onClick={() => setShowLogoutConfirm(false)}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+                                    >
+                                        No
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            logout();
+                                            setShowLogoutConfirm(false);
+                                        }}
+                                        className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
+                                    >
+                                        Yes
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
         </header>
     );
 };

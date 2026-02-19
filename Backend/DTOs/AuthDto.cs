@@ -1,4 +1,4 @@
-namespace BulkImport.DTOs;
+namespace Backend.DTOs;
 
 public class CompanyLoginRequest
 {

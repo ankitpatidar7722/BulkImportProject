@@ -1,6 +1,6 @@
 using System;
 
-namespace BulkImport.Services;
+namespace Backend.Services;
 
 public class CompanySession
 {

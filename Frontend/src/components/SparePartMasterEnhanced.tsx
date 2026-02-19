@@ -39,6 +39,25 @@ const SparePartMasterEnhanced: React.FC = () => {
     const [validationResult, setValidationResult] = useState<SparePartValidationResultDto | null>(null);
     const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');
     const [filterType, setFilterType] = useState<'all' | 'valid' | 'duplicate' | 'missing' | 'mismatch' | 'invalid'>('all');
+    const [pendingMode, setPendingMode] = useState<{ type: 'load' | 'upload'; action: () => void } | null>(null);
+    const [showModeSwitchModal, setShowModeSwitchModal] = useState(false);
+
+    // Re-Upload Confirmation State
+    const [showReUploadModal, setShowReUploadModal] = useState(false);
+
+    // Standard Error Modal State
+    const [showErrorModal, setShowErrorModal] = useState(false);
+    const [errorModalMessage, setErrorModalMessage] = useState<string>('');
+
+    const showError = (message: string) => {
+        setErrorModalMessage(message);
+        setShowErrorModal(true);
+    };
+
+    // Success Popup State
+    const [successInfo, setSuccessInfo] = useState<{ rowCount: number } | null>(null);
+
+    const [noDataMessage, setNoDataMessage] = useState<string | null>(null);
     const [hsnGroups, setHSNGroups] = useState<HSNGroupDto[]>([]);
     const [units, setUnits] = useState<UnitDto[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -68,10 +87,41 @@ const SparePartMasterEnhanced: React.FC = () => {
     const [filenameError, setFilenameError] = useState<string | null>(null);
     const [clearActionType, setClearActionType] = useState<'clearOnly' | 'freshUpload'>('freshUpload');
 
-    const handleClearAllDataTrigger = (type: 'clearOnly' | 'freshUpload') => {
-        setClearActionType(type);
-        setClearFlowStep(1);
-        generateCaptcha();
+    const handleClearAllDataTrigger = async (type: 'clearOnly' | 'freshUpload') => {
+        // If local data exists, proceed
+        if (sparePartData.length > 0) {
+            setClearActionType(type);
+            setClearFlowStep(1);
+            generateCaptcha();
+            return;
+        }
+
+        // Check DB
+        setIsLoading(true);
+        try {
+            const data = await getAllSpareParts();
+            if (data.length === 0) {
+                if (type === 'clearOnly') {
+                    setNoDataMessage('No data found in database');
+                } else {
+                    toast.success('Database is already empty. Proceeding to upload.');
+                    if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                        fileInputRef.current.click();
+                    }
+                }
+                setIsLoading(false);
+                return;
+            }
+            // Proceed
+            setClearActionType(type);
+            setClearFlowStep(1);
+            generateCaptcha();
+        } catch (e) {
+            showError('Failed to verify database data');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleClearConfirm = () => {
@@ -79,7 +129,7 @@ const SparePartMasterEnhanced: React.FC = () => {
         const userAnswer = parseInt(captchaInput);
         if (isNaN(userAnswer) || userAnswer !== captchaQuestion.answer) {
             setCaptchaError(true);
-            toast.error('❌ Incorrect CAPTCHA answer. Please try again.');
+            showError('❌ Incorrect CAPTCHA answer. Please try again.');
             return;
         }
 
@@ -119,7 +169,7 @@ const SparePartMasterEnhanced: React.FC = () => {
             handleClearCancel();
         } catch (error: any) {
             console.error(error);
-            toast.error(error.response?.data?.message || 'Failed to clear data. Check credentials.');
+            showError(error.response?.data?.message || 'Failed to clear data. Check credentials.');
         } finally {
             setIsLoading(false);
         }
@@ -132,7 +182,7 @@ const SparePartMasterEnhanced: React.FC = () => {
                 setHSNGroups(data);
             } catch (error) {
                 console.error('Failed to load HSN groups', error);
-                toast.error('Failed to load HSN group master data');
+                showError('Failed to load HSN group master data');
             }
         };
 
@@ -142,7 +192,7 @@ const SparePartMasterEnhanced: React.FC = () => {
                 setUnits(data);
             } catch (error) {
                 console.error('Failed to load units', error);
-                toast.error('Failed to load Unit master data');
+                showError('Failed to load Unit master data');
             }
         };
 
@@ -175,6 +225,7 @@ const SparePartMasterEnhanced: React.FC = () => {
                 headerName: '',
                 checkboxSelection: true,
                 headerCheckboxSelection: true,
+                headerCheckboxSelectionFilteredOnly: true,
                 width: 20,
                 pinned: 'left',
                 lockPosition: false,
@@ -278,11 +329,18 @@ const SparePartMasterEnhanced: React.FC = () => {
     }, []);
 
     const onCellValueChanged = useCallback((params: any) => {
-        const { node, colDef, newValue } = params;
-        const rowIndex = node.rowIndex;
+        const { colDef, newValue, data } = params;
+        const rowIndex = sparePartData.indexOf(data);
+
+        // Safety check
+        if (rowIndex === -1) {
+            console.error('Row data not found in state');
+            return;
+        }
+
         const field = colDef.field as keyof SparePartMasterDto;
         handleCellEdit(rowIndex, field, newValue);
-    }, [handleCellEdit]);
+    }, [handleCellEdit, sparePartData]);
 
     const onSelectionChanged = useCallback((event: any) => {
         const selectedNodes = event.api.getSelectedNodes();
@@ -348,16 +406,81 @@ const SparePartMasterEnhanced: React.FC = () => {
     }, [filterType]);
 
     const handleLoadData = async () => {
+        // Strict Mode Check
+        if (mode === 'preview' || mode === 'validated') {
+            setPendingMode({
+                type: 'load',
+                action: () => performLoadData()
+            });
+            setShowModeSwitchModal(true);
+            return;
+        }
+        performLoadData();
+    };
+
+    const performLoadData = async () => {
         setIsLoading(true);
         try {
             const data = await getAllSpareParts();
-            setSparePartData(data);
-            setMode('loaded');
-            toast.success(`Loaded ${data.length} spare part(s)`);
+            if (data.length === 0) {
+                setNoDataMessage("No data found in database");
+                setSparePartData([]);
+                setMode('idle');
+                setValidationResult(null); // Clear validation
+                setSelectedRows(new Set()); // Clear selection
+            } else {
+                setSparePartData(data);
+                setMode('loaded');
+                setValidationResult(null);
+                setFilterType('all');
+                toast.success(`Loaded ${data.length} spare part(s)`);
+            }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to load data');
+            console.error(error);
+            showError('Failed to load spare parts');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleFileSelectTrigger = () => {
+        // Strict Mode Check: If in Loaded mode, confirm switch
+        if (mode === 'loaded') {
+            setPendingMode({
+                type: 'upload',
+                action: () => {
+                    // Reset state for upload
+                    setSparePartData([]);
+                    setMode('idle');
+                    setValidationResult(null);
+                    setSelectedRows(new Set());
+                    // Open file dialog
+                    if (fileInputRef.current) fileInputRef.current.click();
+                }
+            });
+            setShowModeSwitchModal(true);
+            return;
+        }
+
+        // Re-Upload Confirmation (Excel Mode)
+        if (sparePartData.length > 0 && (mode === 'preview' || mode === 'validated')) {
+            setShowReUploadModal(true);
+            return;
+        }
+
+        // Otherwise just click
+        if (fileInputRef.current) fileInputRef.current.click();
+    };
+
+    const confirmReUpload = () => {
+        setShowReUploadModal(false);
+        setSparePartData([]);
+        setValidationResult(null);
+        setMode('idle');
+        setSelectedRows(new Set());
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''; // Reset input
+            fileInputRef.current.click();
         }
     };
 
@@ -520,33 +643,81 @@ const SparePartMasterEnhanced: React.FC = () => {
     };
 
     const handleImport = async () => {
-        if (!validationResult?.isValid) {
-            toast.error('Please fix all validation errors before importing');
-            return;
-        }
-
-        if (!window.confirm(`Import ${sparePartData.length} spare part(s)?`)) {
+        if (sparePartData.length === 0) {
+            showError('No data to import');
             return;
         }
 
         setIsLoading(true);
         try {
-            console.log('[SparePartImport] Sending data:', sparePartData);
-            console.log('[SparePartImport] Data count:', sparePartData.length);
-            console.log('[SparePartImport] First item:', sparePartData[0]);
-            const result = await importSpareParts(sparePartData);
-            console.log('[SparePartImport] Success:', result);
-            toast.success(result.message);
-            setSparePartData([]);
-            setValidationResult(null);
-            setMode('idle');
-            if (fileInputRef.current) fileInputRef.current.value = '';
+            // 1. Full Re-Validation
+            const result = await validateSpareParts(sparePartData);
+            setValidationResult(result);
+
+            if (!result.isValid) {
+                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
+
+                // Aggregate failures by column
+                const columnFailures = new Map<string, Set<string>>();
+
+                result.rows.forEach((row: SparePartRowValidation) => {
+                    // 1. Handle Duplicates
+                    if (row.rowStatus === ValidationStatus.Duplicate) {
+                        const col = 'SparePartName';
+                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                        columnFailures.get(col)!.add('Duplicate data found');
+                    }
+
+                    // 2. Handle Cell Validations
+                    if (row.cellValidations && row.cellValidations.length > 0) {
+                        row.cellValidations.forEach((cell: any) => {
+                            const col = cell.columnName || 'Unknown';
+                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+
+                            let reason = cell.validationMessage;
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+
+                            columnFailures.get(col)!.add(reason);
+                        });
+                    }
+                });
+
+                // Construct Message
+                const messages: string[] = [];
+                columnFailures.forEach((reasons, col) => {
+                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
+                });
+
+                setValidationModalContent({
+                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
+                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues that were not attributed to specific columns.']
+                });
+                setShowValidationModal(true);
+                showError('Validation failed. Please correct highlighted errors before saving.');
+                return; // ABORT
+            }
+
+            // 2. Confirmation
+            if (!window.confirm(`Validation passed. Import ${sparePartData.length} spare part(s)?`)) {
+                return;
+            }
+
+            // 3. Import
+            const importRes = await importSpareParts(sparePartData);
+
+            if (importRes.success) {
+                // Show success popup instead of toast
+                setSuccessInfo({ rowCount: importRes.importedRows ?? sparePartData.length });
+                // State reset happens when user clicks OK
+            } else {
+                toast.error(importRes.message || 'Import failed');
+            }
         } catch (error: any) {
             console.error('[SparePartImport] Error:', error);
-            console.error('[SparePartImport] Error response:', error?.response);
-            console.error('[SparePartImport] Error data:', error?.response?.data);
-            const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Import failed';
-            toast.error(errorMsg);
+            const errorMsg = error?.response?.data?.error || error?.message || 'Import failed';
+            showError(errorMsg);
         } finally {
             setIsLoading(false);
         }
@@ -647,6 +818,41 @@ const SparePartMasterEnhanced: React.FC = () => {
 
     return (
         <div className="space-y-4">
+
+            {/* ✅ Success Popup Modal */}
+            {successInfo && (
+                <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full border border-gray-100 dark:border-gray-700 overflow-hidden">
+                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 w-full" />
+                        <div className="p-8 text-center">
+                            <div className="mx-auto mb-5 w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center ring-8 ring-green-50 dark:ring-green-900/10">
+                                <svg className="w-10 h-10 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Import Successful!</h2>
+                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-1">Successfully imported</p>
+                            <p className="text-4xl font-extrabold text-green-600 dark:text-green-400 mb-1">{successInfo.rowCount}</p>
+                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-6">
+                                {successInfo.rowCount === 1 ? 'row' : 'rows'} into <span className="font-semibold text-gray-800 dark:text-white">Spare Parts Master</span>
+                            </p>
+                            <button
+                                onClick={() => {
+                                    setSuccessInfo(null);
+                                    setSparePartData([]);
+                                    setValidationResult(null);
+                                    setMode('idle');
+                                    if (fileInputRef.current) fileInputRef.current.value = '';
+                                }}
+                                className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="flex flex-wrap gap-2">
                 <button
                     onClick={handleLoadData}
@@ -659,21 +865,32 @@ const SparePartMasterEnhanced: React.FC = () => {
 
                 <button
                     onClick={() => handleClearAllDataTrigger('clearOnly')}
-                    disabled={isLoading || sparePartData.length === 0}
-                    className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                    disabled={isLoading || selectedRows.size > 0}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
                 >
                     <XCircle className="w-4 h-4" />
                     Clear All Data
                 </button>
 
-                <button
-                    onClick={handleRemoveRow}
-                    disabled={isLoading}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
-                >
-                    <Trash2 className="w-4 h-4" />
-                    Remove Row ({selectedRows.size})
-                </button>
+                {mode === 'loaded' ? (
+                    <button
+                        onClick={handleRemoveRow}
+                        disabled={isLoading || selectedRows.size === 0}
+                        className="px-4 py-2 bg-[#D2691E] text-white rounded-lg hover:bg-[#A55217] disabled:opacity-50 flex items-center gap-2 transition-colors"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                        Soft Delete ({selectedRows.size})
+                    </button>
+                ) : (mode === 'preview' || mode === 'validated') && (
+                    <button
+                        onClick={handleRemoveRow}
+                        disabled={isLoading || selectedRows.size === 0}
+                        className="px-4 py-2 bg-[#D2691E] text-white rounded-lg hover:bg-[#A55217] disabled:opacity-50 flex items-center gap-2 transition-colors"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                        Delete Excel Row ({selectedRows.size})
+                    </button>
+                )}
 
                 <button
                     onClick={() => handleClearAllDataTrigger('freshUpload')}
@@ -685,7 +902,7 @@ const SparePartMasterEnhanced: React.FC = () => {
                 </button>
 
                 <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={handleFileSelectTrigger}
                     disabled={isLoading}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2 transition-colors"
                 >
@@ -973,11 +1190,10 @@ const SparePartMasterEnhanced: React.FC = () => {
                                     setCaptchaInput(e.target.value);
                                     setCaptchaError(false);
                                 }}
-                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${
-                                    captchaError
-                                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
-                                        : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
-                                } dark:text-white`}
+                                className={`w-full p-2 border-2 rounded-lg text-center text-lg font-mono ${captchaError
+                                    ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                                    : 'border-gray-300 dark:border-gray-600 dark:bg-gray-900'
+                                    } dark:text-white`}
                                 placeholder="Enter answer"
                                 autoFocus
                             />
@@ -1092,6 +1308,64 @@ const SparePartMasterEnhanced: React.FC = () => {
                 </div>
             )}
 
+            {/* Re-Upload Confirmation Modal */}
+            {showReUploadModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-gray-100 dark:border-gray-700 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-yellow-50 dark:bg-yellow-900/20 rounded-full flex items-center justify-center mb-4">
+                                <AlertCircle className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                                Do you want to Re-upload Excel?
+                            </h3>
+                            <p className="text-gray-500 dark:text-gray-400 mb-6">
+                                Uploading a new file will replace the current data. Previous changes will be lost.
+                            </p>
+                            <div className="flex gap-3 w-full">
+                                <button
+                                    onClick={() => setShowReUploadModal(false)}
+                                    className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-medium"
+                                >
+                                    No
+                                </button>
+                                <button
+                                    onClick={confirmReUpload}
+                                    className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                                >
+                                    Yes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Standard Error Popup Modal */}
+            {showErrorModal && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100 dark:border-red-900/30 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
+                                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                                Error
+                            </h3>
+                            <div className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center whitespace-pre-wrap">
+                                {errorModalMessage}
+                            </div>
+                            <button
+                                onClick={() => setShowErrorModal(false)}
+                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Validation Result Modal */}
             {showValidationModal && validationModalContent && (
                 <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
@@ -1117,6 +1391,63 @@ const SparePartMasterEnhanced: React.FC = () => {
                                 Ok
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Mode Switch Confirmation Modal */}
+            {showModeSwitchModal && pendingMode && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">
+                            {pendingMode.type === 'load' ? 'Leave Excel Upload?' : 'Leave Database View?'}
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-300 mb-6">
+                            {pendingMode.type === 'load'
+                                ? 'You have unsaved Excel data. Switching to Database View will discard your current upload.'
+                                : 'Switching to Excel Upload will clear the current database view.'}
+                        </p>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowModeSwitchModal(false);
+                                    setPendingMode(null);
+                                }}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded-lg"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    pendingMode.action();
+                                    setShowModeSwitchModal(false);
+                                    setPendingMode(null);
+                                }}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* No Data Found Modal */}
+            {noDataMessage && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-2xl max-w-md w-full border border-gray-200 dark:border-gray-700 text-center animate-in fade-in zoom-in duration-200">
+                        <div className="mx-auto w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-6">
+                            <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">No Data Found</h3>
+                        <p className="text-gray-600 dark:text-gray-300 mb-8 text-lg leading-relaxed">
+                            {noDataMessage}
+                        </p>
+                        <button
+                            onClick={() => setNoDataMessage(null)}
+                            className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-lg transition-colors shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 active:translate-y-0"
+                        >
+                            OK
+                        </button>
                     </div>
                 </div>
             )}

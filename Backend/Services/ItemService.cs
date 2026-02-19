@@ -76,122 +76,158 @@ public class ItemService : IItemService
 
         var items = await _connection.QueryAsync<ItemMasterDto>(query, new { ItemGroupID = itemGroupId });
 
-        // Load additional fields from ItemMasterDetails for each item
-        foreach (var item in items)
+        // Deduplicate items to ensure unique ItemIDs (safeguard against potential join multiplication)
+        var countBefore = items.Count();
+        items = items.GroupBy(i => i.ItemID).Select(g => g.First()).ToList();
+        var countAfter = items.Count();
+        if (countBefore != countAfter)
         {
-            var detailQuery = @"
-                SELECT FieldName, FieldValue
-                FROM ItemMasterDetails
-                WHERE ItemID = @ItemID AND IsDeletedTransaction = 0";
+             // Log the deduplication for debugging purposes (optional, could use ILogger)
+             System.Diagnostics.Debug.WriteLine($"ItemService: Removed {countBefore - countAfter} duplicate items from query result.");
+        }
 
-            var details = await _connection.QueryAsync<dynamic>(detailQuery, new { ItemID = item.ItemID });
+        // Load ALL detail fields in a single batch query (instead of N+1 per-item queries)
+        var itemsList = items.ToList();
+        var itemIds = itemsList.Where(i => i.ItemID.HasValue).Select(i => i.ItemID!.Value).ToList();
+
+        if (itemIds.Count > 0)
+        {
+            var allDetailsQuery = @"
+                SELECT ItemID, FieldName, FieldValue
+                FROM ItemMasterDetails
+                WHERE ItemID IN @ItemIDs AND ISNULL(IsDeletedTransaction, 0) = 0";
+
+            var allDetails = await _connection.QueryAsync<dynamic>(allDetailsQuery, new { ItemIDs = itemIds });
+
+            // Group details by ItemID for O(1) lookup
+            var detailsByItemId = allDetails
+                .GroupBy(d => (int)d.ItemID)
+                .ToDictionary(g => g.Key, g => g.ToList());
 
             // Map detail fields back to item properties
-            foreach (var detail in details)
+            foreach (var item in itemsList)
             {
-                string fieldName = detail.FieldName;
-                string fieldValue = detail.FieldValue;
+                if (!item.ItemID.HasValue || !detailsByItemId.TryGetValue(item.ItemID.Value, out var details))
+                    continue;
 
-                switch (fieldName)
+                foreach (var detail in details)
                 {
-                    case "Quality":
-                        item.Quality = fieldValue;
-                        break;
-                    case "GSM":
-                        if (decimal.TryParse(fieldValue, out decimal gsm))
-                            item.GSM = gsm;
-                        break;
-                    case "Manufecturer":
-                        item.Manufecturer = fieldValue;
-                        break;
-                    case "Finish":
-                        item.Finish = fieldValue;
-                        break;
-                    case "ManufecturerItemCode":
-                        item.ManufecturerItemCode = fieldValue;
-                        break;
-                    case "Caliper":
-                        if (decimal.TryParse(fieldValue, out decimal caliper))
-                            item.Caliper = caliper;
-                        break;
-                    case "ShelfLife":
-                        if (int.TryParse(fieldValue, out int shelfLife))
-                            item.ShelfLife = shelfLife;
-                        break;
-                    case "EstimationRate":
-                        if (decimal.TryParse(fieldValue, out decimal estRate))
-                            item.EstimationRate = estRate;
-                        break;
-                    case "MinimumStockQty":
-                        if (decimal.TryParse(fieldValue, out decimal minStock))
-                            item.MinimumStockQty = minStock;
-                        break;
-                    case "IsStandardItem":
-                        if (bool.TryParse(fieldValue, out bool isStandard))
-                            item.IsStandardItem = isStandard;
-                        break;
-                    case "IsRegularItem":
-                        if (bool.TryParse(fieldValue, out bool isRegular))
-                            item.IsRegularItem = isRegular;
-                        break;
-                    case "PackingType":
-                        item.PackingType = fieldValue;
-                        break;
-                    case "CertificationType":
-                        item.CertificationType = fieldValue;
-                        break;
-                    case "BF":
-                        item.BF = fieldValue;
-                        break;
-                    case "InkColour":
-                        item.InkColour = fieldValue;
-                        break;
-                    case "PantoneCode":
-                        item.PantoneCode = fieldValue;
-                        break;
-                    case "ItemType":
-                        item.ItemType = fieldValue;
-                        break;
-                    case "PurchaseOrderQuantity":
-                        if (decimal.TryParse(fieldValue, out decimal poQty))
-                            item.PurchaseOrderQuantity = poQty;
-                        break;
-                    case "Thickness":
-                        if (decimal.TryParse(fieldValue, out decimal thickness))
-                            item.Thickness = thickness;
-                        break;
-                    case "Density":
-                        if (decimal.TryParse(fieldValue, out decimal density))
-                            item.Density = density;
-                        break;
-                    case "ReleaseGSM":
-                        if (decimal.TryParse(fieldValue, out decimal releaseGsm))
-                            item.ReleaseGSM = releaseGsm;
-                        break;
-                    case "AdhesiveGSM":
-                        if (decimal.TryParse(fieldValue, out decimal adhesiveGsm))
-                            item.AdhesiveGSM = adhesiveGsm;
-                        break;
-                    case "TotalGSM":
-                        if (decimal.TryParse(fieldValue, out decimal totalGsm))
-                            item.TotalGSM = totalGsm;
-                        break;
+                    string fieldName = detail.FieldName;
+                    string fieldValue = detail.FieldValue;
+
+                    switch (fieldName)
+                    {
+                        case "Quality":
+                            item.Quality = fieldValue;
+                            break;
+                        case "GSM":
+                            if (decimal.TryParse(fieldValue, out decimal gsm))
+                                item.GSM = gsm;
+                            break;
+                        case "Manufecturer":
+                            item.Manufecturer = fieldValue;
+                            break;
+                        case "Finish":
+                            item.Finish = fieldValue;
+                            break;
+                        case "ManufecturerItemCode":
+                            item.ManufecturerItemCode = fieldValue;
+                            break;
+                        case "Caliper":
+                            if (decimal.TryParse(fieldValue, out decimal caliper))
+                                item.Caliper = caliper;
+                            break;
+                        case "ShelfLife":
+                            if (int.TryParse(fieldValue, out int shelfLife))
+                                item.ShelfLife = shelfLife;
+                            break;
+                        case "EstimationRate":
+                            if (decimal.TryParse(fieldValue, out decimal estRate))
+                                item.EstimationRate = estRate;
+                            break;
+                        case "MinimumStockQty":
+                            if (decimal.TryParse(fieldValue, out decimal minStock))
+                                item.MinimumStockQty = minStock;
+                            break;
+                        case "IsStandardItem":
+                            if (bool.TryParse(fieldValue, out bool isStandard))
+                                item.IsStandardItem = isStandard;
+                            break;
+                        case "IsRegularItem":
+                            if (bool.TryParse(fieldValue, out bool isRegular))
+                                item.IsRegularItem = isRegular;
+                            break;
+                        case "PackingType":
+                            item.PackingType = fieldValue;
+                            break;
+                        case "CertificationType":
+                            item.CertificationType = fieldValue;
+                            break;
+                        case "BF":
+                            item.BF = fieldValue;
+                            break;
+                        case "InkColour":
+                            item.InkColour = fieldValue;
+                            break;
+                        case "PantoneCode":
+                            item.PantoneCode = fieldValue;
+                            break;
+                        case "ItemType":
+                            item.ItemType = fieldValue;
+                            break;
+                        case "PurchaseOrderQuantity":
+                            if (decimal.TryParse(fieldValue, out decimal poQty))
+                                item.PurchaseOrderQuantity = poQty;
+                            break;
+                        case "Thickness":
+                            if (decimal.TryParse(fieldValue, out decimal thickness))
+                                item.Thickness = thickness;
+                            break;
+                        case "Density":
+                            if (decimal.TryParse(fieldValue, out decimal density))
+                                item.Density = density;
+                            break;
+                        case "ReleaseGSM":
+                            if (decimal.TryParse(fieldValue, out decimal releaseGsm))
+                                item.ReleaseGSM = releaseGsm;
+                            break;
+                        case "AdhesiveGSM":
+                            if (decimal.TryParse(fieldValue, out decimal adhesiveGsm))
+                                item.AdhesiveGSM = adhesiveGsm;
+                            break;
+                        case "TotalGSM":
+                            if (decimal.TryParse(fieldValue, out decimal totalGsm))
+                                item.TotalGSM = totalGsm;
+                            break;
+                    }
                 }
             }
         }
 
-        return items.ToList();
+        return itemsList;
     }
 
     public async Task<bool> SoftDeleteItemAsync(int itemId)
     {
-        var query = @"
-            UPDATE ItemMaster 
-            SET IsDeletedTransaction = 1
-            WHERE ItemID = @ItemId";
+        try 
+        {
+            var query = @"
+                UPDATE ItemMaster 
+                SET IsDeletedTransaction = 1
+                WHERE ItemID = @ItemId;
 
-        var rowsAffected = await _connection.ExecuteAsync(query, new { ItemId = itemId });
-        return rowsAffected > 0;
+                UPDATE ItemMasterDetails
+                SET IsDeletedTransaction = 1
+                WHERE ItemID = @ItemId;";
+
+            var rowsAffected = await _connection.ExecuteAsync(query, new { ItemId = itemId });
+            return rowsAffected > 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ItemService] Error in SoftDeleteItemAsync: {ex.Message}");
+            throw; // Re-throw to ensure controller catches it and returns 500
+        }
     }
 
     public async Task<ItemValidationResultDto> ValidateItemsAsync(List<ItemMasterDto> items, int itemGroupId)
@@ -221,7 +257,7 @@ public class ItemService : IItemService
 
         // Get valid Packing Types
         var validPackingTypes = new HashSet<string>(
-            new[] { "Ream", "Box", "Bundle", "Carton", "Pallet", "Roll", "Sheet" }
+            new[] { "Ream", "Packet", "Sheet" , "Gross"}
         );
 
         // Get valid Item Sub Groups (dynamic from ItemGroupFieldMaster)
@@ -230,6 +266,20 @@ public class ItemService : IItemService
             validItemSubGroups.Select(sg => sg.ItemSubGroupName.Trim()),
             StringComparer.OrdinalIgnoreCase
         );
+
+        // Get field metadata from ItemGroupFieldMaster for dynamic datatype validation
+        var fieldMetadataQuery = @"SELECT FieldName, FieldDataType
+            FROM ItemGroupFieldMaster
+            WHERE ItemGroupID = @ItemGroupID
+              AND ISNULL(IsDeletedTransaction, 0) <> 1
+              AND FieldName IS NOT NULL
+              AND FieldDataType IS NOT NULL";
+        var fieldMetadata = (await _connection.QueryAsync<dynamic>(fieldMetadataQuery, new { ItemGroupID = itemGroupId }))
+            .ToDictionary(
+                f => (string)f.FieldName,
+                f => ((string)f.FieldDataType).Trim().ToLower(),
+                StringComparer.OrdinalIgnoreCase
+            );
 
         // Item group-specific required fields
         string[] requiredFields;
@@ -259,6 +309,14 @@ public class ItemService : IItemService
             };
         }
         else if (itemGroupId == 5) // LAMINATION FILM
+        {
+            requiredFields = new[] {
+                "Quality", "ItemSubGroupName",
+                "PurchaseUnit", "PurchaseRate", "EstimationUnit", "EstimationRate",
+                "StockUnit", "ProductHSNName"
+            };
+        }
+        else if (itemGroupId == 6) // FOIL
         {
             requiredFields = new[] {
                 "Quality", "ItemSubGroupName",
@@ -413,6 +471,21 @@ public class ItemService : IItemService
                            string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(thicknessA, thicknessB, StringComparison.OrdinalIgnoreCase);
                 }
+                else if (itemGroupId == 6) // FOIL: Quality + SizeW + Thickness
+                {
+                    var qualityA = a.Quality?.Trim() ?? "";
+                    var qualityB = b.Quality?.Trim() ?? "";
+
+                    var sizeWA = a.SizeW?.ToString() ?? "";
+                    var sizeWB = b.SizeW?.ToString() ?? "";
+
+                    var thicknessA = a.Thickness?.ToString() ?? "";
+                    var thicknessB = b.Thickness?.ToString() ?? "";
+
+                    return string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(thicknessA, thicknessB, StringComparison.OrdinalIgnoreCase);
+                }
                 else if (itemGroupId == 8) // OTHER MATERIAL: ItemSubGroupName + Quality + Manufacturer
                 {
                     var subGroupA = a.ItemSubGroupName?.Trim() ?? "";
@@ -553,7 +626,7 @@ public class ItemService : IItemService
             }
 
             // 4c. Check ItemSubGroupName mismatch (YELLOW) - for groups with ItemSubGroupName
-            if ((itemGroupId == 3 || itemGroupId == 4 || itemGroupId == 5 || itemGroupId == 8) && !string.IsNullOrWhiteSpace(item.ItemSubGroupName))
+            if ((itemGroupId == 3 || itemGroupId == 4 || itemGroupId == 5 || itemGroupId == 6 || itemGroupId == 8) && !string.IsNullOrWhiteSpace(item.ItemSubGroupName))
             {
                 var isValidSubGroup = itemSubGroupLookup.Contains(item.ItemSubGroupName.Trim());
 
@@ -610,6 +683,85 @@ public class ItemService : IItemService
                     {
                         ColumnName = prop.Name,
                         ValidationMessage = "Special characters are found in this row and column.",
+                        Status = ValidationStatus.InvalidContent
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                        rowValidation.RowStatus = ValidationStatus.InvalidContent;
+
+                    hasInvalidContent = true;
+                }
+            }
+
+            // 6. Dynamic datatype validation from ItemGroupFieldMaster (InvalidContent - PURPLE)
+            foreach (var fieldEntry in fieldMetadata)
+            {
+                var fieldName = fieldEntry.Key;
+                var fieldDataType = fieldEntry.Value;
+
+                var rawValue = GetPropertyValue(item, fieldName);
+                if (rawValue == null) continue;
+
+                var strValue = rawValue.ToString()?.Trim();
+                if (string.IsNullOrEmpty(strValue)) continue;
+
+                bool isValid = true;
+                string validationMsg = "";
+
+                switch (fieldDataType)
+                {
+                    case "integer":
+                    case "int":
+                        if (!long.TryParse(strValue, out _))
+                        {
+                            isValid = false;
+                            validationMsg = $"Invalid Content in {fieldName} — Only Integer values allowed.";
+                        }
+                        break;
+
+                    case "real":
+                    case "decimal":
+                    case "float":
+                    case "numeric":
+                    case "money":
+                        if (!decimal.TryParse(strValue, out _))
+                        {
+                            isValid = false;
+                            validationMsg = $"Invalid Content in {fieldName} — Only Numeric values allowed.";
+                        }
+                        break;
+
+                    case "bit":
+                    case "boolean":
+                        var boolValues = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                            { "true", "false", "0", "1", "yes", "no" };
+                        if (!boolValues.Contains(strValue))
+                        {
+                            isValid = false;
+                            validationMsg = $"Invalid Content in {fieldName} — Only True/False values allowed.";
+                        }
+                        break;
+
+                    case "date":
+                    case "datetime":
+                        if (!DateTime.TryParse(strValue, out _))
+                        {
+                            isValid = false;
+                            validationMsg = $"Invalid Content in {fieldName} — Only valid Date values allowed.";
+                        }
+                        break;
+
+                    // varchar, string, nvarchar, text — no numeric validation needed
+                    default:
+                        break;
+                }
+
+                if (!isValid)
+                {
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = fieldName,
+                        ValidationMessage = validationMsg,
                         Status = ValidationStatus.InvalidContent
                     });
 
@@ -697,6 +849,22 @@ public class ItemService : IItemService
 
             int successCount = 0;
 
+            // Prepare DataTable for Bulk Insert of Details
+            var detailsTable = new System.Data.DataTable();
+            detailsTable.Columns.Add("ItemID", typeof(int));
+            detailsTable.Columns.Add("ParentFieldName", typeof(string));
+            detailsTable.Columns.Add("ParentFieldValue", typeof(string));
+            detailsTable.Columns.Add("FieldName", typeof(string));
+            detailsTable.Columns.Add("FieldValue", typeof(string));
+            detailsTable.Columns.Add("SequenceNo", typeof(int));
+            detailsTable.Columns.Add("ItemGroupID", typeof(int));
+            detailsTable.Columns.Add("CompanyID", typeof(int));
+            detailsTable.Columns.Add("UserID", typeof(int));
+            detailsTable.Columns.Add("FYear", typeof(string));
+            detailsTable.Columns.Add("CreatedBy", typeof(int));
+            detailsTable.Columns.Add("CreatedDate", typeof(DateTime));
+            detailsTable.Columns.Add("IsDeletedTransaction", typeof(bool));
+
             var insertMasterSql = @"
                 INSERT INTO ItemMaster (
                     ItemName, ItemCode, MaxItemNo, ItemCodePrefix, ItemGroupID, ProductHSNID,
@@ -726,14 +894,7 @@ public class ItemService : IItemService
                     @ISItemActive, @CompanyID, @UserID, @FYear, @CreatedBy, @CreatedDate, 0
                 )";
 
-            var insertDetailSql = @"
-                INSERT INTO ItemMasterDetails (
-                    ItemID, ParentFieldName, ParentFieldValue, FieldName, FieldValue, SequenceNo,
-                    ItemGroupID, CompanyID, UserID, FYear, CreatedBy, CreatedDate, IsDeletedTransaction
-                ) VALUES (
-                    @ItemID, @ParentFieldName, @ParentFieldValue, @FieldName, @FieldValue, @SequenceNo,
-                    @ItemGroupID, @CompanyID, @UserID, @FYear, @CreatedBy, @CreatedDate, 0
-                )";
+
 
             foreach (var item in items)
             {
@@ -766,7 +927,7 @@ public class ItemService : IItemService
 
                 // Use provided ItemType or derive from context
                 string itemType = item.ItemType ?? item.StockCategory?.ToUpper() ??
-                    (itemGroupId == 4 ? "Varnish" : itemGroupId == 5 ? "LAMINATION FILM" : itemGroupId == 8 ? "OTHER MATERIAL" : itemGroupId == 13 ? "Paper" : "PAPER");
+                    (itemGroupId == 4 ? "Varnish" : itemGroupId == 5 ? "LAMINATION FILM" : itemGroupId == 6 ? "FOIL" : itemGroupId == 8 ? "OTHER MATERIAL" : itemGroupId == 13 ? "Paper" : "PAPER");
 
                 // Lookup ProductHSNID
                 int productHSNID = 0;
@@ -931,27 +1092,53 @@ public class ItemService : IItemService
                 // Add ISItemActive as default
                 detailFields.Add(("ISItemActive", "True"));
 
-                // Insert all detail fields
+                // Add to Batch DataTable for Bulk Insert
                 foreach (var field in detailFields)
                 {
-                    await _connection.ExecuteAsync(insertDetailSql, new
-                    {
-                        ItemID = newItemId,
-                        ParentFieldName = field.FieldName,
-                        ParentFieldValue = field.FieldValue,
-                        FieldName = field.FieldName,
-                        FieldValue = field.FieldValue,
-                        SequenceNo = seq++,
-                        ItemGroupID = itemGroupId,
-                        CompanyID = 2,
-                        UserID = 2,
-                        FYear = "2025-2026",
-                        CreatedBy = 2,
-                        CreatedDate = DateTime.Now
-                    }, transaction: transaction);
+                    detailsTable.Rows.Add(
+                        newItemId,
+                        field.FieldName, // ParentFieldName
+                        field.FieldValue, // ParentFieldValue
+                        field.FieldName, // FieldName
+                        field.FieldValue, // FieldValue
+                        seq++, // SequenceNo
+                        itemGroupId,
+                        2, // CompanyID
+                        2, // UserID
+                        "2025-2026", // FYear
+                        2, // CreatedBy
+                        DateTime.Now,
+                        0 // IsDeletedTransaction
+                    );
                 }
 
                 successCount++;
+            }
+
+            // Perform Bulk Insert for Details
+            if (detailsTable.Rows.Count > 0)
+            {
+                using (var bulkCopy = new SqlBulkCopy(_connection, SqlBulkCopyOptions.Default, transaction as SqlTransaction))
+                {
+                    bulkCopy.DestinationTableName = "ItemMasterDetails";
+                    
+                    // Add Column Mappings to ensure correct mapping
+                    bulkCopy.ColumnMappings.Add("ItemID", "ItemID");
+                    bulkCopy.ColumnMappings.Add("ParentFieldName", "ParentFieldName");
+                    bulkCopy.ColumnMappings.Add("ParentFieldValue", "ParentFieldValue");
+                    bulkCopy.ColumnMappings.Add("FieldName", "FieldName");
+                    bulkCopy.ColumnMappings.Add("FieldValue", "FieldValue");
+                    bulkCopy.ColumnMappings.Add("SequenceNo", "SequenceNo");
+                    bulkCopy.ColumnMappings.Add("ItemGroupID", "ItemGroupID");
+                    bulkCopy.ColumnMappings.Add("CompanyID", "CompanyID");
+                    bulkCopy.ColumnMappings.Add("UserID", "UserID");
+                    bulkCopy.ColumnMappings.Add("FYear", "FYear");
+                    bulkCopy.ColumnMappings.Add("CreatedBy", "CreatedBy");
+                    bulkCopy.ColumnMappings.Add("CreatedDate", "CreatedDate");
+                    bulkCopy.ColumnMappings.Add("IsDeletedTransaction", "IsDeletedTransaction");
+
+                    await bulkCopy.WriteToServerAsync(detailsTable);
+                }
             }
 
             await transaction.CommitAsync();
