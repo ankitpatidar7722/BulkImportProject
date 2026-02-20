@@ -464,6 +464,19 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 }
 
                 return item;
+            }).filter(item => {
+                // Remove empty rows: check if any core Excel-sourced field has a real value
+                // These are fields that come directly from Excel (not defaults like shelfLife=365)
+                const hasData = !!(
+                    item.quality || item.gsm || item.manufecturer || item.finish ||
+                    item.manufecturerItemCode || item.sizeW || item.sizeL ||
+                    item.purchaseUnit || item.purchaseRate || item.stockUnit ||
+                    item.estimationUnit || item.estimationRate || item.productHSNName ||
+                    item.hsnGroup || item.itemSubGroupName || item.inkColour ||
+                    item.pantoneCode || item.bf || item.thickness || item.density ||
+                    item.releaseGSM || item.adhesiveGSM
+                );
+                return hasData;
             });
 
             if (isExistingUpload && itemData.length > 0) {
@@ -484,6 +497,54 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         }
     };
 
+    // Reusable: clean item data for API — extracts invalid numeric/bool values into rawValues
+    const cleanItemDataForApi = useCallback((data: any[]) => {
+        const numericFields = new Set([
+            'gsm', 'sizeW', 'sizeL', 'purchaseRate', 'caliper', 'estimationRate',
+            'minimumStockQty', 'unitPerPacking', 'wtPerPacking', 'conversionFactor',
+            'shelfLife', 'purchaseOrderQuantity', 'thickness', 'density',
+            'releaseGSM', 'adhesiveGSM', 'totalGSM'
+        ]);
+        const boolFields = new Set(['isStandardItem', 'isRegularItem']);
+
+        return data.map(item => {
+            const { hsnCode, ...rest } = item;
+            const cleaned: any = {};
+            const rawValues: Record<string, string> = {};
+
+            Object.keys(rest).forEach(key => {
+                const value = (rest as any)[key];
+                if (value === undefined || value === null || value === '') {
+                    return; // skip
+                }
+
+                if (numericFields.has(key)) {
+                    const strVal = String(value).trim();
+                    if (strVal === '') return;
+                    if (!isNaN(Number(strVal)) && strVal !== '') {
+                        cleaned[key] = Number(strVal);
+                    } else {
+                        rawValues[key] = strVal;
+                    }
+                } else if (boolFields.has(key)) {
+                    const strVal = String(value).trim().toLowerCase();
+                    if (['true', 'false', '1', '0', 'yes', 'no'].includes(strVal)) {
+                        cleaned[key] = strVal === 'true' || strVal === '1' || strVal === 'yes';
+                    } else {
+                        rawValues[key] = String(value).trim();
+                    }
+                } else {
+                    cleaned[key] = value;
+                }
+            });
+
+            if (Object.keys(rawValues).length > 0) {
+                cleaned.rawValues = rawValues;
+            }
+            return cleaned;
+        });
+    }, []);
+
     const handleCheckValidation = async () => {
         if (itemData.length === 0) {
             toast.error('No data to validate');
@@ -495,19 +556,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
         setIsLoading(true);
         try {
-            // Remove hsnCode and undefined/null values from items before sending
-            const cleanedData = itemData.map(item => {
-                const { hsnCode, ...rest } = item;
-                // Remove undefined and null values to avoid JSON serialization issues
-                const cleaned: any = {};
-                Object.keys(rest).forEach(key => {
-                    const value = (rest as any)[key];
-                    if (value !== undefined && value !== null) {
-                        cleaned[key] = value;
-                    }
-                });
-                return cleaned;
-            });
+            const cleanedData = cleanItemDataForApi(itemData);
 
             const result = await validateItems(cleanedData, itemGroupId);
             setValidationResult(result);
@@ -577,8 +626,9 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
         setIsLoading(true);
         try {
-            // 1. Full Re-Validation
-            const result = await validateItems(itemData, itemGroupId);
+            // 1. Full Re-Validation (with same cleaning as Check Validation)
+            const cleanedForValidation = cleanItemDataForApi(itemData);
+            const result = await validateItems(cleanedForValidation, itemGroupId);
             setValidationResult(result);
 
             if (!result.isValid) {
@@ -631,22 +681,9 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 return;
             }
 
-            // 3. Import
-            // Remove hsnCode and undefined/null values from items before sending
-            const cleanedData = itemData.map(item => {
-                const { hsnCode, ...rest } = item;
-                // Remove undefined and null values to avoid JSON serialization issues
-                const cleaned: any = {};
-                Object.keys(rest).forEach(key => {
-                    const value = (rest as any)[key];
-                    if (value !== undefined && value !== null) {
-                        cleaned[key] = value;
-                    }
-                });
-                return cleaned;
-            });
+            // 3. Import (use same cleaning — at this point all values are valid after validation passed)
+            const cleanedData = cleanItemDataForApi(itemData);
 
-            console.log('[ItemImport] Sending data:', cleanedData);
             console.log('[ItemImport] Sending data:', cleanedData);
             const importRes = await importItems(cleanedData, itemGroupId);
 
@@ -1896,79 +1933,93 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         gridApi?.onFilterChanged();
     }, [filterType, gridApi]);
 
-    // Add cellStyle to all columns for validation highlighting
+    // Helper: find matching CellValidation for a column
+    const findCellValidation = useCallback((rowValidation: ItemRowValidation | undefined, colField: string | undefined, colHeader: string | undefined) => {
+        if (!rowValidation?.cellValidations || rowValidation.cellValidations.length === 0) return null;
+
+        // Try match by headerName (exact)
+        let cellVal = rowValidation.cellValidations.find((cv: any) => cv.columnName === colHeader);
+
+        // Try match by field name (case-insensitive, handles camelCase vs PascalCase)
+        if (!cellVal && colField) {
+            cellVal = rowValidation.cellValidations.find((cv: any) =>
+                cv.columnName?.toLowerCase() === colField.toLowerCase()
+            );
+        }
+
+        // Try match by headerName (case-insensitive)
+        if (!cellVal && colHeader) {
+            cellVal = rowValidation.cellValidations.find((cv: any) =>
+                cv.columnName?.toLowerCase() === colHeader.toLowerCase()
+            );
+        }
+
+        return cellVal || null;
+    }, []);
+
+    // Add cellStyle + tooltipValueGetter to all columns for validation highlighting
     const columnsWithStyle = useMemo(() => {
         return columnDefs.map(col => {
             if (!col.field) return col;
 
             return {
                 ...col,
-                cellStyle: (params: any) => {
-                    // Use data index for stable lookup (node.rowIndex changes with filter/sort)
+                tooltipValueGetter: (params: any) => {
+                    const rowIndex = itemData.indexOf(params.data);
+                    if (rowIndex === -1) return null;
+                    const rowValidation = validationMap.get(rowIndex);
+                    if (!rowValidation) return null;
+
+                    const cellVal = findCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
+                    if (cellVal) return cellVal.validationMessage;
+
+                    // Row-level tooltip for duplicates
+                    if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
+                        return rowValidation.errorMessage || 'Duplicate row detected';
+                    }
+                    return null;
+                },
+                cellStyle: (params: any): Record<string, string> | null => {
                     const rowIndex = itemData.indexOf(params.data);
                     if (rowIndex === -1) return null;
 
-                    // Color mapping for validation status
                     const colors = {
-                        duplicate: isDark ? 'rgba(220, 38, 38, 0.2)' : '#fee2e2',     // Red
-                        missing: isDark ? 'rgba(37, 99, 235, 0.2)' : '#dbeafe',       // Blue
-                        mismatch: isDark ? 'rgba(202, 138, 4, 0.2)' : '#fef9c3',      // Yellow
-                        invalid: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff'       // Purple
+                        duplicate: isDark ? 'rgba(220, 38, 38, 0.2)' : '#fee2e2',
+                        missing: isDark ? 'rgba(37, 99, 235, 0.2)' : '#dbeafe',
+                        mismatch: isDark ? 'rgba(202, 138, 4, 0.2)' : '#fef9c3',
+                        invalid: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff'
                     };
 
-                    // Get row validation from map
                     const rowValidation = validationMap.get(rowIndex);
-
-                    // Debug logging
-                    if (rowIndex === 0 && col.headerName === 'Quality') {
-                        console.log('[CellStyle Debug] Row 0, Quality column:', {
-                            rowValidation,
-                            cellValidations: rowValidation?.cellValidations,
-                            validationMapSize: validationMap.size
-                        });
-                    }
 
                     // Row style for duplicate
                     if (rowValidation?.rowStatus === ValidationStatus.Duplicate) {
                         return { backgroundColor: colors.duplicate };
                     }
 
-                    // Cell specific style - match by headerName
-                    const colHeader = params.colDef.headerName;
-                    if (rowValidation?.cellValidations) {
-                        // Try exact match first
-                        let cellVal = rowValidation.cellValidations.find((cv: any) => cv.columnName === colHeader);
-
-                        // If not found, try case-insensitive match
-                        if (!cellVal && colHeader) {
-                            cellVal = rowValidation.cellValidations.find((cv: any) =>
-                                cv.columnName?.toLowerCase() === colHeader.toLowerCase()
-                            );
+                    // Cell specific style - match by headerName AND field
+                    const cellVal = findCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
+                    if (cellVal) {
+                        const status = cellVal.status;
+                        if (status === ValidationStatus.MissingData) {
+                            return { backgroundColor: colors.missing };
                         }
-
-                        if (cellVal) {
-                            // Check status using both string comparison and enum comparison
-                            const status = cellVal.status;
-
-                            if (status === ValidationStatus.MissingData) {
-                                console.log(`[CellStyle] Applying BLUE to ${colHeader} at row ${rowIndex}`);
-                                return { backgroundColor: colors.missing };
-                            }
-                            if (status === ValidationStatus.Mismatch) {
-                                console.log(`[CellStyle] Applying YELLOW to ${colHeader} at row ${rowIndex}`);
-                                return { backgroundColor: colors.mismatch };
-                            }
-                            if (status === ValidationStatus.InvalidContent) {
-                                console.log(`[CellStyle] Applying PURPLE to ${colHeader} at row ${rowIndex}`);
-                                return { backgroundColor: colors.invalid };
-                            }
+                        if (status === ValidationStatus.Mismatch) {
+                            return { backgroundColor: colors.mismatch };
+                        }
+                        if (status === ValidationStatus.InvalidContent) {
+                            return {
+                                backgroundColor: colors.invalid,
+                                borderBottom: '2px solid #9333ea',
+                                borderRight: '2px solid #9333ea'
+                            };
                         }
                     }
                     return null;
                 }
             };
         });
-    }, [columnDefs, validationMap, isDark, itemData]);
+    }, [columnDefs, validationMap, isDark, itemData, findCellValidation]);
 
     return (
         <div className="space-y-4">
@@ -2194,10 +2245,44 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         }
                         {validationResult.summary.invalidContentCount > 0 &&
                             <span className="ml-2 text-purple-600 dark:text-purple-400 font-bold">
-                                ⚠️ Special characters found! Please remove single/double quotes.
+                                ⚠️ {validationResult.summary.invalidContentCount} row(s) have invalid content! Hover over purple cells for details.
                             </span>
                         }
                     </p>
+
+                    {/* Detailed Invalid Content Errors */}
+                    {filterType === 'invalid' && validationResult.summary.invalidContentCount > 0 && (
+                        <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg max-h-48 overflow-y-auto">
+                            <h4 className="text-sm font-semibold text-purple-800 dark:text-purple-300 mb-2">Invalid Content Details:</h4>
+                            <div className="space-y-1">
+                                {validationResult.rows
+                                    .filter((row: ItemRowValidation) => row.rowStatus === ValidationStatus.InvalidContent)
+                                    .flatMap((row: ItemRowValidation) =>
+                                        row.cellValidations
+                                            .filter((cv: any) => cv.status === ValidationStatus.InvalidContent)
+                                            .map((cv: any, idx: number) => (
+                                                <div key={`${row.rowIndex}-${idx}`} className="text-sm text-purple-700 dark:text-purple-300 flex items-start gap-2">
+                                                    <span className="font-mono text-xs bg-purple-100 dark:bg-purple-800 px-1.5 py-0.5 rounded min-w-[60px] text-center">
+                                                        Row {row.rowIndex + 1}
+                                                    </span>
+                                                    <span>{cv.validationMessage}</span>
+                                                </div>
+                                            ))
+                                    )
+                                    .slice(0, 50)
+                                }
+                                {validationResult.rows
+                                    .filter((row: ItemRowValidation) => row.rowStatus === ValidationStatus.InvalidContent)
+                                    .reduce((count: number, row: ItemRowValidation) =>
+                                        count + row.cellValidations.filter((cv: any) => cv.status === ValidationStatus.InvalidContent).length, 0
+                                    ) > 50 && (
+                                    <div className="text-xs text-purple-500 dark:text-purple-400 italic mt-1">
+                                        ...and more. Hover over purple cells in the grid for individual error details.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -2305,6 +2390,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         pagination={true}
                         paginationPageSize={20}
                         paginationPageSizeSelector={[20, 50, 100]}
+                        tooltipShowDelay={300}
+                        tooltipInteraction={true}
                         overlayNoRowsTemplate='<span class="text-gray-500 dark:text-gray-400 text-lg">No records found</span>'
                     />
                 </div>

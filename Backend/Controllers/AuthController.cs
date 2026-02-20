@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using BulkImport.DTOs;
-using BulkImport.Services;
+using Backend.DTOs;
+using Backend.Services;
 using System.Security.Claims;
 
-namespace BulkImport.Controllers;
+namespace Backend.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]

@@ -1,5 +1,4 @@
 using Backend.Services;
-using BulkImport.Services;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -81,10 +80,10 @@ builder.Services.AddScoped<SqlConnection>(sp =>
         return new SqlConnection(defaultConn);
     }
     
-    // If neither session nor default connection is available, we cannot proceed.
-    // Instead of failing immediately here (which might break startup), let's return a closed connection 
-    // or throw a specific exception when Open() is attempted, but for now throwing here is safer to debug configuration issues.
-    throw new InvalidOperationException("No valid database connection string found in Session or Configuration (DefaultConnection is missing).");
+    // No session and no DefaultConnection - return empty connection.
+    // At startup (auto-migration) this is expected since no user is logged in yet.
+    // The try-catch blocks in migration code will handle the Open() failure gracefully.
+    return new SqlConnection();
 });
 
 // Register Application Services

@@ -66,6 +66,11 @@ public class ItemMasterDto
 
     // Dynamic fields from ItemMasterDetails
     public Dictionary<string, object?>? DynamicFields { get; set; }
+
+    // Raw string values for fields that failed client-side type parsing
+    // Key = field name (camelCase), Value = original string from Excel
+    // Used by validation to detect invalid content when typed fields are null
+    public Dictionary<string, string>? RawValues { get; set; }
 }
 
 public class ItemValidationResultDto

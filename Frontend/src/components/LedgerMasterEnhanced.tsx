@@ -419,48 +419,78 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         ];
     }, [ledgerGroupName, distinctCountries, countryStates, salesRepresentatives, departments, clients]);
 
+    // Helper: find matching CellValidation for a column
+    const findLedgerCellValidation = useCallback((rowValidation: LedgerRowValidation | undefined, colField: string | undefined, colHeader: string | undefined) => {
+        if (!rowValidation?.cellValidations || rowValidation.cellValidations.length === 0) return null;
+        // Match by headerName (exact)
+        let cellVal = rowValidation.cellValidations.find((cv: any) => cv.columnName === colHeader);
+        // Match by field name (case-insensitive)
+        if (!cellVal && colField) {
+            cellVal = rowValidation.cellValidations.find((cv: any) =>
+                cv.columnName?.toLowerCase() === colField.toLowerCase()
+            );
+        }
+        // Match by headerName (case-insensitive)
+        if (!cellVal && colHeader) {
+            cellVal = rowValidation.cellValidations.find((cv: any) =>
+                cv.columnName?.toLowerCase() === colHeader.toLowerCase()
+            );
+        }
+        return cellVal || null;
+    }, []);
+
     const defaultColDef = useMemo(() => {
         return {
             editable: () => mode === 'preview' || mode === 'validated',
-            sortable: false, // Disable sorting to keep index alignment with validationResult
-            filter: false, // Disable filtering for now
+            sortable: false,
+            filter: false,
             resizable: true,
             minWidth: 50,
-            cellStyle: (params: any) => {
-                // Use data index for stable lookup (node.rowIndex changes with filter/sort)
+            tooltipValueGetter: (params: any) => {
+                const rowIndex = ledgerData.indexOf(params.data);
+                if (rowIndex === -1) return null;
+                const rowValidation = validationMap.get(rowIndex);
+                if (!rowValidation) return null;
+                const cellVal = findLedgerCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
+                if (cellVal) return cellVal.validationMessage;
+                if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
+                    return rowValidation.errorMessage || 'Duplicate row detected';
+                }
+                return null;
+            },
+            cellStyle: (params: any): Record<string, string> | null => {
                 const rowIndex = ledgerData.indexOf(params.data);
                 if (rowIndex === -1) return null;
 
-                // Color mapping for validation status
                 const colors = {
-                    duplicate: isDark ? 'rgba(220, 38, 38, 0.2)' : '#fee2e2',     // Red
-                    missing: isDark ? 'rgba(37, 99, 235, 0.2)' : '#dbeafe',       // Blue
-                    mismatch: isDark ? 'rgba(202, 138, 4, 0.2)' : '#fef9c3',      // Yellow
-                    invalid: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff'       // Purple
+                    duplicate: isDark ? 'rgba(220, 38, 38, 0.2)' : '#fee2e2',
+                    missing: isDark ? 'rgba(37, 99, 235, 0.2)' : '#dbeafe',
+                    mismatch: isDark ? 'rgba(202, 138, 4, 0.2)' : '#fef9c3',
+                    invalid: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff'
                 };
 
-                // Get row validation from map
                 const rowValidation = validationMap.get(rowIndex);
 
-                // row style for duplicate from validation
                 if (rowValidation?.rowStatus === ValidationStatus.Duplicate) {
                     return { backgroundColor: colors.duplicate };
                 }
 
-                // cell specific style
-                const colHeader = params.colDef.headerName; // This must match the validation column name (PascalCase)
-                if (rowValidation?.cellValidations) {
-                    const cellVal = rowValidation.cellValidations.find((cv: any) => cv.columnName === colHeader);
-                    if (cellVal) {
-                        if (cellVal.status === ValidationStatus.MissingData) return { backgroundColor: colors.missing };
-                        if (cellVal.status === ValidationStatus.Mismatch) return { backgroundColor: colors.mismatch };
-                        if (cellVal.status === ValidationStatus.InvalidContent) return { backgroundColor: colors.invalid };
+                const cellVal = findLedgerCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
+                if (cellVal) {
+                    if (cellVal.status === ValidationStatus.MissingData) return { backgroundColor: colors.missing };
+                    if (cellVal.status === ValidationStatus.Mismatch) return { backgroundColor: colors.mismatch };
+                    if (cellVal.status === ValidationStatus.InvalidContent) {
+                        return {
+                            backgroundColor: colors.invalid,
+                            borderBottom: '2px solid #9333ea',
+                            borderRight: '2px solid #9333ea'
+                        };
                     }
                 }
                 return null;
             }
         };
-    }, [mode, validationMap, isDark, ledgerData]);
+    }, [mode, validationMap, isDark, ledgerData, findLedgerCellValidation]);
 
     const handleCellEdit = useCallback((rowIndex: number, field: keyof LedgerMasterDto, newValue: any) => {
         setLedgerData(prevData => {
@@ -789,42 +819,52 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
                     const mailingAddress = addressParts.join(', ');
 
+                    // Helper to safely convert to string
+                    const toStr = (v: any) => (v !== undefined && v !== null && v !== '') ? String(v) : undefined;
+
                     return {
                         ledgerGroupID: ledgerGroupId,
-                        ledgerName: row.LedgerName,
-                        mailingName: row.MailingName,
-                        legalName: legalName ? String(legalName) : undefined,
+                        ledgerName: toStr(row.LedgerName),
+                        mailingName: toStr(row.MailingName),
+                        legalName: toStr(legalName),
                         mailingAddress: mailingAddress,
-                        address1: row.Address1 !== undefined && row.Address1 !== null ? String(row.Address1) : undefined,
-                        address2: row.Address2 !== undefined && row.Address2 !== null ? String(row.Address2) : undefined,
-                        address3: row.Address3 !== undefined && row.Address3 !== null ? String(row.Address3) : undefined,
-                        country: country,
-                        state: state,
-                        city: row.City,
-                        pincode: row.Pincode ? String(row.Pincode) : undefined,
-                        telephoneNo: row.TelephoneNo ? String(row.TelephoneNo) : undefined,
-                        email: row.Email ? String(row.Email) : undefined,
-                        mobileNo: row.MobileNo ? String(row.MobileNo) : undefined,
-                        website: row.Website ? String(row.Website) : undefined,
-                        panNo: row.PANNo ? String(row.PANNo) : undefined,
-                        gstNo: row.GSTNo ? String(row.GSTNo) : undefined,
-                        salesRepresentative: row.SalesRepresentative ? String(row.SalesRepresentative) : undefined,
+                        address1: toStr(row.Address1),
+                        address2: toStr(row.Address2),
+                        address3: toStr(row.Address3),
+                        country: toStr(country),
+                        state: toStr(state),
+                        city: toStr(row.City),
+                        pincode: toStr(row.Pincode),
+                        telephoneNo: toStr(row.TelephoneNo),
+                        email: toStr(row.Email),
+                        mobileNo: toStr(row.MobileNo),
+                        website: toStr(row.Website),
+                        panNo: toStr(row.PANNo),
+                        gstNo: toStr(row.GSTNo),
+                        salesRepresentative: toStr(row.SalesRepresentative),
                         supplyTypeCode: String(supplyTypeCode),
                         gstApplicable: gstApplicable,
                         refCode: String(refCode),
                         gstRegistrationType: String(gstRegistrationType),
                         creditDays: creditDays,
                         deliveredQtyTolerance: (row.DeliveredQtyTolerance && !isNaN(parseFloat(row.DeliveredQtyTolerance))) ? parseFloat(row.DeliveredQtyTolerance) : undefined,
-                        currencyCode: row.CurrencyCode ? String(row.CurrencyCode) : undefined,
+                        currencyCode: toStr(row.CurrencyCode),
 
                         // Employee Fields
-                        departmentName: departmentName ? String(departmentName) : undefined,
-                        designation: designation ? String(designation) : undefined,
-                        dateOfBirth: dateOfBirth ? String(dateOfBirth) : undefined,
+                        departmentName: toStr(departmentName),
+                        designation: toStr(designation),
+                        dateOfBirth: toStr(dateOfBirth),
 
                         // Consignee Fields
-                        clientName: clientName ? String(clientName) : undefined
+                        clientName: toStr(clientName)
                     };
+                }).filter(item => {
+                    // Remove empty rows: check if any core field has actual data
+                    return !!(
+                        item.ledgerName || item.mailingName || item.address1 ||
+                        item.city || item.gstNo || item.mobileNo || item.email ||
+                        item.panNo || item.clientName || item.departmentName
+                    );
                 });
 
                 setLedgerData(ledgers);
@@ -838,6 +878,47 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         reader.readAsBinaryString(file);
     };
 
+    // Reusable: clean ledger data for API — extracts invalid numeric/bool values into rawValues
+    const cleanLedgerDataForApi = useCallback((data: any[]) => {
+        const numericFields = new Set(['deliveredQtyTolerance', 'distance', 'creditDays']);
+        const boolFields = new Set(['gstApplicable']);
+
+        return data.map(item => {
+            const cleaned: any = {};
+            const rawValues: Record<string, string> = {};
+
+            Object.keys(item).forEach(key => {
+                const value = item[key];
+                if (value === undefined || value === null || value === '') return;
+
+                if (numericFields.has(key)) {
+                    const strVal = String(value).trim();
+                    if (strVal === '') return;
+                    if (!isNaN(Number(strVal))) {
+                        cleaned[key] = Number(strVal);
+                    } else {
+                        rawValues[key] = strVal;
+                    }
+                } else if (boolFields.has(key)) {
+                    const strVal = String(value).trim().toLowerCase();
+                    if (['true', 'false', '1', '0', 'yes', 'no'].includes(strVal)) {
+                        cleaned[key] = strVal === 'true' || strVal === '1' || strVal === 'yes';
+                    } else {
+                        rawValues[key] = String(value).trim();
+                    }
+                } else {
+                    // Ensure all string fields are sent as strings
+                    cleaned[key] = typeof value === 'number' ? String(value) : value;
+                }
+            });
+
+            if (Object.keys(rawValues).length > 0) {
+                cleaned.rawValues = rawValues;
+            }
+            return cleaned;
+        });
+    }, []);
+
     const handleCheckValidation = async () => {
         if (ledgerData.length === 0) {
             showError('No data to validate');
@@ -848,7 +929,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         setValidationResult(null); // Reset UI first
 
         try {
-            const result = await validateLedgers(ledgerData, ledgerGroupId);
+            const cleanedData = cleanLedgerDataForApi(ledgerData);
+            const result = await validateLedgers(cleanedData, ledgerGroupId);
             setValidationResult(result);
 
             if (result.isValid) {
@@ -911,8 +993,9 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
         setIsLoading(true);
         try {
-            // 1. Full Re-Validation
-            const result = await validateLedgers(ledgerData, ledgerGroupId);
+            // 1. Full Re-Validation (with same cleaning)
+            const cleanedForValidation = cleanLedgerDataForApi(ledgerData);
+            const result = await validateLedgers(cleanedForValidation, ledgerGroupId);
             setValidationResult(result);
 
             if (!result.isValid) {
@@ -960,9 +1043,9 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 return; // ABORT SAVE
             }
 
-            // 3. Perform Import
-            // 3. Perform Import
-            const importRes = await importLedgers(ledgerData, ledgerGroupId);
+            // 3. Perform Import (with cleaned data)
+            const cleanedForImport = cleanLedgerDataForApi(ledgerData);
+            const importRes = await importLedgers(cleanedForImport, ledgerGroupId);
 
             if (importRes.success) {
                 // Show success popup

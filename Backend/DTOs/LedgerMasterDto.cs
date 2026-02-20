@@ -37,6 +37,9 @@ public class LedgerMasterDto
     public DateTime? DateOfBirth { get; set; }
     public string? ClientName { get; set; }
     public int? RefClientID { get; set; }
+
+    // Raw string values for fields that failed client-side type parsing
+    public Dictionary<string, string>? RawValues { get; set; }
 }
 
 public class LedgerValidationResultDto

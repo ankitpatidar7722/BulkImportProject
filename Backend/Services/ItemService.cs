@@ -365,8 +365,15 @@ public class ItemService : IItemService
             bool hasInvalidContent = false;
 
             // 1. Check for missing data (BLUE)
+            // Note: If a field has an entry in RawValues, it means the frontend
+            // couldn't parse it as the expected type (e.g., "10A" for a decimal field).
+            // That field is NOT missing — it has invalid content, handled in step 6b.
             foreach (var field in requiredFields)
             {
+                // Skip missing check if RawValues has this field (it's invalid, not missing)
+                if (item.RawValues != null && item.RawValues.ContainsKey(field))
+                    continue;
+
                 var value = GetPropertyValue(item, field);
                 bool isMissing = false;
 
@@ -761,6 +768,60 @@ public class ItemService : IItemService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = fieldName,
+                        ValidationMessage = validationMsg,
+                        Status = ValidationStatus.InvalidContent
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                        rowValidation.RowStatus = ValidationStatus.InvalidContent;
+
+                    hasInvalidContent = true;
+                }
+            }
+
+            // 6b. Validate RawValues — fields where frontend couldn't parse the value
+            // These are original string values like "10A" for a decimal field
+            if (item.RawValues != null && item.RawValues.Count > 0)
+            {
+                foreach (var rawEntry in item.RawValues)
+                {
+                    var rawFieldName = rawEntry.Key;
+                    var rawValue = rawEntry.Value;
+
+                    // Look up expected data type from field metadata
+                    string expectedType = "unknown";
+                    if (fieldMetadata.TryGetValue(rawFieldName, out var fdt))
+                    {
+                        expectedType = fdt;
+                    }
+                    else
+                    {
+                        // Infer type from the DTO property type
+                        var prop = typeof(ItemMasterDto).GetProperty(rawFieldName);
+                        if (prop != null)
+                        {
+                            var underlyingType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                            if (underlyingType == typeof(decimal) || underlyingType == typeof(double) || underlyingType == typeof(float))
+                                expectedType = "decimal";
+                            else if (underlyingType == typeof(int) || underlyingType == typeof(long))
+                                expectedType = "integer";
+                            else if (underlyingType == typeof(bool))
+                                expectedType = "boolean";
+                        }
+                    }
+
+                    string validationMsg = expectedType switch
+                    {
+                        "integer" or "int" => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid Integer.",
+                        "real" or "decimal" or "float" or "numeric" or "money" => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid Number.",
+                        "bit" or "boolean" => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid True/False value.",
+                        "date" or "datetime" => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid Date.",
+                        _ => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid value."
+                    };
+
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = rawFieldName,
                         ValidationMessage = validationMsg,
                         Status = ValidationStatus.InvalidContent
                     });

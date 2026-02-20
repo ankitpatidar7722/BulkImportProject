@@ -1,11 +1,13 @@
 using Backend.DTOs;
 using Backend.Services;
 using Dapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Backend.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class CompanyController : ControllerBase

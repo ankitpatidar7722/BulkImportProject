@@ -162,8 +162,12 @@ public class LedgerService : ILedgerService
             bool hasMismatch = false;
 
             // 1. Check for missing data (BLUE)
+            // Note: Skip fields in RawValues — they have invalid content, not missing data
             foreach (var field in requiredFields)
             {
+                if (ledger.RawValues != null && ledger.RawValues.ContainsKey(field))
+                    continue;
+
                 var value = GetPropertyValue(ledger, field);
                 if (string.IsNullOrWhiteSpace(value?.ToString()))
                 {
@@ -173,10 +177,10 @@ public class LedgerService : ILedgerService
                         ValidationMessage = $"{field} is required",
                         Status = ValidationStatus.MissingData
                     });
-                    
+
                     if (rowValidation.RowStatus != ValidationStatus.Duplicate)
                         rowValidation.RowStatus = ValidationStatus.MissingData;
-                    
+
                     hasMissingData = true;
                 }
             }
@@ -384,6 +388,59 @@ public class LedgerService : ILedgerService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = fieldName,
+                        ValidationMessage = validationMsg,
+                        Status = ValidationStatus.InvalidContent
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                        rowValidation.RowStatus = ValidationStatus.InvalidContent;
+
+                    hasInvalidContent = true;
+                }
+            }
+
+            // 5b. Validate RawValues — fields where frontend couldn't parse the value
+            if (ledger.RawValues != null && ledger.RawValues.Count > 0)
+            {
+                foreach (var rawEntry in ledger.RawValues)
+                {
+                    var rawFieldName = rawEntry.Key;
+                    var rawValue = rawEntry.Value;
+
+                    string expectedType = "unknown";
+                    if (fieldMetadata.TryGetValue(rawFieldName, out var fdt))
+                    {
+                        expectedType = fdt;
+                    }
+                    else
+                    {
+                        var prop = typeof(LedgerMasterDto).GetProperty(rawFieldName);
+                        if (prop != null)
+                        {
+                            var underlyingType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                            if (underlyingType == typeof(decimal) || underlyingType == typeof(double) || underlyingType == typeof(float))
+                                expectedType = "decimal";
+                            else if (underlyingType == typeof(int) || underlyingType == typeof(long))
+                                expectedType = "integer";
+                            else if (underlyingType == typeof(bool))
+                                expectedType = "boolean";
+                            else if (underlyingType == typeof(string))
+                                expectedType = "varchar";
+                        }
+                    }
+
+                    string validationMsg = expectedType switch
+                    {
+                        "integer" or "int" => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid Integer.",
+                        "real" or "decimal" or "float" or "numeric" or "money" => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid Number.",
+                        "bit" or "boolean" => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid True/False value.",
+                        "date" or "datetime" => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid Date.",
+                        _ => $"Invalid Content in {rawFieldName} — \"{rawValue}\" is not a valid value."
+                    };
+
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = rawFieldName,
                         ValidationMessage = validationMsg,
                         Status = ValidationStatus.InvalidContent
                     });
