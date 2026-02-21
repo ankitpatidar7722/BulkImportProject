@@ -837,6 +837,107 @@ export const clearAllItemData = async (username: string, password: string, reaso
     return response.data;
 };
 
+// ==================== TOOL MASTER API ====================
+
+export interface ToolGroupDto {
+    toolGroupID: number;
+    toolGroupName: string;
+    toolGroupNameDisplay?: string;
+}
+
+export interface ToolMasterDto {
+    toolID?: number;
+    toolName?: string;
+    toolCode?: string;
+    toolGroupID?: number;
+    toolGroupName?: string;
+    toolType?: string;
+    productHSNID?: number;
+    productHSNName?: string;
+    hsnCode?: string;
+    sizeL?: number;
+    sizeW?: number;
+    sizeH?: number;
+    upsAround?: number;
+    upsAcross?: number;
+    totalUps?: number;
+    purchaseUnit?: string;
+    purchaseRate?: number;
+    manufactuererItemCode?: string;
+    purchaseOrderQuantity?: number;
+    shelfLife?: number;
+    stockUnit?: string;
+    minimumStockQty?: number;
+    isStandardItem?: boolean;
+    isRegularItem?: boolean;
+    isDeletedTransaction?: boolean;
+}
+
+export interface ToolRowValidation {
+    rowIndex: number;
+    data: ToolMasterDto;
+    cellValidations: CellValidation[];
+    rowStatus: ValidationStatus;
+    errorMessage?: string;
+}
+
+export interface ToolValidationResultDto {
+    isValid: boolean;
+    rows: ToolRowValidation[];
+    summary: ValidationSummary;
+}
+
+export const getToolGroups = async (): Promise<ToolGroupDto[]> => {
+    const response = await api.get('/tool/groups');
+    return response.data;
+};
+
+export const getAllTools = async (toolGroupId: number): Promise<ToolMasterDto[]> => {
+    const response = await api.get(`/tool?toolGroupId=${toolGroupId}`);
+    return response.data;
+};
+
+export const getToolHSNGroups = async (): Promise<HSNGroupDto[]> => {
+    const response = await api.get('/tool/hsn-groups');
+    return response.data;
+};
+
+export const getToolUnits = async (): Promise<UnitDto[]> => {
+    const response = await api.get('/tool/units');
+    return response.data;
+};
+
+export const softDeleteTool = async (toolId: number): Promise<any> => {
+    const response = await api.delete(`/tool/${toolId}`);
+    return response.data;
+};
+
+export const validateTools = async (tools: ToolMasterDto[], toolGroupId: number): Promise<ToolValidationResultDto> => {
+    const response = await api.post('/tool/validate', {
+        tools,
+        toolGroupId
+    });
+    return response.data.validationResult;
+};
+
+export const importTools = async (tools: ToolMasterDto[], toolGroupId: number): Promise<ImportResultDto> => {
+    const response = await api.post('/tool/import', {
+        tools,
+        toolGroupId
+    });
+    return response.data;
+};
+
+export const clearAllToolData = async (username: string, password: string, reason: string, toolGroupId: number): Promise<any> => {
+    const response = await api.post('/tool/clear-all-data', {
+        username,
+        password,
+        reason,
+        toolGroupId
+    });
+    return response.data;
+};
+
 // ==================== AUTH API ====================
 
 export interface CompanyLoginRequest {

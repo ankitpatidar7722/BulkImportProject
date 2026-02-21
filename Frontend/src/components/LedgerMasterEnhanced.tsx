@@ -1398,6 +1398,40 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             <div className="text-lg font-bold text-purple-700 dark:text-purple-300 leading-none">{validationResult.summary.invalidContentCount ?? 0}</div>
                         </div>
                     </div>
+
+                    {/* Detailed Invalid Content Errors */}
+                    {filterType === 'invalid' && (validationResult.summary.invalidContentCount ?? 0) > 0 && (
+                        <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700 rounded-lg max-h-48 overflow-y-auto">
+                            <h4 className="text-sm font-semibold text-purple-800 dark:text-purple-300 mb-2">Invalid Content Details:</h4>
+                            <div className="space-y-1">
+                                {validationResult.rows
+                                    .filter((row: LedgerRowValidation) => row.rowStatus === ValidationStatus.InvalidContent)
+                                    .flatMap((row: LedgerRowValidation) =>
+                                        row.cellValidations
+                                            .filter((cv: any) => cv.status === ValidationStatus.InvalidContent)
+                                            .map((cv: any, idx: number) => (
+                                                <div key={`${row.rowIndex}-${idx}`} className="text-sm text-purple-700 dark:text-purple-300 flex items-start gap-2">
+                                                    <span className="font-mono text-xs bg-purple-100 dark:bg-purple-800 px-1.5 py-0.5 rounded min-w-[60px] text-center">
+                                                        Row {row.rowIndex + 1}
+                                                    </span>
+                                                    <span>{cv.validationMessage}</span>
+                                                </div>
+                                            ))
+                                    )
+                                    .slice(0, 50)
+                                }
+                                {validationResult.rows
+                                    .filter((row: LedgerRowValidation) => row.rowStatus === ValidationStatus.InvalidContent)
+                                    .reduce((count: number, row: LedgerRowValidation) =>
+                                        count + row.cellValidations.filter((cv: any) => cv.status === ValidationStatus.InvalidContent).length, 0
+                                    ) > 50 && (
+                                    <div className="text-xs text-purple-500 dark:text-purple-400 italic mt-1">
+                                        ...and more. Hover over purple cells in the grid for individual error details.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1555,6 +1589,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             paginationPageSizeSelector={[20, 50, 100]}
                             enableCellTextSelection={true}
                             ensureDomOrder={true}
+                            tooltipShowDelay={300}
+                            tooltipInteraction={true}
                             overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No records found</div>`}
                         />
                     </div>
