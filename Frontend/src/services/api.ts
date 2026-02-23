@@ -863,7 +863,7 @@ export interface ToolMasterDto {
     totalUps?: number;
     purchaseUnit?: string;
     purchaseRate?: number;
-    manufactuererItemCode?: string;
+    manufacturerItemCode?: string;
     purchaseOrderQuantity?: number;
     shelfLife?: number;
     stockUnit?: string;
@@ -988,3 +988,60 @@ export const logout = async (): Promise<void> => {
         // Ignore error if logout fails
     }
 };
+
+// ==========================================
+// RECORD COUNT CHECK HELPERS
+// Used by "Clear All Data" to decide whether to show "No Data found" popup
+// or run the full confirmation flow.
+// ==========================================
+
+/** Returns the number of ledger records for a given ledger group. */
+export const getLedgerCount = async (ledgerGroupId: number): Promise<number> => {
+    try {
+        const data = await getLedgersByGroup(ledgerGroupId);
+        return Array.isArray(data) ? data.length : 0;
+    } catch {
+        return 0;
+    }
+};
+
+/** Returns the number of item records for a given item group. */
+export const getItemCount = async (itemGroupId: number): Promise<number> => {
+    try {
+        const data = await getAllItems(itemGroupId);
+        return Array.isArray(data) ? data.length : 0;
+    } catch {
+        return 0;
+    }
+};
+
+/** Returns the number of tool records for a given tool group. */
+export const getToolCount = async (toolGroupId: number): Promise<number> => {
+    try {
+        const data = await getAllTools(toolGroupId);
+        return Array.isArray(data) ? data.length : 0;
+    } catch {
+        return 0;
+    }
+};
+
+/** Returns the number of spare part records in the database. */
+export const getSparePartCount = async (): Promise<number> => {
+    try {
+        const data = await getAllSpareParts();
+        return Array.isArray(data) ? data.length : 0;
+    } catch {
+        return 0;
+    }
+};
+
+/** Returns the number of HSN records in the database. */
+export const getHSNCount = async (companyId: number = 2): Promise<number> => {
+    try {
+        const data = await getHSNs(companyId);
+        return Array.isArray(data) ? data.length : 0;
+    } catch {
+        return 0;
+    }
+};
+

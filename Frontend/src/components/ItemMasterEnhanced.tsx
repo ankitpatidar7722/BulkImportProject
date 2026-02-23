@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import ClearSuccessPopup from './ClearSuccessPopup';
+import NoDataPopup from './NoDataPopup';
 import { Database, Trash2, Upload, Download, CheckCircle2, AlertCircle, FilePlus2, RefreshCw, ShieldAlert, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -13,6 +15,7 @@ import {
     ItemRowValidation,
     ValidationStatus,
     clearAllItemData,
+    getItemCount,
     HSNGroupDto,
     UnitDto,
     ItemSubGroupDto,
@@ -80,8 +83,14 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         setShowErrorModal(true);
     };
 
-    // Success Popup State
+    // Success Popup State (Import)
     const [successInfo, setSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
+
+    // Clear Success Popup State
+    const [clearSuccessInfo, setClearSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
+
+    // No Data Popup State
+    const [noDataPopupGroup, setNoDataPopupGroup] = useState<string | null>(null);
 
     // Generate CAPTCHA
     const generateCaptcha = () => {
@@ -691,7 +700,14 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 console.log('[ItemImport] Success:', importRes);
                 // Show success popup instead of toast
                 setSuccessInfo({ rowCount: importRes.importedRows ?? cleanedData.length, groupName: itemGroupName });
-                // Grid + state reset happens after user clicks OK
+
+                // If some rows failed, also show failed rows list after success popup
+                if (importRes.errorRows > 0 && importRes.errorMessages && importRes.errorMessages.length > 0) {
+                    setValidationModalContent({
+                        title: `${importRes.errorRows} Row(s) Failed During Import`,
+                        messages: importRes.errorMessages
+                    });
+                }
             } else {
                 if (importRes.errorMessages && importRes.errorMessages.length > 0) {
                     setValidationModalContent({
@@ -1133,42 +1149,20 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     };
 
     const handleClearAllDataTrigger = async (type: 'clearOnly' | 'freshUpload') => {
-        // If local data is present, proceed directly
-        if (itemData.length > 0) {
-            setClearActionType(type);
-            setClearFlowStep(1);
-            generateCaptcha();
-            return;
-        }
+        setClearActionType(type);
 
-        // If local data is empty, check DB first
-        setIsLoading(true);
-        try {
-            const data = await getAllItems(itemGroupId);
-            if (data.length === 0) {
-                if (type === 'clearOnly') {
-                    showError(`No data found in database against the selected ${itemGroupName}`);
-                } else {
-                    toast.success("Database is already empty. Proceeding to upload.");
-                    if (fileInputRef.current) {
-                        fileInputRef.current.value = '';
-                        fileInputRef.current.click();
-                    }
-                }
-                setIsLoading(false);
+        if (type === 'clearOnly') {
+            setIsLoading(true);
+            const count = await getItemCount(itemGroupId);
+            setIsLoading(false);
+
+            if (count === 0) {
+                setNoDataPopupGroup(`${itemGroupName} Item Group`);
                 return;
             }
-
-            // Data exists, proceed to confirmation
-            setClearActionType(type);
-            setClearFlowStep(1);
-            generateCaptcha();
-        } catch (error) {
-            console.error(error);
-            showError("Failed to verify database data.");
-        } finally {
-            setIsLoading(false);
         }
+        setClearFlowStep(1);
+        generateCaptcha();
     };
 
     const handleClearConfirm = (step: 1 | 2 | 3) => {
@@ -1196,20 +1190,40 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         e.preventDefault();
         setIsLoading(true);
         try {
-            const result = await clearAllItemData(
-                clearCredentials.username,
-                clearCredentials.password,
-                clearCredentials.reason,
-                itemGroupId
-            );
-            toast.success(`✅ Cleared ${result.deletedCount} record(s)`);
+            let deletedCount = 0;
+            try {
+                const result = await clearAllItemData(
+                    clearCredentials.username,
+                    clearCredentials.password,
+                    clearCredentials.reason,
+                    itemGroupId
+                );
+                deletedCount = result.deletedCount || 0;
+            } catch (clearError: any) {
+                if (clearError?.response?.status === 401 || clearError?.response?.status === 403) {
+                    throw clearError;
+                }
+                deletedCount = 0;
+            }
+
+            if (deletedCount > 0 && clearActionType === 'clearOnly') {
+                setClearSuccessInfo({ rowCount: deletedCount, groupName: `${itemGroupName} Item Group` });
+            } else if (deletedCount === 0 && clearActionType === 'clearOnly') {
+                toast.success('No existing data to clear.');
+            }
             setItemData([]);
             setValidationResult(null);
             setMode('idle');
 
+            setIsLoading(false);
+
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
+                if (deletedCount > 0) {
+                    toast.success(`✅ Cleared ${deletedCount} record(s). Opening upload...`);
+                } else {
+                    toast.success('No existing data to clear. Proceeding...');
+                }
                 fileInputRef.current.value = '';
-                // Automatically trigger file selection after fresh load
                 fileInputRef.current.click();
             }
 
@@ -1922,9 +1936,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         switch (filterType) {
             case 'valid': return validation.rowStatus === ValidationStatus.Valid;
             case 'duplicate': return validation.rowStatus === ValidationStatus.Duplicate;
-            case 'missing': return validation.rowStatus === ValidationStatus.MissingData;
-            case 'mismatch': return validation.rowStatus === ValidationStatus.Mismatch;
-            case 'invalid': return validation.rowStatus === ValidationStatus.InvalidContent;
+            // For these categories, check cellValidations so a duplicate row with missing/mismatch/invalid still shows
+            case 'missing': return validation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.MissingData) ?? false;
+            case 'mismatch': return validation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.Mismatch) ?? false;
+            case 'invalid': return validation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
             default: return true;
         }
     }, [filterType, validationMap, itemData]);
@@ -2057,6 +2072,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                                     setValidationResult(null);
                                     setMode('idle');
                                     if (fileInputRef.current) fileInputRef.current.value = '';
+                                    // Show failed rows list if any rows failed during import
+                                    if (validationModalContent && validationModalContent.title.includes('Failed During Import')) {
+                                        setShowValidationModal(true);
+                                    }
                                 }}
                                 className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
                             >
@@ -2065,6 +2084,31 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* 🗑️ Clear All Data Success Popup */}
+            {clearSuccessInfo && (
+                <ClearSuccessPopup
+                    rowCount={clearSuccessInfo.rowCount}
+                    groupName={clearSuccessInfo.groupName}
+                    onClose={() => {
+                        setClearSuccessInfo(null);
+                        setItemData([]);
+                        setValidationResult(null);
+                        setMode('idle');
+                        setFilterType('all');
+                        setSelectedRows(new Set());
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                />
+            )}
+
+            {/* ⚠️ No Data Found Popup (clearOnly when DB has 0 records) */}
+            {noDataPopupGroup && (
+                <NoDataPopup
+                    groupName={noDataPopupGroup}
+                    onClose={() => setNoDataPopupGroup(null)}
+                />
             )}
 
             <div className="flex justify-between items-center">
@@ -2137,7 +2181,6 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     accept=".xlsx,.xls"
                     onChange={(e) => handleFileUpload(e, true)}
                     className="hidden"
-                    disabled={isLoading}
                 />
 
                 {(mode === 'loaded' || mode === 'preview' || mode === 'validated') && (
@@ -2276,10 +2319,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                                     .reduce((count: number, row: ItemRowValidation) =>
                                         count + row.cellValidations.filter((cv: any) => cv.status === ValidationStatus.InvalidContent).length, 0
                                     ) > 50 && (
-                                    <div className="text-xs text-purple-500 dark:text-purple-400 italic mt-1">
-                                        ...and more. Hover over purple cells in the grid for individual error details.
-                                    </div>
-                                )}
+                                        <div className="text-xs text-purple-500 dark:text-purple-400 italic mt-1">
+                                            ...and more. Hover over purple cells in the grid for individual error details.
+                                        </div>
+                                    )}
                             </div>
                         </div>
                     )}

@@ -5,6 +5,7 @@ import LedgerMasterEnhanced from '../components/LedgerMasterEnhanced';
 import HSNMasterEnhanced from '../components/HSNMasterEnhanced';
 import SparePartMasterEnhanced from '../components/SparePartMasterEnhanced';
 import ItemMasterEnhanced from '../components/ItemMasterEnhanced';
+import ToolMasterEnhanced from '../components/ToolMasterEnhanced';
 import {
     getModules,
     previewExcel,
@@ -12,9 +13,11 @@ import {
     importLedger,
     importItemMaster,
     getItemGroups,
+    getToolGroups,
     ModuleDto,
     ExcelPreviewDto,
-    ItemGroupDto
+    ItemGroupDto,
+    ToolGroupDto
 } from '../services/api';
 
 const ImportMaster: React.FC = () => {
@@ -43,6 +46,11 @@ const ImportMaster: React.FC = () => {
     const [isItemMode, setIsItemMode] = useState(false);
     const [isHSNMode, setIsHSNMode] = useState(false);
     const [isSparePartMode, setIsSparePartMode] = useState(false);
+
+    // Tool Master-specific states
+    const [selectedToolGroup, setSelectedToolGroup] = useState<number>(0);
+    const [toolGroups, setToolGroups] = useState<ToolGroupDto[]>([]);
+    const [isToolMode, setIsToolMode] = useState(false);
 
     // Column resize states for Excel Preview Table
     const [previewColWidths, setPreviewColWidths] = useState<Record<number, number>>({});
@@ -150,6 +158,7 @@ const ImportMaster: React.FC = () => {
             setIsItemMode(false);
             setIsHSNMode(false);
             setIsSparePartMode(false);
+            setIsToolMode(false);
             return;
         }
 
@@ -161,12 +170,14 @@ const ImportMaster: React.FC = () => {
             setIsItemMode(false);
             setIsHSNMode(false);
             setIsSparePartMode(false);
+            setIsToolMode(false);
             setSelectedLedgerGroup(0);
         } else if (module && (module.moduleName === 'ItemMaster' || module.moduleDisplayName?.toLowerCase().includes('item'))) {
             setIsItemMode(true);
             setIsLedgerMode(false);
             setIsHSNMode(false);
             setIsSparePartMode(false);
+            setIsToolMode(false);
             setSelectedItemGroup(0);
 
             // Fetch Item Groups
@@ -182,24 +193,37 @@ const ImportMaster: React.FC = () => {
             setIsLedgerMode(false);
             setIsItemMode(false);
             setIsSparePartMode(false);
+            setIsToolMode(false);
         } else if (module && (module.moduleName.includes('SparePartMaster') || module.moduleDisplayName?.includes('Spare Part'))) {
             setIsSparePartMode(true);
             setIsLedgerMode(false);
             setIsItemMode(false);
             setIsHSNMode(false);
+            setIsToolMode(false);
             setShowSubModuleDropdown(false);
             setIsFileUploadEnabled(true);
         } else if (module && (module.moduleName === 'ToolMaster' || module.moduleDisplayName?.toLowerCase().includes('tool master'))) {
-            // Tool Master mode - use generic sub-module dropdown
+            setIsToolMode(true);
             setIsLedgerMode(false);
             setIsItemMode(false);
             setIsHSNMode(false);
             setIsSparePartMode(false);
+            setSelectedToolGroup(0);
+
+            // Fetch Tool Groups
+            try {
+                const groups = await getToolGroups();
+                setToolGroups(groups);
+            } catch (error: any) {
+                toast.error('Failed to fetch tool groups');
+                console.error(error);
+            }
         } else {
             setIsLedgerMode(false);
             setIsItemMode(false);
             setIsHSNMode(false);
             setIsSparePartMode(false);
+            setIsToolMode(false);
         }
 
         if (module) {
@@ -456,6 +480,9 @@ const ImportMaster: React.FC = () => {
         } else if (isItemMode) {
             setSelectedItemGroup(0);
             setIsFileUploadEnabled(false);
+        } else if (isToolMode) {
+            setSelectedToolGroup(0);
+            setIsFileUploadEnabled(false);
         } else if (showSubModuleDropdown) {
             setSelectedSubModule('');
             setIsFileUploadEnabled(false);
@@ -630,6 +657,31 @@ const ImportMaster: React.FC = () => {
                                 {itemGroups.map((group) => (
                                     <option key={group.itemGroupID} value={group.itemGroupID}>
                                         {group.itemGroupName}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    ) : isToolMode ? (
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                                Tool Group
+                            </label>
+                            <select
+                                className="w-full px-3 py-1.5 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm text-gray-900 dark:text-white"
+                                value={selectedToolGroup}
+                                onChange={(e) => {
+                                    setSelectedToolGroup(Number(e.target.value));
+                                    if (Number(e.target.value) > 0) {
+                                        setIsFileUploadEnabled(true);
+                                    } else {
+                                        setIsFileUploadEnabled(false);
+                                    }
+                                }}
+                            >
+                                <option value="0">Select Tool Group</option>
+                                {toolGroups.map((group) => (
+                                    <option key={group.toolGroupID} value={group.toolGroupID}>
+                                        {group.toolGroupName}
                                     </option>
                                 ))}
                             </select>
@@ -823,8 +875,19 @@ const ImportMaster: React.FC = () => {
                 </div>
             )}
 
+            {/* Tool Master Enhanced Component */}
+            {isToolMode && selectedToolGroup > 0 && (
+                <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
+                    <ToolMasterEnhanced
+                        key={selectedToolGroup}
+                        toolGroupId={selectedToolGroup}
+                        toolGroupName={toolGroups.find(g => g.toolGroupID === selectedToolGroup)?.toolGroupName || 'Tool Master'}
+                    />
+                </div>
+            )}
+
             {/* Excel Preview Table */}
-            {previewData && !isLedgerMode && !isHSNMode && !isSparePartMode && !isItemMode && (
+            {previewData && !isLedgerMode && !isHSNMode && !isSparePartMode && !isItemMode && !isToolMode && (
                 <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 transition-colors duration-200">
                     <div className="flex items-center justify-between mb-3">
                         <h2 className="text-base font-semibold text-gray-900 dark:text-white">Excel Preview</h2>

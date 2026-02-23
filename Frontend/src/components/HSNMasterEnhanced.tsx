@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import ClearSuccessPopup from './ClearSuccessPopup';
+import NoDataPopup from './NoDataPopup';
 import { Database, Trash2, Upload, Download, CheckCircle2, AlertCircle, FilePlus2, XCircle, ShieldAlert } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -6,11 +8,12 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import {
     getHSNs,
-    getItemGroupNames, // Added import
+    getItemGroupNames,
     importHSNs,
     softDeleteHSN,
     clearHSNData,
     validateHSNs,
+    getHSNCount,
     HSNMasterDto,
     HSNValidationResultDto,
     HSNRowValidation,
@@ -83,8 +86,14 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         setShowErrorModal(true);
     };
 
-    // Success Popup State
+    // Success Popup State (Import)
     const [successInfo, setSuccessInfo] = useState<{ rowCount: number } | null>(null);
+
+    // Clear Success Popup State
+    const [clearSuccessInfo, setClearSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
+
+    // No Data Popup State
+    const [noDataPopupGroup, setNoDataPopupGroup] = useState<string | null>(null);
 
     // --- AG Grid Setup ---
     const gridApiRef = useRef<GridApi | null>(null);
@@ -316,9 +325,10 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         switch (filterType) {
             case 'valid': return rowVal.rowStatus === ValidationStatus.Valid;
             case 'duplicate': return rowVal.rowStatus === ValidationStatus.Duplicate;
-            case 'missing': return rowVal.rowStatus === ValidationStatus.MissingData;
-            case 'mismatch': return rowVal.rowStatus === ValidationStatus.Mismatch;
-            case 'invalid': return rowVal.rowStatus === ValidationStatus.InvalidContent;
+            // Check cellValidations so duplicate rows with missing/mismatch/invalid also appear in those sections
+            case 'missing': return rowVal.cellValidations?.some((cv: any) => cv.status === ValidationStatus.MissingData) ?? false;
+            case 'mismatch': return rowVal.cellValidations?.some((cv: any) => cv.status === ValidationStatus.Mismatch) ?? false;
+            case 'invalid': return rowVal.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
             default: return true;
         }
     }, [filterType, validationMap, validationResult, hsnData]);
@@ -411,47 +421,20 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     };
 
     const handleClearAllDataTrigger = async (type: 'clearOnly' | 'freshUpload') => {
-        // If local data exists, proceed
-        if (hsnData.length > 0) {
-            setClearActionType(type);
-            setClearFlowStep(1);
-            generateCaptcha();
-            return;
-        }
+        setClearActionType(type);
 
-        // Check DB
-        setIsLoading(true);
-        try {
-            const data = await getHSNs();
-            if (data.length === 0) {
-                if (type === 'clearOnly') {
-                    showError('No data found in database');
-                } else {
-                    toast.success('Database is already empty. Proceeding to upload.');
-                    if (fileInputRef.current) {
-                        fileInputRef.current.value = '';
-                        fileInputRef.current.click();
-                    }
-                }
-                setIsLoading(false);
+        if (type === 'clearOnly') {
+            setIsLoading(true);
+            const count = await getHSNCount();
+            setIsLoading(false);
+
+            if (count === 0) {
+                setNoDataPopupGroup('HSN Master');
                 return;
             }
-            // Proceed
-            setClearActionType(type);
-            setClearFlowStep(1);
-            generateCaptcha();
-        } catch (e) {
-            showError('Failed to verify database data');
-            setIsLoading(false);
-        } finally {
-            // Loading state handled in catch block if error, else continues? 
-            // Ideally we want to keep Loading true while transitioning? 
-            // No, generateCaptcha is instantaneous.
-            if (hsnData.length > 0) setIsLoading(false); // Only disable here if we didn't enter the try block logic which returns.
         }
-        // Correction: The finally block runs always. If we successfully proceeded to setClearFlowStep, we want loading to stop.
-        // But wait, if we call async, we set isLoading(true). We must set isLoading(false) at the end.
-        setIsLoading(false);
+        setClearFlowStep(1);
+        generateCaptcha();
     };
 
     const handleClearConfirm = () => {
@@ -482,17 +465,37 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         e.preventDefault();
         try {
             setIsLoading(true);
-            const response = await clearHSNData(2, clearCredentials.username, clearCredentials.password, clearCredentials.reason); // Company ID 2 hardcoded for now
-            const deletedCount = response.importedRows || 0; // Using importedRows as deleted count from service
+            let deletedCount = 0;
+            try {
+                const response = await clearHSNData(2, clearCredentials.username, clearCredentials.password, clearCredentials.reason);
+                deletedCount = response.importedRows || 0;
+            } catch (clearError: any) {
+                if (clearError?.response?.status === 401 || clearError?.response?.status === 403) {
+                    throw clearError;
+                }
+                deletedCount = 0;
+            }
 
-            toast.success(`Successfully cleared ${deletedCount} HSN(s) from database`);
+            if (deletedCount > 0 && clearActionType === 'clearOnly') {
+                setClearSuccessInfo({ rowCount: deletedCount, groupName: 'HSN Master' });
+            } else if (deletedCount === 0 && clearActionType === 'clearOnly') {
+                toast.success('No existing data to clear.');
+            }
             setHsnData([]);
             setValidationResult(null);
             setMode('idle');
 
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
+                if (deletedCount > 0) {
+                    toast.success(`✅ Cleared ${deletedCount} record(s). Opening upload...`);
+                } else {
+                    toast.success('No existing data to clear. Proceeding...');
+                }
+                setIsLoading(false);
                 fileInputRef.current.value = '';
                 fileInputRef.current.click();
+            } else {
+                setIsLoading(false);
             }
 
             handleClearCancel();
@@ -559,27 +562,9 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
 
                 setHsnData(mappedData);
                 setMode('preview');
-
-                // Auto-validate to show summary immediately
-                setIsLoading(true);
-                try {
-                    const result = await validateHSNs(mappedData);
-                    setValidationResult(result);
-                    setMode('validated');
-
-                    if (result.isValid) {
-                        toast.success('Data loaded and validated successfully.');
-                    } else {
-                        const errorCount = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
-                        toast.success(`Data loaded with ${errorCount} validation issues.`);
-                    }
-                } catch (validError: any) {
-                    console.error(validError);
-                    const errorMsg = validError.response?.data?.message || validError.message || 'Validation failed to run.';
-                    showError(`Data loaded, but validation failed: ${errorMsg}`);
-                } finally {
-                    setIsLoading(false);
-                }
+                setValidationResult(null);
+                setFilterType('all');
+                toast.success(`Loaded ${mappedData.length} rows from Excel. Click "Check Validation" to validate.`);
 
             } catch (error) {
                 console.error(error);
@@ -672,10 +657,22 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
             // 3. Import
             const importRes = await importHSNs(hsnData);
             if (importRes.success) {
+                // Reset upload state FIRST so loadData() guard doesn't fire the mode-switch modal
+                setValidationResult(null);
+                setMode('idle');
                 // Show success popup
                 setSuccessInfo({ rowCount: importRes.importedRows ?? hsnData.length });
-                loadData();
-                setValidationResult(null);
+
+                // If some rows failed, also show failed rows list after success popup
+                if (importRes.errorRows > 0 && importRes.errorMessages && importRes.errorMessages.length > 0) {
+                    setValidationModalContent({
+                        title: `${importRes.errorRows} Row(s) Failed During Import`,
+                        messages: importRes.errorMessages
+                    });
+                }
+
+                // Use performLoadData directly to skip the mode-switch guard
+                performLoadData();
             } else {
                 if (importRes.errorMessages && importRes.errorMessages.length > 0) {
                     setValidationModalContent({
@@ -795,7 +792,13 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                                 {successInfo.rowCount === 1 ? 'row' : 'rows'} into <span className="font-semibold text-gray-800 dark:text-white">HSN Master</span>
                             </p>
                             <button
-                                onClick={() => setSuccessInfo(null)}
+                                onClick={() => {
+                                    setSuccessInfo(null);
+                                    // Show failed rows list if any rows failed during import
+                                    if (validationModalContent && validationModalContent.title.includes('Failed During Import')) {
+                                        setShowValidationModal(true);
+                                    }
+                                }}
                                 className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
                             >
                                 OK
@@ -803,6 +806,31 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* 🗑️ Clear All Data Success Popup */}
+            {clearSuccessInfo && (
+                <ClearSuccessPopup
+                    rowCount={clearSuccessInfo.rowCount}
+                    groupName={clearSuccessInfo.groupName}
+                    onClose={() => {
+                        setClearSuccessInfo(null);
+                        setHsnData([]);
+                        setValidationResult(null);
+                        setMode('idle');
+                        setFilterType('all');
+                        setSelectedRows(new Set());
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                />
+            )}
+
+            {/* ⚠️ No Data Found Popup (clearOnly when DB has 0 records) */}
+            {noDataPopupGroup && (
+                <NoDataPopup
+                    groupName={noDataPopupGroup}
+                    onClose={() => setNoDataPopupGroup(null)}
+                />
             )}
 
             {/* Toolbar */}

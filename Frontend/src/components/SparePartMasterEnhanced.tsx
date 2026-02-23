@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import ClearSuccessPopup from './ClearSuccessPopup';
+import NoDataPopup from './NoDataPopup';
 import { Database, Trash2, Upload, Download, CheckCircle2, AlertCircle, FilePlus2, RefreshCw, XCircle, ShieldAlert, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -14,6 +16,7 @@ import {
     SparePartRowValidation,
     ValidationStatus,
     clearAllSparePartData,
+    getSparePartCount,
     HSNGroupDto,
     UnitDto,
     getHSNGroups,
@@ -54,8 +57,14 @@ const SparePartMasterEnhanced: React.FC = () => {
         setShowErrorModal(true);
     };
 
-    // Success Popup State
+    // Success Popup State (Import)
     const [successInfo, setSuccessInfo] = useState<{ rowCount: number } | null>(null);
+
+    // Clear Success Popup State
+    const [clearSuccessInfo, setClearSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
+
+    // No Data Popup State
+    const [noDataPopupGroup, setNoDataPopupGroup] = useState<string | null>(null);
 
     const [noDataMessage, setNoDataMessage] = useState<string | null>(null);
     const [hsnGroups, setHSNGroups] = useState<HSNGroupDto[]>([]);
@@ -88,40 +97,20 @@ const SparePartMasterEnhanced: React.FC = () => {
     const [clearActionType, setClearActionType] = useState<'clearOnly' | 'freshUpload'>('freshUpload');
 
     const handleClearAllDataTrigger = async (type: 'clearOnly' | 'freshUpload') => {
-        // If local data exists, proceed
-        if (sparePartData.length > 0) {
-            setClearActionType(type);
-            setClearFlowStep(1);
-            generateCaptcha();
-            return;
-        }
+        setClearActionType(type);
 
-        // Check DB
-        setIsLoading(true);
-        try {
-            const data = await getAllSpareParts();
-            if (data.length === 0) {
-                if (type === 'clearOnly') {
-                    setNoDataMessage('No data found in database');
-                } else {
-                    toast.success('Database is already empty. Proceeding to upload.');
-                    if (fileInputRef.current) {
-                        fileInputRef.current.value = '';
-                        fileInputRef.current.click();
-                    }
-                }
-                setIsLoading(false);
+        if (type === 'clearOnly') {
+            setIsLoading(true);
+            const count = await getSparePartCount();
+            setIsLoading(false);
+
+            if (count === 0) {
+                setNoDataPopupGroup('Spare Part Master');
                 return;
             }
-            // Proceed
-            setClearActionType(type);
-            setClearFlowStep(1);
-            generateCaptcha();
-        } catch (e) {
-            showError('Failed to verify database data');
-        } finally {
-            setIsLoading(false);
         }
+        setClearFlowStep(1);
+        generateCaptcha();
     };
 
     const handleClearConfirm = () => {
@@ -152,18 +141,37 @@ const SparePartMasterEnhanced: React.FC = () => {
         e.preventDefault();
         try {
             setIsLoading(true);
-            const response = await clearAllSparePartData(clearCredentials.username, clearCredentials.password, clearCredentials.reason);
-            const deletedCount = response.deletedCount || 0;
+            let deletedCount = 0;
+            try {
+                const response = await clearAllSparePartData(clearCredentials.username, clearCredentials.password, clearCredentials.reason);
+                deletedCount = response.deletedCount || 0;
+            } catch (clearError: any) {
+                if (clearError?.response?.status === 401 || clearError?.response?.status === 403) {
+                    throw clearError;
+                }
+                deletedCount = 0;
+            }
 
-            toast.success(`Successfully cleared ${deletedCount} spare part(s) from database`);
+            if (deletedCount > 0 && clearActionType === 'clearOnly') {
+                setClearSuccessInfo({ rowCount: deletedCount, groupName: 'Spare Part Master' });
+            } else if (deletedCount === 0 && clearActionType === 'clearOnly') {
+                toast.success('No existing data to clear.');
+            }
             setSparePartData([]);
             setValidationResult(null);
             setMode('idle');
 
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
+                if (deletedCount > 0) {
+                    toast.success(`✅ Cleared ${deletedCount} record(s). Opening upload...`);
+                } else {
+                    toast.success('No existing data to clear. Proceeding...');
+                }
+                setIsLoading(false);
                 fileInputRef.current.value = '';
-                // Automatically trigger file selection after fresh load
                 fileInputRef.current.click();
+            } else {
+                setIsLoading(false);
             }
 
             handleClearCancel();
@@ -384,9 +392,10 @@ const SparePartMasterEnhanced: React.FC = () => {
         switch (filterType) {
             case 'valid': return rowValidation.rowStatus === ValidationStatus.Valid;
             case 'duplicate': return rowValidation.rowStatus === ValidationStatus.Duplicate;
-            case 'missing': return rowValidation.rowStatus === ValidationStatus.MissingData;
-            case 'mismatch': return rowValidation.rowStatus === ValidationStatus.Mismatch;
-            case 'invalid': return rowValidation.rowStatus === ValidationStatus.InvalidContent;
+            // Check cellValidations so duplicate rows with missing/mismatch/invalid also appear in those sections
+            case 'missing': return rowValidation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.MissingData) ?? false;
+            case 'mismatch': return rowValidation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.Mismatch) ?? false;
+            case 'invalid': return rowValidation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
             default: return true;
         }
     }, [validationResult, validationMap, filterType, sparePartData]);
@@ -710,9 +719,24 @@ const SparePartMasterEnhanced: React.FC = () => {
             if (importRes.success) {
                 // Show success popup instead of toast
                 setSuccessInfo({ rowCount: importRes.importedRows ?? sparePartData.length });
-                // State reset happens when user clicks OK
+
+                // If some rows failed, also show failed rows list after success popup
+                if (importRes.errorRows > 0 && importRes.errorMessages && importRes.errorMessages.length > 0) {
+                    setValidationModalContent({
+                        title: `${importRes.errorRows} Row(s) Failed During Import`,
+                        messages: importRes.errorMessages
+                    });
+                }
             } else {
-                toast.error(importRes.message || 'Import failed');
+                if (importRes.errorMessages && importRes.errorMessages.length > 0) {
+                    setValidationModalContent({
+                        title: 'Import Failed',
+                        messages: importRes.errorMessages
+                    });
+                    setShowValidationModal(true);
+                } else {
+                    toast.error(importRes.message || 'Import failed');
+                }
             }
         } catch (error: any) {
             console.error('[SparePartImport] Error:', error);
@@ -843,6 +867,10 @@ const SparePartMasterEnhanced: React.FC = () => {
                                     setValidationResult(null);
                                     setMode('idle');
                                     if (fileInputRef.current) fileInputRef.current.value = '';
+                                    // Show failed rows list if any rows failed during import
+                                    if (validationModalContent && validationModalContent.title.includes('Failed During Import')) {
+                                        setShowValidationModal(true);
+                                    }
                                 }}
                                 className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
                             >
@@ -851,6 +879,31 @@ const SparePartMasterEnhanced: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* 🗑️ Clear All Data Success Popup */}
+            {clearSuccessInfo && (
+                <ClearSuccessPopup
+                    rowCount={clearSuccessInfo.rowCount}
+                    groupName={clearSuccessInfo.groupName}
+                    onClose={() => {
+                        setClearSuccessInfo(null);
+                        setSparePartData([]);
+                        setValidationResult(null);
+                        setMode('idle');
+                        setFilterType('all');
+                        setSelectedRows(new Set());
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                />
+            )}
+
+            {/* ⚠️ No Data Found Popup (clearOnly when DB has 0 records) */}
+            {noDataPopupGroup && (
+                <NoDataPopup
+                    groupName={noDataPopupGroup}
+                    onClose={() => setNoDataPopupGroup(null)}
+                />
             )}
 
             <div className="flex flex-wrap gap-2">

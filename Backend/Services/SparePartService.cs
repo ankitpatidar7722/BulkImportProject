@@ -253,14 +253,14 @@ public class SparePartService : ISparePartService
                 }
             }
 
-            // Count this row only once for each issue type
+            // Count each category independently — a single row can appear in multiple categories
             if (rowValidation.RowStatus == ValidationStatus.Duplicate)
                 result.Summary.DuplicateCount++;
-            else if (hasMissingData)
+            if (hasMissingData)
                 result.Summary.MissingDataCount++;
-            else if (hasMismatch)
+            if (hasMismatch)
                 result.Summary.MismatchCount++;
-            else if (hasInvalidContent)
+            if (hasInvalidContent)
                 result.Summary.InvalidContentCount++;
 
             result.Rows.Add(rowValidation);
@@ -291,43 +291,44 @@ public class SparePartService : ISparePartService
             }
         }
         
-        var transaction = await _connection.BeginTransactionAsync();
+        // Get Max Spare Part Code (outside transaction)
+        var maxSparePartCode = await _connection.ExecuteScalarAsync<int?>(
+            "SELECT MAX(MaxSparePartCode) FROM SparePartMaster WHERE IsDeletedTransaction = 0"
+        ) ?? 0;
 
-        try
+        int successCount = 0;
+        result.TotalRows = spareParts.Count;
+
+        var insertSql = @"
+            INSERT INTO SparePartMaster (
+                SparePartName, SparePartCode, MaxSparePartCode, ProductHSNID,
+                SparePartGroup, SparePartType, HSNCode, Unit, Rate, HSNGroup,
+                SupplierReference, StockRefCode, PurchaseOrderQuantity,
+                MinimumStockQty, Narration,
+                VoucherPrefix, CompanyID, UserID,
+                VoucherDate, CreatedBy, CreatedDate, IsDeletedTransaction
+            ) VALUES (
+                @SparePartName, @SparePartCode, @MaxSparePartCode, @ProductHSNID,
+                @SparePartGroup, @SparePartType, @Unit, @Rate, @HSNGroup,
+                @SupplierReference, @StockRefCode, @PurchaseOrderQuantity,
+                @MinimumStockQty, @Narration,
+                @VoucherPrefix, @CompanyID, @UserID,
+                @VoucherDate, @CreatedBy, @CreatedDate, 0
+            )";
+
+        // Row-by-row insert with per-row transaction
+        for (int rowIndex = 0; rowIndex < spareParts.Count; rowIndex++)
         {
-            // Get Max Spare Part Code
-            var maxSparePartCode = await _connection.ExecuteScalarAsync<int?>(
-                "SELECT MAX(MaxSparePartCode) FROM SparePartMaster WHERE IsDeletedTransaction = 0",
-                transaction: transaction
-            ) ?? 0;
+            var sparePart = spareParts[rowIndex];
+            var transaction = await _connection.BeginTransactionAsync();
 
-            int successCount = 0;
-
-            var insertSql = @"
-                INSERT INTO SparePartMaster (
-                    SparePartName, SparePartCode, MaxSparePartCode, ProductHSNID, 
-                    SparePartGroup, SparePartType, HSNCode, Unit, Rate, HSNGroup,
-                    SupplierReference, StockRefCode, PurchaseOrderQuantity,
-                    MinimumStockQty, Narration,
-                    VoucherPrefix, CompanyID, UserID,
-                    VoucherDate, CreatedBy, CreatedDate, IsDeletedTransaction
-                ) VALUES (
-                    @SparePartName, @SparePartCode, @MaxSparePartCode, @ProductHSNID,
-                    @SparePartGroup, @SparePartType, @Unit, @Rate, @HSNGroup,
-                    @SupplierReference, @StockRefCode, @PurchaseOrderQuantity,
-                    @MinimumStockQty, @Narration,
-                    @VoucherPrefix, @CompanyID, @UserID,
-                    @VoucherDate, @CreatedBy, @CreatedDate, 0
-                )";
-
-            foreach (var sparePart in spareParts)
+            try
             {
                 maxSparePartCode++;
                 string sparePartCode = $"SPM{maxSparePartCode.ToString().PadLeft(5, '0')}";
 
-                // Lookup ProductHSNID
                 int productHSNID = 0;
-                if (!string.IsNullOrWhiteSpace(sparePart.HSNGroup) && 
+                if (!string.IsNullOrWhiteSpace(sparePart.HSNGroup) &&
                     hsnGroupMapping.TryGetValue(sparePart.HSNGroup.Trim(), out int hsnId))
                 {
                     productHSNID = hsnId;
@@ -357,21 +358,29 @@ public class SparePartService : ISparePartService
                     CreatedDate = DateTime.Now
                 }, transaction: transaction);
 
+                await transaction.CommitAsync();
                 successCount++;
             }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                maxSparePartCode--;
+                result.ErrorRows++;
+                result.ErrorMessages.Add($"Row {rowIndex + 1} ({sparePart.SparePartName}): {ex.Message}");
+                try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePart Row {rowIndex + 1} Failed: {ex.Message}\n"); } catch { }
+            }
+        }
 
-            await transaction.CommitAsync();
-
+        result.ImportedRows = successCount;
+        if (result.ErrorRows > 0)
+        {
+            result.Success = successCount > 0;
+            result.Message = $"Imported {successCount} of {spareParts.Count} spare part(s). {result.ErrorRows} row(s) failed.";
+        }
+        else
+        {
             result.Success = true;
             result.Message = $"Successfully imported {successCount} spare part(s)";
-            result.ImportedRows = successCount;
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync();
-            result.Success = false;
-            result.Message = $"Import failed: {ex.Message}";
-            try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePartService Import Exception: {ex.Message}\nStack: {ex.StackTrace}\n"); } catch { }
         }
 
         return result;

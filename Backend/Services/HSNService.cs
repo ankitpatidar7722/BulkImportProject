@@ -82,6 +82,9 @@ public class HSNService : IHSNService
             var rowValidation = new HSNRowValidation { RowIndex = i, Data = hsn, RowStatus = ValidationStatus.Valid };
             
             bool hasMissing = false;
+            bool hasDuplicate = false;
+            bool hasHSNMismatch = false;
+            bool hasHSNInvalidContent = false;
             
             // 1. Missing Fields Check
             foreach (var col in requiredColumns)
@@ -150,6 +153,7 @@ public class HSNService : IHSNService
                         {
                             rowValidation.RowStatus = ValidationStatus.Mismatch;
                         }
+                        hasHSNMismatch = true;
                     }
                 }
             }
@@ -173,6 +177,7 @@ public class HSNService : IHSNService
                 {
                     rowValidation.RowStatus = ValidationStatus.Duplicate;
                     rowValidation.ErrorMessage = "Duplicate DisplayName in Database";
+                    hasDuplicate = true;
                 }
                 
                 // Check in current batch (previous rows)
@@ -180,6 +185,7 @@ public class HSNService : IHSNService
                 {
                     rowValidation.RowStatus = ValidationStatus.Duplicate;
                     rowValidation.ErrorMessage = "Duplicate DisplayName in File";
+                    hasDuplicate = true;
                 }
             }
 
@@ -208,11 +214,20 @@ public class HSNService : IHSNService
                         rowValidation.RowStatus = ValidationStatus.InvalidContent;
 
                     hasInvalidContent = true;
+                    hasHSNInvalidContent = true;
                 }
             }
 
-            // Update Summary
-            UpdateSummary(result.Summary, rowValidation.RowStatus);
+            // Count each category independently — a single row can appear in multiple categories
+            if (hasDuplicate)
+                result.Summary.DuplicateCount++;
+            if (hasMissing)
+                result.Summary.MissingDataCount++;
+            if (hasHSNMismatch)
+                result.Summary.MismatchCount++;
+            if (hasHSNInvalidContent)
+                result.Summary.InvalidContentCount++;
+
             if (rowValidation.RowStatus != ValidationStatus.Valid)
             {
                 result.IsValid = false;
@@ -221,46 +236,46 @@ public class HSNService : IHSNService
             result.Rows.Add(rowValidation);
         }
 
+        result.Summary.ValidRows = result.Rows.Count(r => r.RowStatus == ValidationStatus.Valid);
+
         return result;
     }
 
     public async Task<ImportResultDto> ImportHSNsAsync(List<HSNMasterDto> hsns, int userId)
     {
         var result = new ImportResultDto();
+        result.TotalRows = hsns.Count;
         await EnsureConnectionOpenAsync();
-        using var transaction = _connection.BeginTransaction();
-        
-        try
+
+        string insertQuery = @"
+            INSERT INTO ProductHSNMaster (
+                ProductHSNName, HSNCode, UnderProductHSNID, GroupLevel, CompanyID,
+                DisplayName, TariffNo, ProductCategory, GSTTaxPercentage,
+                CGSTTaxPercentage, SGSTTaxPercentage, IGSTTaxPercentage,
+                TallyProductHSNName, TallyGUID, ItemGroupID, UserID,
+                ModifiedDate, CreatedBy, CreatedDate, ModifiedBy,
+                DeletedBy, DeletedDate, IsDeletedTransaction, FYear
+            ) VALUES (
+                @ProductHSNName, @HSNCode, 0, 0, @CompanyID,
+                @DisplayName, '', @ProductCategory, @GSTTaxPercentage,
+                @CGSTTaxPercentage, @SGSTTaxPercentage, @IGSTTaxPercentage,
+                '', 0, @ItemGroupID, @UserID,
+                GETDATE(), @UserID, GETDATE(), @UserID,
+                0, NULL, 0, '2025-2026'
+            )";
+
+        int imported = 0;
+
+        // Row-by-row insert with per-row transaction
+        for (int rowIndex = 0; rowIndex < hsns.Count; rowIndex++)
         {
-            // First, delete existing if required? Or just append?
-            // "Fresh Load" usually implies previous data was cleared via ClearData button workflow.
-            // But here we insert only valid new records.
-            // We assume HSNs passed here are VALIDATED and ready to insert (or update logic if needed).
-            // Usually we just insert new.
+            var hsn = hsns[rowIndex];
+            using var transaction = _connection.BeginTransaction();
 
-            string insertQuery = @"
-                INSERT INTO ProductHSNMaster (
-                    ProductHSNName, HSNCode, UnderProductHSNID, GroupLevel, CompanyID, 
-                    DisplayName, TariffNo, ProductCategory, GSTTaxPercentage, 
-                    CGSTTaxPercentage, SGSTTaxPercentage, IGSTTaxPercentage, 
-                    TallyProductHSNName, TallyGUID, ItemGroupID, UserID, 
-                    ModifiedDate, CreatedBy, CreatedDate, ModifiedBy, 
-                    DeletedBy, DeletedDate, IsDeletedTransaction, FYear
-                ) VALUES (
-                    @ProductHSNName, @HSNCode, 0, 0, @CompanyID, 
-                    @DisplayName, '', @ProductCategory, @GSTTaxPercentage, 
-                    @CGSTTaxPercentage, @SGSTTaxPercentage, @IGSTTaxPercentage, 
-                    '', 0, @ItemGroupID, @UserID, 
-                    GETDATE(), @UserID, GETDATE(), @UserID, 
-                    0, NULL, 0, '2025-2026'
-                )";
-
-            int imported = 0;
-            foreach (var hsn in hsns)
+            try
             {
-                // Ensure defaults
-                if (hsn.CompanyID == 0) hsn.CompanyID = 2; // Hardcoded default often used in this legacy app
-                
+                if (hsn.CompanyID == 0) hsn.CompanyID = 2;
+
                 await _connection.ExecuteAsync(insertQuery, new
                 {
                     ProductHSNName = hsn.ProductHSNName,
@@ -272,22 +287,31 @@ public class HSNService : IHSNService
                     CGSTTaxPercentage = hsn.CGSTTaxPercentage ?? 0,
                     SGSTTaxPercentage = hsn.SGSTTaxPercentage ?? 0,
                     IGSTTaxPercentage = hsn.IGSTTaxPercentage ?? 0,
-                    ItemGroupID = hsn.ItemGroupID, // Already resolved in validation
+                    ItemGroupID = hsn.ItemGroupID,
                     UserID = userId
                 }, transaction);
+
+                transaction.Commit();
                 imported++;
             }
-
-            transaction.Commit();
-            result.Success = true;
-            result.ImportedRows = imported;
-            result.Message = $"Successfully imported {imported} HSN records.";
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+                result.ErrorRows++;
+                result.ErrorMessages.Add($"Row {rowIndex + 1} ({hsn.DisplayName}): {ex.Message}");
+            }
         }
-        catch (Exception ex)
+
+        result.ImportedRows = imported;
+        if (result.ErrorRows > 0)
         {
-            transaction.Rollback();
-            result.Success = false;
-            result.Message = "Import failed: " + ex.Message;
+            result.Success = imported > 0;
+            result.Message = $"Imported {imported} of {hsns.Count} HSN record(s). {result.ErrorRows} row(s) failed.";
+        }
+        else
+        {
+            result.Success = true;
+            result.Message = $"Successfully imported {imported} HSN records.";
         }
 
         return result;
@@ -326,12 +350,15 @@ public class HSNService : IHSNService
             }
             catch {}
 
-            // 3. Clear Data (TRUNCATE as requested)
-            // SQL TRUNCATE cannot be rolled back easily unless inside a transaction. ADO.NET Transaction supports rollback of TRUNCATE.
-            await _connection.ExecuteAsync("TRUNCATE TABLE ProductHSNMaster", transaction: transaction);
+            // 3. Count rows before clearing
+            var rowCount = await _connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM ProductHSNMaster", transaction: transaction);
+
+            // 4. Clear Data
+            await _connection.ExecuteAsync("DELETE FROM ProductHSNMaster", transaction: transaction);
 
             transaction.Commit();
-            return new ImportResultDto { Success = true, Message = "HSN Master data cleared successfully.", ImportedRows = 0 };
+            return new ImportResultDto { Success = true, Message = $"Successfully deleted {rowCount} rows from HSN Master.", ImportedRows = rowCount };
         }
         catch (Exception ex)
         {

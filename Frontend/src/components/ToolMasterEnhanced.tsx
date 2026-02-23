@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import ClearSuccessPopup from './ClearSuccessPopup';
+import NoDataPopup from './NoDataPopup';
 import { Database, Trash2, Upload, Download, CheckCircle2, AlertCircle, FilePlus2, RefreshCw, XCircle, ShieldAlert, Lock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -12,13 +14,13 @@ import {
     getToolHSNGroups,
     getToolUnits,
     clearAllToolData,
+    getToolCount,
     ToolMasterDto,
     ToolValidationResultDto,
     ToolRowValidation,
     ValidationStatus,
     HSNGroupDto,
     UnitDto,
-    ImportResultDto
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 
@@ -66,8 +68,14 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         setShowErrorModal(true);
     };
 
-    // Success Popup State
+    // Success Popup State (Import)
     const [successInfo, setSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
+
+    // Clear Success Popup State
+    const [clearSuccessInfo, setClearSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
+
+    // No Data Popup State (clearOnly when DB has 0 records)
+    const [noDataPopupGroup, setNoDataPopupGroup] = useState<string | null>(null);
 
     // CAPTCHA State
     const [captchaQuestion, setCaptchaQuestion] = useState({ num1: 0, num2: 0, answer: 0 });
@@ -90,39 +98,24 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
     const [noDataMessage, setNoDataMessage] = useState<string | null>(null);
 
     const handleClearAllDataTrigger = async (type: 'clearOnly' | 'freshUpload') => {
-        if (toolData.length > 0) {
-            setClearActionType(type);
-            setClearFlowStep(1);
-            generateCaptcha();
-            return;
-        }
+        setClearActionType(type);
 
-        setIsLoading(true);
-        try {
-            const data = await getAllTools(toolGroupId);
-            if (data.length === 0) {
-                if (type === 'clearOnly') {
-                    setNoDataMessage(`No data found in database against the selected ${toolGroupName}`);
-                } else {
-                    toast.success("Database is already empty. Proceeding to upload.");
-                    if (fileInputRef.current) {
-                        fileInputRef.current.value = '';
-                        fileInputRef.current.click();
-                    }
-                }
-                setIsLoading(false);
+        if (type === 'clearOnly') {
+            // ✅ Conditional: check DB record count first
+            setIsLoading(true);
+            const count = await getToolCount(toolGroupId);
+            setIsLoading(false);
+
+            if (count === 0) {
+                // No data → show no-data popup, skip all confirmations
+                setNoDataPopupGroup(`${toolGroupName} Tool Group`);
                 return;
             }
-
-            setClearActionType(type);
-            setClearFlowStep(1);
-            generateCaptcha();
-        } catch (error) {
-            console.error(error);
-            toast.error("Failed to verify database data.");
-        } finally {
-            setIsLoading(false);
+            // Data exists → start full confirmation flow
         }
+        // Fresh Upload: always start confirmation flow immediately (no DB check)
+        setClearFlowStep(1);
+        generateCaptcha();
     };
 
     const handleClearConfirm = () => {
@@ -151,17 +144,37 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         e.preventDefault();
         try {
             setIsLoading(true);
-            const response = await clearAllToolData(clearCredentials.username, clearCredentials.password, clearCredentials.reason, toolGroupId);
-            const deletedCount = response.deletedCount || 0;
+            let deletedCount = 0;
+            try {
+                const response = await clearAllToolData(clearCredentials.username, clearCredentials.password, clearCredentials.reason, toolGroupId);
+                deletedCount = response.deletedCount || 0;
+            } catch (clearError: any) {
+                if (clearError?.response?.status === 401 || clearError?.response?.status === 403) {
+                    throw clearError;
+                }
+                deletedCount = 0;
+            }
 
-            toast.success(`Successfully cleared ${deletedCount} tool(s) from database`);
+            if (deletedCount > 0 && clearActionType === 'clearOnly') {
+                setClearSuccessInfo({ rowCount: deletedCount, groupName: `${toolGroupName} Tool Group` });
+            } else if (deletedCount === 0 && clearActionType === 'clearOnly') {
+                toast.success('No existing data to clear.');
+            }
             setToolData([]);
             setValidationResult(null);
             setMode('idle');
 
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
+                if (deletedCount > 0) {
+                    toast.success(`✅ Cleared ${deletedCount} record(s). Opening upload...`);
+                } else {
+                    toast.success('No existing data to clear. Proceeding...');
+                }
+                setIsLoading(false);
                 fileInputRef.current.value = '';
                 fileInputRef.current.click();
+            } else {
+                setIsLoading(false);
             }
 
             handleClearCancel();
@@ -239,7 +252,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 cellEditorParams: { values: units.map(u => u.unitSymbol) }
             },
             { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
-            { field: 'manufactuererItemCode', headerName: 'ManufecturerItemCode', minWidth: 170 },
+            { field: 'manufacturerItemCode', headerName: 'ManufecturerItemCode', minWidth: 170 },
             { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', minWidth: 170 },
             { field: 'shelfLife', headerName: 'ShelfLife', minWidth: 90 },
             {
@@ -369,9 +382,10 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         switch (filterType) {
             case 'valid': return rowValidation.rowStatus === ValidationStatus.Valid;
             case 'duplicate': return rowValidation.rowStatus === ValidationStatus.Duplicate;
-            case 'missing': return rowValidation.rowStatus === ValidationStatus.MissingData;
-            case 'mismatch': return rowValidation.rowStatus === ValidationStatus.Mismatch;
-            case 'invalid': return rowValidation.rowStatus === ValidationStatus.InvalidContent;
+            // Check cellValidations so duplicate rows with missing/mismatch/invalid also appear in those sections
+            case 'missing': return rowValidation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.MissingData) ?? false;
+            case 'mismatch': return rowValidation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.Mismatch) ?? false;
+            case 'invalid': return rowValidation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
             default: return true;
         }
     }, [validationResult, validationMap, filterType, toolData]);
@@ -553,7 +567,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                         totalUps: totalUps !== undefined && totalUps !== '' && !isNaN(parseInt(totalUps)) ? parseInt(totalUps) : undefined,
                         purchaseUnit: toStr(row.PurchaseUnit),
                         purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
-                        manufactuererItemCode: toStr(row.ManufecturerItemCode),
+                        manufacturerItemCode: toStr(row.ManufecturerItemCode),
                         purchaseOrderQuantity: row.PurchaseOrderQuantity !== undefined && row.PurchaseOrderQuantity !== '' && !isNaN(parseFloat(row.PurchaseOrderQuantity)) ? parseFloat(row.PurchaseOrderQuantity) : undefined,
                         shelfLife: shelfLife !== undefined && shelfLife !== '' && !isNaN(parseInt(shelfLife)) ? parseInt(shelfLife) : 365,
                         stockUnit: toStr(row.StockUnit),
@@ -565,7 +579,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 }).filter((item: ToolMasterDto) => {
                     return !!(
                         item.sizeL || item.sizeW || item.sizeH || item.purchaseUnit ||
-                        item.purchaseRate || item.manufactuererItemCode || item.stockUnit ||
+                        item.purchaseRate || item.manufacturerItemCode || item.stockUnit ||
                         item.productHSNName || item.upsAround || item.upsAcross
                     );
                 });
@@ -730,6 +744,14 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
 
             if (importRes.success) {
                 setSuccessInfo({ rowCount: importRes.importedRows ?? toolData.length, groupName: toolGroupName });
+
+                // If some rows failed, also show failed rows list after success popup
+                if (importRes.errorRows > 0 && importRes.errorMessages && importRes.errorMessages.length > 0) {
+                    setValidationModalContent({
+                        title: `${importRes.errorRows} Row(s) Failed During Import`,
+                        messages: importRes.errorMessages
+                    });
+                }
             } else {
                 if (importRes.errorMessages && importRes.errorMessages.length > 0) {
                     setValidationModalContent({ title: 'Import Failed', messages: importRes.errorMessages });
@@ -770,7 +792,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 TotalUps: tool.totalUps,
                 PurchaseUnit: tool.purchaseUnit,
                 PurchaseRate: tool.purchaseRate,
-                ManufecturerItemCode: tool.manufactuererItemCode,
+                ManufecturerItemCode: tool.manufacturerItemCode,
                 PurchaseOrderQuantity: tool.purchaseOrderQuantity,
                 ShelfLife: tool.shelfLife,
                 StockUnit: tool.stockUnit,
@@ -813,6 +835,10 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                                     setValidationResult(null);
                                     setMode('idle');
                                     if (fileInputRef.current) fileInputRef.current.value = '';
+                                    // Show failed rows list if any rows failed during import
+                                    if (validationModalContent && validationModalContent.title.includes('Failed During Import')) {
+                                        setShowValidationModal(true);
+                                    }
                                 }}
                                 className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
                             >
@@ -821,6 +847,31 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* 🗑️ Clear All Data Success Popup */}
+            {clearSuccessInfo && (
+                <ClearSuccessPopup
+                    rowCount={clearSuccessInfo.rowCount}
+                    groupName={clearSuccessInfo.groupName}
+                    onClose={() => {
+                        setClearSuccessInfo(null);
+                        setToolData([]);
+                        setValidationResult(null);
+                        setMode('idle');
+                        setFilterType('all');
+                        setSelectedRows(new Set());
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                />
+            )}
+
+            {/* ⚠️ No Data Found Popup (clearOnly when DB has 0 records) */}
+            {noDataPopupGroup && (
+                <NoDataPopup
+                    groupName={noDataPopupGroup}
+                    onClose={() => setNoDataPopupGroup(null)}
+                />
             )}
 
             {/* Action Buttons */}
@@ -946,10 +997,10 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                                     .reduce((count: number, row: ToolRowValidation) =>
                                         count + row.cellValidations.filter((cv: any) => cv.status === ValidationStatus.InvalidContent).length, 0
                                     ) > 50 && (
-                                    <div className="text-xs text-purple-500 dark:text-purple-400 italic mt-1">
-                                        ...and more. Hover over purple cells in the grid for individual error details.
-                                    </div>
-                                )}
+                                        <div className="text-xs text-purple-500 dark:text-purple-400 italic mt-1">
+                                            ...and more. Hover over purple cells in the grid for individual error details.
+                                        </div>
+                                    )}
                             </div>
                         </div>
                     )}

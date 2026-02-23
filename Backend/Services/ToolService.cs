@@ -29,18 +29,12 @@ public class ToolService : IToolService
                 t.SizeL,
                 t.SizeW,
                 t.SizeH,
-                t.UpsAround,
-                t.UpsAcross,
+                t.UpsL as UpsAround,
+                t.UpsW as UpsAcross,
                 t.TotalUps,
                 t.PurchaseUnit,
                 t.PurchaseRate,
-                t.ManufecturerItemCode,
-                t.PurchaseOrderQuantity,
-                t.ShelfLife,
                 t.StockUnit,
-                t.MinimumStockQty,
-                t.IsStandardItem,
-                t.IsRegularItem,
                 CAST(ISNULL(t.IsDeletedTransaction, 0) AS BIT) as IsDeletedTransaction
             FROM ToolMaster t
             LEFT JOIN ToolGroupMaster tg ON t.ToolGroupID = tg.ToolGroupID
@@ -372,14 +366,14 @@ public class ToolService : IToolService
                 }
             }
 
-            // Count row status
+            // Count each category independently — a single row can appear in multiple categories
             if (rowValidation.RowStatus == ValidationStatus.Duplicate)
                 result.Summary.DuplicateCount++;
-            else if (hasMissingData)
+            if (hasMissingData)
                 result.Summary.MissingDataCount++;
-            else if (hasMismatch)
+            if (hasMismatch)
                 result.Summary.MismatchCount++;
-            else if (hasInvalidContent)
+            if (hasInvalidContent)
                 result.Summary.InvalidContentCount++;
 
             result.Rows.Add(rowValidation);
@@ -423,75 +417,75 @@ public class ToolService : IToolService
             return result;
         }
 
-        var transaction = await _connection.BeginTransactionAsync();
+        // Get Max Tool No (outside transaction)
+        var maxToolNo = await _connection.ExecuteScalarAsync<int?>(
+            "SELECT MAX(MaxToolNo) FROM ToolMaster WHERE ToolGroupID = @ToolGroupID AND ISNULL(IsDeletedTransaction, 0) = 0",
+            new { ToolGroupID = toolGroupId }
+        ) ?? 0;
 
-        try
+        int successCount = 0;
+        result.TotalRows = tools.Count;
+
+        var insertMasterSql = @"
+            INSERT INTO ToolMaster (
+                ToolName, ToolDescription, ToolCode, MaxToolNo, Prefix,
+                ToolGroupID, ToolSubGroupID, ToolType, ProductHSNID, IsToolActive,
+                SizeL, SizeW, SizeH, UpsL, UpsW, TotalUps,
+                PurchaseUnit, PurchaseRate, EstimationUnit, EstimationRate,
+                StockUnit,
+                CompanyID, UserID, CreatedBy, CreatedDate, IsDeletedTransaction
+            )
+            OUTPUT INSERTED.ToolID
+            VALUES (
+                @ToolName, @ToolDescription, @ToolCode, @MaxToolNo, @Prefix,
+                @ToolGroupID, 0, @ToolType, @ProductHSNID, 1,
+                @SizeL, @SizeW, @SizeH, @UpsL, @UpsW, @TotalUps,
+                @PurchaseUnit, @PurchaseRate, @EstimationUnit, @EstimationRate,
+                @StockUnit,
+                @CompanyID, @UserID, @CreatedBy, @CreatedDate, 0
+            )";
+
+        var insertDetailSql = @"
+            INSERT INTO ToolMasterDetails (
+                ParentToolID, ParentFieldName, ParentFieldValue, ToolID, FieldID,
+                FieldName, FieldValue, SequenceNo, ToolGroupID,
+                CompanyID, UserID, IsBlocked, IsLocked,
+                CreatedBy, CreatedDate, ModifiedBy, ModifiedDate,
+                IsActive, IsDeletedTransaction
+            ) VALUES (
+                0, @ParentFieldName, @ParentFieldValue, @ToolID, 0,
+                @FieldName, @FieldValue, @SequenceNo, @ToolGroupID,
+                2, 2, 0, 0,
+                2, GETDATE(), 2, GETDATE(),
+                0, 0
+            )";
+
+        // Derive prefix from ToolGroupName (first 2 chars uppercase, e.g. PLATES -> PL)
+        string prefix = toolGroup.ToolGroupName?.Length >= 2
+            ? toolGroup.ToolGroupName.Substring(0, 2).ToUpper()
+            : "TL";
+
+        // Row-by-row insert with per-row transaction
+        for (int rowIndex = 0; rowIndex < tools.Count; rowIndex++)
         {
-            // Get Max Tool No
-            var maxToolNo = await _connection.ExecuteScalarAsync<int?>(
-                "SELECT MAX(MaxToolNo) FROM ToolMaster WHERE ToolGroupID = @ToolGroupID AND ISNULL(IsDeletedTransaction, 0) = 0",
-                new { ToolGroupID = toolGroupId },
-                transaction: transaction
-            ) ?? 0;
+            var tool = tools[rowIndex];
+            var transaction = await _connection.BeginTransactionAsync();
 
-            int successCount = 0;
-
-            // Prepare DataTable for Bulk Insert of Details
-            var detailsTable = new System.Data.DataTable();
-            detailsTable.Columns.Add("ToolID", typeof(int));
-            detailsTable.Columns.Add("ParentFieldName", typeof(string));
-            detailsTable.Columns.Add("ParentFieldValue", typeof(string));
-            detailsTable.Columns.Add("FieldName", typeof(string));
-            detailsTable.Columns.Add("FieldValue", typeof(string));
-            detailsTable.Columns.Add("SequenceNo", typeof(int));
-            detailsTable.Columns.Add("ToolGroupID", typeof(int));
-            detailsTable.Columns.Add("CompanyID", typeof(int));
-            detailsTable.Columns.Add("UserID", typeof(int));
-            detailsTable.Columns.Add("FYear", typeof(string));
-            detailsTable.Columns.Add("CreatedBy", typeof(int));
-            detailsTable.Columns.Add("CreatedDate", typeof(DateTime));
-            detailsTable.Columns.Add("IsDeletedTransaction", typeof(bool));
-
-            var insertMasterSql = @"
-                INSERT INTO ToolMaster (
-                    ToolName, ToolCode, MaxToolNo, ToolGroupID, ToolType, ProductHSNID,
-                    SizeL, SizeW, SizeH, UpsAround, UpsAcross, TotalUps,
-                    PurchaseUnit, PurchaseRate, ManufecturerItemCode, PurchaseOrderQuantity,
-                    ShelfLife, StockUnit, MinimumStockQty, IsStandardItem, IsRegularItem,
-                    CompanyID, UserID, FYear, CreatedBy, CreatedDate, IsDeletedTransaction
-                )
-                OUTPUT INSERTED.ToolID
-                VALUES (
-                    @ToolName, @ToolCode, @MaxToolNo, @ToolGroupID, @ToolType, @ProductHSNID,
-                    @SizeL, @SizeW, @SizeH, @UpsAround, @UpsAcross, @TotalUps,
-                    @PurchaseUnit, @PurchaseRate, @ManufecturerItemCode, @PurchaseOrderQuantity,
-                    @ShelfLife, @StockUnit, @MinimumStockQty, @IsStandardItem, @IsRegularItem,
-                    @CompanyID, @UserID, @FYear, @CreatedBy, @CreatedDate, 0
-                )";
-
-            foreach (var tool in tools)
+            try
             {
                 maxToolNo++;
-                string toolCode = $"TL{maxToolNo.ToString().PadLeft(5, '0')}";
+                string toolCode = $"{prefix}{maxToolNo.ToString().PadLeft(5, '0')}";
 
-                // ToolType = ToolGroupName (auto-insert)
                 string toolType = tool.ToolType ?? toolGroup.ToolGroupName;
 
-                // TotalUps default: UpsAround * UpsAcross
                 int? totalUps = tool.TotalUps;
                 if (!totalUps.HasValue && tool.UpsAround.HasValue && tool.UpsAcross.HasValue)
                     totalUps = tool.UpsAround.Value * tool.UpsAcross.Value;
 
-                // ShelfLife default: 365
                 int? shelfLife = tool.ShelfLife ?? 365;
-
-                // IsStandardItem default: true
                 bool? isStandardItem = tool.IsStandardItem ?? true;
-
-                // IsRegularItem default: true
                 bool? isRegularItem = tool.IsRegularItem ?? true;
 
-                // Generate ToolName from parts
                 var nameParts = new List<string>();
                 if (!string.IsNullOrEmpty(toolType)) nameParts.Add(toolType);
                 if (tool.SizeL.HasValue) nameParts.Add($"{tool.SizeL}");
@@ -499,7 +493,6 @@ public class ToolService : IToolService
                 if (tool.SizeH.HasValue) nameParts.Add($"x{tool.SizeH}");
                 string toolName = tool.ToolName ?? string.Join(" ", nameParts);
 
-                // Lookup ProductHSNID
                 int productHSNID = 0;
                 if (!string.IsNullOrWhiteSpace(tool.ProductHSNName) &&
                     hsnGroupMapping.TryGetValue(tool.ProductHSNName.Trim(), out int hsnId))
@@ -511,36 +504,33 @@ public class ToolService : IToolService
                 var toolIdObj = await _connection.ExecuteScalarAsync<object>(insertMasterSql, new
                 {
                     ToolName = toolName ?? (object)DBNull.Value,
+                    ToolDescription = toolName ?? (object)DBNull.Value,
                     ToolCode = toolCode,
                     MaxToolNo = maxToolNo,
+                    Prefix = prefix,
                     ToolGroupID = toolGroupId,
                     ToolType = toolType ?? (object)DBNull.Value,
                     ProductHSNID = productHSNID > 0 ? productHSNID : (object)DBNull.Value,
                     SizeL = tool.SizeL ?? (object)DBNull.Value,
                     SizeW = tool.SizeW ?? (object)DBNull.Value,
                     SizeH = tool.SizeH ?? (object)DBNull.Value,
-                    UpsAround = tool.UpsAround ?? (object)DBNull.Value,
-                    UpsAcross = tool.UpsAcross ?? (object)DBNull.Value,
+                    UpsL = tool.UpsAround ?? (object)DBNull.Value,
+                    UpsW = tool.UpsAcross ?? (object)DBNull.Value,
                     TotalUps = totalUps ?? (object)DBNull.Value,
                     PurchaseUnit = tool.PurchaseUnit ?? (object)DBNull.Value,
                     PurchaseRate = tool.PurchaseRate ?? (object)DBNull.Value,
-                    ManufecturerItemCode = tool.ManufecturerItemCode ?? (object)DBNull.Value,
-                    PurchaseOrderQuantity = tool.PurchaseOrderQuantity ?? (object)DBNull.Value,
-                    ShelfLife = shelfLife ?? (object)DBNull.Value,
+                    EstimationUnit = tool.PurchaseUnit ?? (object)DBNull.Value,
+                    EstimationRate = tool.PurchaseRate ?? (object)DBNull.Value,
                     StockUnit = tool.StockUnit ?? (object)DBNull.Value,
-                    MinimumStockQty = tool.MinimumStockQty ?? (object)DBNull.Value,
-                    IsStandardItem = isStandardItem ?? (object)DBNull.Value,
-                    IsRegularItem = isRegularItem ?? (object)DBNull.Value,
                     CompanyID = 2,
                     UserID = 2,
-                    FYear = "2025-2026",
                     CreatedBy = 2,
                     CreatedDate = DateTime.Now
                 }, transaction: transaction);
 
                 int newToolId = Convert.ToInt32(toolIdObj);
 
-                // INSERT INTO ToolMasterDetails
+                // INSERT INTO ToolMasterDetails row-by-row
                 int seq = 1;
                 var detailFields = new List<(string FieldName, string FieldValue)>();
 
@@ -568,63 +558,41 @@ public class ToolService : IToolService
 
                 foreach (var field in detailFields)
                 {
-                    detailsTable.Rows.Add(
-                        newToolId,
-                        field.FieldName,
-                        field.FieldValue,
-                        field.FieldName,
-                        field.FieldValue,
-                        seq++,
-                        toolGroupId,
-                        2, // CompanyID
-                        2, // UserID
-                        "2025-2026",
-                        2, // CreatedBy
-                        DateTime.Now,
-                        0
-                    );
+                    await _connection.ExecuteAsync(insertDetailSql, new
+                    {
+                        ParentFieldName = field.FieldName,
+                        ParentFieldValue = field.FieldValue,
+                        ToolID = newToolId,
+                        FieldName = field.FieldName,
+                        FieldValue = field.FieldValue,
+                        SequenceNo = seq++,
+                        ToolGroupID = toolGroupId
+                    }, transaction: transaction);
                 }
 
+                await transaction.CommitAsync();
                 successCount++;
             }
-
-            // Perform Bulk Insert for Details
-            if (detailsTable.Rows.Count > 0)
+            catch (Exception ex)
             {
-                using (var bulkCopy = new SqlBulkCopy(_connection, SqlBulkCopyOptions.Default, transaction as SqlTransaction))
-                {
-                    bulkCopy.DestinationTableName = "ToolMasterDetails";
-
-                    bulkCopy.ColumnMappings.Add("ToolID", "ToolID");
-                    bulkCopy.ColumnMappings.Add("ParentFieldName", "ParentFieldName");
-                    bulkCopy.ColumnMappings.Add("ParentFieldValue", "ParentFieldValue");
-                    bulkCopy.ColumnMappings.Add("FieldName", "FieldName");
-                    bulkCopy.ColumnMappings.Add("FieldValue", "FieldValue");
-                    bulkCopy.ColumnMappings.Add("SequenceNo", "SequenceNo");
-                    bulkCopy.ColumnMappings.Add("ToolGroupID", "ToolGroupID");
-                    bulkCopy.ColumnMappings.Add("CompanyID", "CompanyID");
-                    bulkCopy.ColumnMappings.Add("UserID", "UserID");
-                    bulkCopy.ColumnMappings.Add("FYear", "FYear");
-                    bulkCopy.ColumnMappings.Add("CreatedBy", "CreatedBy");
-                    bulkCopy.ColumnMappings.Add("CreatedDate", "CreatedDate");
-                    bulkCopy.ColumnMappings.Add("IsDeletedTransaction", "IsDeletedTransaction");
-
-                    await bulkCopy.WriteToServerAsync(detailsTable);
-                }
+                await transaction.RollbackAsync();
+                maxToolNo--; // Revert the incremented number since this row failed
+                result.ErrorRows++;
+                result.ErrorMessages.Add($"Row {rowIndex + 1} ({tool.ToolName}): {ex.Message}");
+                try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Tool Row {rowIndex + 1} Failed: {ex.Message}\n"); } catch { }
             }
+        }
 
-            await transaction.CommitAsync();
-
+        result.ImportedRows = successCount;
+        if (result.ErrorRows > 0)
+        {
+            result.Success = successCount > 0;
+            result.Message = $"Imported {successCount} of {tools.Count} tool(s). {result.ErrorRows} row(s) failed.";
+        }
+        else
+        {
             result.Success = true;
             result.Message = $"Successfully imported {successCount} tool(s)";
-            result.ImportedRows = successCount;
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync();
-            result.Success = false;
-            result.Message = $"Import failed: {ex.Message}";
-            try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ToolService Import Exception: {ex.Message}\nStack: {ex.StackTrace}\n"); } catch { }
         }
 
         return result;
