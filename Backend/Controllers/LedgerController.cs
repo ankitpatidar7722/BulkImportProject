@@ -205,19 +205,6 @@ public class LedgerController : ControllerBase
 
         try
         {
-            // First validate logic
-            var validationResult = await _ledgerService.ValidateLedgersAsync(request.Ledgers, request.LedgerGroupId);
-            
-            if (!validationResult.IsValid)
-            {
-                return BadRequest(new 
-                { 
-                    message = "Validation failed. Please fix errors before importing.",
-                    validationResult
-                });
-            }
-
-            // Then import
             var importResult = await _ledgerService.ImportLedgersAsync(request.Ledgers, request.LedgerGroupId);
             
             if (importResult.Success)

@@ -291,7 +291,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
     const defaultColDef = useMemo(() => {
         return {
             editable: () => mode === 'preview' || mode === 'validated',
-            sortable: false, filter: false, resizable: true, minWidth: 50,
+            sortable: true, filter: true, resizable: true, minWidth: 50,
             tooltipValueGetter: (params: any) => {
                 const rowIndex = toolData.indexOf(params.data);
                 if (rowIndex === -1) return null;
@@ -1078,8 +1078,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             isExternalFilterPresent={isExternalFilterPresent}
                             doesExternalFilterPass={doesExternalFilterPass}
                             pagination={true}
-                            paginationPageSize={20}
-                            paginationPageSizeSelector={[20, 50, 100]}
+                            paginationPageSize={1000}
+                            paginationPageSizeSelector={[1000, 2000, 5000]}
                             enableCellTextSelection={true}
                             ensureDomOrder={true}
                             tooltipShowDelay={300}

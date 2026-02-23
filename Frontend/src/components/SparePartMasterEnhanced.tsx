@@ -288,8 +288,8 @@ const SparePartMasterEnhanced: React.FC = () => {
     const defaultColDef = useMemo(() => {
         return {
             editable: () => mode === 'preview' || mode === 'validated',
-            sortable: false, // Disable sorting to keep index alignment with validationResult
-            filter: false, // Disable filtering for now
+            sortable: true,
+            filter: true,
             resizable: true,
             minWidth: 50,
             cellStyle: (params: any) => {
@@ -1193,8 +1193,8 @@ const SparePartMasterEnhanced: React.FC = () => {
                             isExternalFilterPresent={isExternalFilterPresent}
                             doesExternalFilterPass={doesExternalFilterPass}
                             pagination={true}
-                            paginationPageSize={20}
-                            paginationPageSizeSelector={[20, 50, 100]}
+                            paginationPageSize={1000}
+                            paginationPageSizeSelector={[1000, 2000, 5000]}
                             enableCellTextSelection={true}
                             ensureDomOrder={true}
                             overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No records found</div>`}

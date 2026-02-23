@@ -79,8 +79,22 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         setShowErrorModal(true);
     };
 
+    // Import Progress State
+    const [importProgress, setImportProgress] = useState<{
+        active: boolean;
+        step: string;
+        pct: number;
+        total: number;
+    } | null>(null);
+
     // Success Popup State (Import)
-    const [successInfo, setSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
+    const [successInfo, setSuccessInfo] = useState<{
+        groupName: string;
+        totalRows: number;
+        insertedRows: number;
+        failedRows: number;
+        errorMessages: string[];
+    } | null>(null);
 
     // Clear Success Popup State
     const [clearSuccessInfo, setClearSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
@@ -447,8 +461,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     const defaultColDef = useMemo(() => {
         return {
             editable: () => mode === 'preview' || mode === 'validated',
-            sortable: false,
-            filter: false,
+            sortable: true,
+            filter: true,
             resizable: true,
             minWidth: 50,
             tooltipValueGetter: (params: any) => {
@@ -997,86 +1011,81 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             return;
         }
 
+        const total = ledgerData.length;
+
+        // ── Step 1: Validation ─────────────────────────────────────────────
+        setImportProgress({ active: true, step: 'Validating data…', pct: 5, total });
         setIsLoading(true);
+
         try {
-            // 1. Full Re-Validation (with same cleaning)
             const cleanedForValidation = cleanLedgerDataForApi(ledgerData);
             const result = await validateLedgers(cleanedForValidation, ledgerGroupId);
             setValidationResult(result);
 
-            if (!result.isValid) {
-                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
-
-                // Aggregate failures by column (Copy of Check Validation Logic)
-                const columnFailures = new Map<string, Set<string>>();
-
-                result.rows.forEach((row: LedgerRowValidation) => {
-                    // 1. Handle Duplicates (Row Level)
-                    if (row.rowStatus === ValidationStatus.Duplicate) {
-                        const col = 'LedgerName';
-                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
-                        columnFailures.get(col)!.add('Duplicate data found');
-                    }
-
-                    // 2. Handle Cell Validations
-                    if (row.cellValidations && row.cellValidations.length > 0) {
-                        row.cellValidations.forEach((cell: any) => {
-                            const col = cell.columnName || 'Unknown';
-                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
-
-                            let reason = cell.validationMessage;
-                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
-                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
-                            else if (cell.status === ValidationStatus.InvalidContent) reason = "Single quote (') and double quote (\") are not allowed.";
-
-                            columnFailures.get(col)!.add(reason);
-                        });
-                    }
-                });
-
-                // Construct Message
-                const messages: string[] = [];
-                columnFailures.forEach((reasons, col) => {
-                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
-                });
-
+            // ── Only block on DUPLICATES — other issues (mismatch, missing, invalid) are
+            // ── handled by the backend which skips bad rows and reports them in errorMessages.
+            const duplicateRows = result.rows.filter((r: LedgerRowValidation) => r.rowStatus === ValidationStatus.Duplicate);
+            if (duplicateRows.length > 0) {
+                setImportProgress(null);
+                const dupNames = duplicateRows
+                    .map((r: LedgerRowValidation) => r.data?.ledgerName || `Row ${r.rowIndex + 1}`)
+                    .slice(0, 20);
                 setValidationModalContent({
-                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
-                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues that were not attributed to specific columns.']
+                    title: `Import Blocked: ${duplicateRows.length} Duplicate${duplicateRows.length !== 1 ? 's' : ''} Found`,
+                    messages: [
+                        `${duplicateRows.length} record(s) already exist in the database and cannot be imported:`,
+                        ...dupNames,
+                        ...(duplicateRows.length > 20 ? [`...and ${duplicateRows.length - 20} more`] : [])
+                    ]
                 });
                 setShowValidationModal(true);
-                showError('Validation failed. Please correct highlighted errors before saving.');
-                return; // ABORT SAVE
+                showError(`Import blocked: ${duplicateRows.length} duplicate record(s) found. Remove duplicates and try again.`);
+                return;
             }
 
-            // 3. Perform Import (with cleaned data)
-            const cleanedForImport = cleanLedgerDataForApi(ledgerData);
-            const importRes = await importLedgers(cleanedForImport, ledgerGroupId);
+            // ── Step 2: Uploading (bulk insert happens server-side) ───────────
+            setImportProgress({ active: true, step: `Uploading ${total.toLocaleString()} rows to database…`, pct: 30, total });
+
+            // Animate progress bar while server is working
+            let animPct = 30;
+            const animInterval = setInterval(() => {
+                animPct = Math.min(animPct + 2, 88); // never quite hit 100 until done
+                setImportProgress(prev =>
+                    prev ? { ...prev, pct: animPct, step: `Uploading ${total.toLocaleString()} rows to database…` } : prev
+                );
+            }, 400);
+
+            let importRes: any;
+            try {
+                const cleanedForImport = cleanLedgerDataForApi(ledgerData);
+                importRes = await importLedgers(cleanedForImport, ledgerGroupId);
+            } finally {
+                clearInterval(animInterval);
+            }
+
+            // ── Step 3: Finalizing ───────────────────────────────────────────
+            setImportProgress({ active: true, step: 'Finalizing…', pct: 95, total });
+            await new Promise(r => setTimeout(r, 400)); // brief visual pause
+            setImportProgress(null);
 
             if (importRes.success) {
-                // Show success popup
-                setSuccessInfo({ rowCount: importRes.importedRows ?? ledgerData.length, groupName: ledgerGroupName });
-
-                // If some rows failed, also show failed rows list after success popup
-                if (importRes.errorRows > 0 && importRes.errorMessages && importRes.errorMessages.length > 0) {
-                    setValidationModalContent({
-                        title: `${importRes.errorRows} Row(s) Failed During Import`,
-                        messages: importRes.errorMessages
-                    });
-                    // Show validation modal after user closes success popup (handled in success popup OK click)
-                }
+                setSuccessInfo({
+                    groupName: ledgerGroupName,
+                    totalRows: ledgerData.length,
+                    insertedRows: importRes.importedRows ?? ledgerData.length,
+                    failedRows: importRes.errorRows ?? 0,
+                    errorMessages: importRes.errorMessages ?? [],
+                });
             } else {
-                if (importRes.errorMessages && importRes.errorMessages.length > 0) {
-                    setValidationModalContent({
-                        title: 'Import Failed',
-                        messages: importRes.errorMessages
-                    });
+                if (importRes.errorMessages?.length > 0) {
+                    setValidationModalContent({ title: 'Import Failed', messages: importRes.errorMessages });
                     setShowValidationModal(true);
                 } else {
                     showError(importRes.message || 'Import failed');
                 }
             }
         } catch (error: any) {
+            setImportProgress(null);
             showError(error?.response?.data?.error || 'Import failed');
         } finally {
             setIsLoading(false);
@@ -1226,43 +1235,127 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     return (
         <div className="space-y-4">
 
-            {/* ✅ Success Popup Modal */}
-            {successInfo && (
-                <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full border border-gray-100 dark:border-gray-700 overflow-hidden">
-                        <div className="bg-gradient-to-r from-green-500 to-emerald-500 h-2 w-full" />
+            {/* ⏳ Import Progress Overlay */}
+            {importProgress?.active && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 h-1.5 w-full" />
                         <div className="p-8 text-center">
-                            <div className="mx-auto mb-5 w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center ring-8 ring-green-50 dark:ring-green-900/10">
-                                <svg className="w-10 h-10 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                </svg>
+                            {/* Spinner */}
+                            <div className="mx-auto mb-5 w-16 h-16 rounded-full border-4 border-blue-100 dark:border-blue-900/40 border-t-blue-600 dark:border-t-blue-400 animate-spin" />
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Saving Data</h2>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{importProgress.step}</p>
+
+                            {/* Progress bar */}
+                            <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-3 mb-3 overflow-hidden">
+                                <div
+                                    className="h-3 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-500 ease-out"
+                                    style={{ width: `${importProgress.pct}%` }}
+                                />
                             </div>
-                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Import Successful!</h2>
-                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-1">Successfully imported</p>
-                            <p className="text-4xl font-extrabold text-green-600 dark:text-green-400 mb-1">{successInfo.rowCount}</p>
-                            <p className="text-gray-600 dark:text-gray-300 text-base leading-relaxed mb-6">
-                                {successInfo.rowCount === 1 ? 'row' : 'rows'} into <span className="font-semibold text-gray-800 dark:text-white">{successInfo.groupName} Ledger Group</span>
+                            <p className="text-xs font-mono text-gray-400 dark:text-gray-500">
+                                {importProgress.pct}% &bull; {importProgress.total.toLocaleString()} rows
                             </p>
-                            <button
-                                onClick={() => {
-                                    setSuccessInfo(null);
-                                    setLedgerData([]);
-                                    setValidationResult(null);
-                                    setMode('idle');
-                                    if (fileInputRef.current) fileInputRef.current.value = '';
-                                    // Show failed rows list if any rows failed during import
-                                    if (validationModalContent && validationModalContent.title.includes('Failed During Import')) {
-                                        setShowValidationModal(true);
-                                    }
-                                }}
-                                className="w-full px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold rounded-xl text-lg transition-all duration-200 active:scale-95 shadow-md shadow-green-200 dark:shadow-green-900/30"
-                            >
-                                OK
-                            </button>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* ✅ Import Summary Popup Modal */}
+            {successInfo && (() => {
+                const allSucceeded = successInfo.failedRows === 0;
+                const downloadErrors = () => {
+                    if (!successInfo.errorMessages.length) return;
+                    const csvRows = ['Row,Error Reason', ...successInfo.errorMessages.map((msg, idx) => `"${idx + 1}","${msg.replace(/"/g, '""')}"`)]
+                    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url;
+                    a.download = `Import_Errors_${successInfo.groupName.replace(/\s+/g, '_')}.csv`;
+                    a.click(); URL.revokeObjectURL(url);
+                };
+                return (
+                    <div className="fixed inset-0 bg-black/65 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+
+                            {/* Top stripe */}
+                            <div className={`h-2 w-full bg-gradient-to-r ${allSucceeded ? 'from-green-500 to-emerald-500' : 'from-amber-400 to-orange-500'}`} />
+
+                            <div className="p-7">
+                                {/* Header icon + title */}
+                                <div className="flex flex-col items-center mb-6">
+                                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-3 ring-8 ${allSucceeded ? 'bg-green-100 dark:bg-green-900/30 ring-green-50 dark:ring-green-900/10' : 'bg-amber-100 dark:bg-amber-900/30 ring-amber-50 dark:ring-amber-900/10'}`}>
+                                        {allSucceeded
+                                            ? <svg className="w-8 h-8 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                            : <svg className="w-8 h-8 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                                        }
+                                    </div>
+                                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Import Completed!</h2>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                        <span className="font-semibold text-gray-700 dark:text-gray-300">{successInfo.groupName}</span> Ledger Group
+                                    </p>
+                                </div>
+
+                                {/* Stats grid */}
+                                <div className="grid grid-cols-3 gap-3 mb-5">
+                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3 text-center">
+                                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Total Rows</p>
+                                        <p className="text-2xl font-extrabold text-gray-800 dark:text-white">{successInfo.totalRows.toLocaleString()}</p>
+                                    </div>
+                                    <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-3 text-center border border-green-100 dark:border-green-800">
+                                        <p className="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wide mb-1">✅ Inserted</p>
+                                        <p className="text-2xl font-extrabold text-green-700 dark:text-green-400">{successInfo.insertedRows.toLocaleString()}</p>
+                                    </div>
+                                    <div className={`rounded-xl p-3 text-center ${successInfo.failedRows > 0 ? 'bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800' : 'bg-gray-50 dark:bg-gray-800'}`}>
+                                        <p className={`text-xs font-medium uppercase tracking-wide mb-1 ${successInfo.failedRows > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>❌ Failed</p>
+                                        <p className={`text-2xl font-extrabold ${successInfo.failedRows > 0 ? 'text-red-700 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`}>{successInfo.failedRows.toLocaleString()}</p>
+                                    </div>
+                                </div>
+
+                                {/* Error list */}
+                                {successInfo.errorMessages.length > 0 && (
+                                    <div className="mb-5">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                                                ⚠️ Failed Row Details ({successInfo.errorMessages.length})
+                                            </p>
+                                            <button
+                                                onClick={downloadErrors}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-medium rounded-lg transition-colors"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16v-8m0 8-4-4m4 4 4-4M4 20h16" /></svg>
+                                                Download CSV
+                                            </button>
+                                        </div>
+                                        <div className="max-h-44 overflow-y-auto rounded-xl border border-red-100 dark:border-red-900/40 bg-red-50/50 dark:bg-red-900/10 divide-y divide-red-100 dark:divide-red-900/30">
+                                            {successInfo.errorMessages.map((msg, idx) => (
+                                                <div key={idx} className="flex items-start gap-2 px-3 py-2">
+                                                    <span className="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{idx + 1}</span>
+                                                    <p className="text-xs text-red-700 dark:text-red-300 leading-relaxed">{msg}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* OK button */}
+                                <button
+                                    onClick={() => {
+                                        setSuccessInfo(null);
+                                        setLedgerData([]);
+                                        setValidationResult(null);
+                                        setMode('idle');
+                                        if (fileInputRef.current) fileInputRef.current.value = '';
+                                    }}
+                                    className={`w-full px-6 py-3 font-semibold rounded-xl text-white text-base transition-all duration-200 active:scale-95 shadow-md ${allSucceeded ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-green-200 dark:shadow-green-900/30' : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-amber-200 dark:shadow-amber-900/30'}`}
+                                >
+                                    OK
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
 
             {/* 🗑️ Clear All Data Success Popup */}
             {clearSuccessInfo && (
@@ -1382,11 +1475,23 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 {validationResult?.isValid && (
                     <button
                         onClick={handleImport}
-                        disabled={isLoading}
+                        disabled={isLoading || !!importProgress}
                         className="px-4 py-2 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-50 flex items-center gap-2 transition-colors animate-pulse"
                     >
-                        <CheckCircle2 className="w-4 h-4" />
-                        Save Data
+                        {importProgress ? (
+                            <>
+                                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                                </svg>
+                                Saving…
+                            </>
+                        ) : (
+                            <>
+                                <CheckCircle2 className="w-4 h-4" />
+                                Save Data
+                            </>
+                        )}
                     </button>
                 )}
             </div>
@@ -1628,8 +1733,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             isExternalFilterPresent={isExternalFilterPresent}
                             doesExternalFilterPass={doesExternalFilterPass}
                             pagination={true}
-                            paginationPageSize={20}
-                            paginationPageSizeSelector={[20, 50, 100]}
+                            paginationPageSize={1000}
+                            paginationPageSizeSelector={[1000, 2000, 5000]}
                             enableCellTextSelection={true}
                             ensureDomOrder={true}
                             tooltipShowDelay={300}

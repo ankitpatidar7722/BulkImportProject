@@ -228,15 +228,7 @@ public class ItemController : ControllerBase
 
         try
         {
-            // First validate logic
-            var validationResult = await _itemService.ValidateItemsAsync(request.Items, request.ItemGroupId);
-
-            if (!validationResult.IsValid)
-            {
-                return BadRequest(new { message = "Validation failed. Please fix errors before importing.", validationResult });
-            }
-
-            // Then import
+            // Call bulk import directly — service handles per-row skipping and error reporting
             var importResult = await _itemService.ImportItemsAsync(request.Items, request.ItemGroupId);
 
             if (importResult.Success)

@@ -15,86 +15,45 @@ public class LedgerService : ILedgerService
 
     public async Task<List<LedgerMasterDto>> GetLedgersByGroupAsync(int ledgerGroupId)
     {
-        // ── Query 1: Lean main SELECT — direct columns + lightweight JOINs only.
-        // All detail fields (GSTRegistrationType, RefCode, CreditDays, CurrencyCode, …)
-        // are fetched in a single batch query below instead of one correlated subquery per row.
-        var query = @"
-            SELECT
-                l.LedgerID,
-                l.LedgerGroupID,
-                l.LedgerName,
-                l.MailingName,
-                l.Address1,
-                l.Address2,
-                l.Address3,
-                l.Country,
-                l.State,
-                l.City,
-                l.Pincode,
-                l.TelephoneNo,
-                l.Email,
-                l.MobileNo,
-                l.Website,
-                l.PANNo,
-                l.GSTNo,
-                sr.LedgerName        AS SalesRepresentative,
-                l.SupplyTypeCode,
-                CAST(l.GSTApplicable AS BIT) AS GSTApplicable,
-                CASE WHEN ISNUMERIC(l.DeliveredQtyTolerance) = 1
-                     THEN CAST(l.DeliveredQtyTolerance AS DECIMAL(18,2))
-                     ELSE NULL
-                END AS DeliveredQtyTolerance,
-                CAST(ISNULL(l.IsDeletedTransaction, 0) AS BIT) AS IsDeletedTransaction,
-                l.LegalName,
-                l.MailingAddress,
-                l.DateOfBirth,
-                l.Designation,
-                l.DepartmentID,
-                dm.DepartmentName,
-                l.RefClientID,
-                client.LedgerName AS ClientName
-            FROM LedgerMaster l
-            LEFT JOIN (
-                SELECT LM.LedgerID, LM.LedgerName
-                FROM   LedgerMaster      AS LM
-                INNER JOIN LedgerGroupMaster AS LG
-                    ON LG.LedgerGroupID = LM.LedgerGroupID AND LG.CompanyID = LM.CompanyID
-                WHERE  LG.LedgerGroupNameID = 27
-                  AND  LM.DepartmentID      = -50
-                  AND  ISNULL(LM.IsDeletedTransaction, 0) <> 1
-                  AND  LM.CompanyID = 2
-            ) sr ON l.RefSalesRepresentativeID = sr.LedgerID
-            LEFT JOIN DepartmentMaster dm     ON l.DepartmentID = dm.DepartmentID
-            LEFT JOIN LedgerMaster     client ON l.RefClientID  = client.LedgerID
-            WHERE l.LedgerGroupID = @LedgerGroupId
-              AND (l.IsDeletedTransaction IS NULL OR l.IsDeletedTransaction = 0)
-            ORDER BY l.LedgerName";
-
-        var ledgerList = (await _connection.QueryAsync<LedgerMasterDto>(query, new { LedgerGroupId = ledgerGroupId })).ToList();
+        // ── Main load: call the existing stored procedure GetLedgerMasterData ──────────────
+        // SP branches:
+        //   LedgerGroupID = 1  → Clients    : PIVOT on GSTRegistrationType, PartyType, CustomerCategory, CreditDays
+        //   LedgerGroupID = 4  → Consignees : specific columns + ClientName self-join
+        //   All others         : LM.* + DepartmentMaster JOIN
+        var ledgerList = (await _connection.QueryAsync<LedgerMasterDto>(
+            "GetLedgerMasterData",
+            new
+            {
+                TblName       = "LedgerMaster",
+                CompanyID     = "2",
+                LedgerGroupID = ledgerGroupId.ToString()
+            },
+            commandType: System.Data.CommandType.StoredProcedure
+        )).ToList();
 
         if (ledgerList.Count == 0)
             return ledgerList;
 
-        // ── Query 2: Single batch fetch of ALL detail rows for this ledger group.
-        // Replaces 4 correlated subqueries that previously fired once per ledger row.
-        var ledgerIds = ledgerList
-            .Select(l => l.LedgerID)
-            .Where(id => id > 0)
-            .Distinct()
-            .ToList();
+        // ── Supplemental batch: fetch detail fields the SP doesn't return ──────────────────
+        // Uses a JOIN to LedgerMaster (filtered by LedgerGroupID) instead of IN @LedgerIDs
+        // to avoid SQL Server's 2100-parameter limit when there are many records.
+        string fieldFilter = ledgerGroupId == 1
+            ? "'RefCode','CurrencyCode'"
+            : "'GSTRegistrationType','RefCode','CreditDays','CurrencyCode'";
 
-        const string detailsBatchQuery = @"
-            SELECT LedgerID, FieldName, FieldValue
-            FROM   LedgerMasterDetails
-            WHERE  LedgerID IN @LedgerIDs
-              AND  (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0)
-              AND  FieldValue IS NOT NULL
-              AND  FieldName IN ('GSTRegistrationType','RefCode','CreditDays','CurrencyCode')";
+        var detailsQuery = $@"
+            SELECT LD.LedgerID, LD.FieldName, LD.FieldValue
+            FROM   LedgerMasterDetails LD
+            INNER JOIN LedgerMaster LM ON LM.LedgerID = LD.LedgerID
+            WHERE  LM.LedgerGroupID = @LedgerGroupId
+              AND  ISNULL(LM.IsDeletedTransaction, 0) = 0
+              AND  ISNULL(LD.IsDeletedTransaction, 0) = 0
+              AND  LD.FieldValue IS NOT NULL
+              AND  LD.FieldName IN ({fieldFilter})";
 
-        var allDetails = await _connection.QueryAsync<dynamic>(
-            detailsBatchQuery, new { LedgerIDs = ledgerIds });
+        var allDetails = await _connection.QueryAsync<dynamic>(detailsQuery, new { LedgerGroupId = ledgerGroupId });
 
-        // Group by LedgerID → take the latest value per field (last-write wins)
+        // Group by LedgerID → latest value per field (equivalent to TOP 1 ORDER BY DESC)
         var detailsByLedger = allDetails
             .GroupBy(d => (int)d.LedgerID)
             .ToDictionary(
@@ -102,27 +61,31 @@ public class LedgerService : ILedgerService
                 g => g.GroupBy(d => (string)d.FieldName)
                        .ToDictionary(
                            fg => fg.Key,
-                           fg => (string)fg.Last().FieldValue,   // equivalent to ORDER BY … DESC TOP 1
+                           fg => (string)fg.Last().FieldValue,
                            StringComparer.OrdinalIgnoreCase));
 
-        // Map detail values back onto each ledger DTO
+        // Map supplemental fields back onto each ledger DTO
         foreach (var ledger in ledgerList)
         {
             if (ledger.LedgerID <= 0) continue;
             if (!detailsByLedger.TryGetValue(ledger.LedgerID, out var fields)) continue;
 
-            if (fields.TryGetValue("GSTRegistrationType", out var gstRegType))
-                ledger.GSTRegistrationType = gstRegType;
-
             if (fields.TryGetValue("RefCode", out var refCode))
                 ledger.RefCode = refCode;
 
-            if (fields.TryGetValue("CreditDays", out var creditDaysStr) &&
-                int.TryParse(creditDaysStr, out int creditDays))
-                ledger.CreditDays = creditDays;
-
             if (fields.TryGetValue("CurrencyCode", out var currencyCode))
                 ledger.CurrencyCode = currencyCode;
+
+            // Only needed for non-Clients groups (SP PIVOT already covers Group 1)
+            if (ledgerGroupId != 1)
+            {
+                if (fields.TryGetValue("GSTRegistrationType", out var gstRegType))
+                    ledger.GSTRegistrationType = gstRegType;
+
+                if (fields.TryGetValue("CreditDays", out var creditDaysStr) &&
+                    int.TryParse(creditDaysStr, out int creditDays))
+                    ledger.CreditDays = creditDays;
+            }
         }
 
         return ledgerList;
@@ -540,7 +503,7 @@ public class LedgerService : ILedgerService
         result.TotalRows = ledgers.Count;
         if (_connection.State != System.Data.ConnectionState.Open) await _connection.OpenAsync();
 
-        // 1. Get Ledger Group Prefix and Name (outside transaction)
+        // ── 1. Group metadata ─────────────────────────────────────────────────────────────
         string prefix = "LGR";
         string ledgerType = "Suppliers";
         try
@@ -548,266 +511,439 @@ public class LedgerService : ILedgerService
             var groupData = await _connection.QueryFirstOrDefaultAsync<dynamic>(
                 "SELECT LedgerGroupPrefix, LedgerGroupName FROM LedgerGroupMaster WHERE LedgerGroupID = @GID",
                 new { GID = ledgerGroupId });
-
             if (groupData != null)
             {
                 if (!string.IsNullOrEmpty(groupData.LedgerGroupPrefix)) prefix = groupData.LedgerGroupPrefix;
                 if (!string.IsNullOrEmpty(groupData.LedgerGroupName)) ledgerType = groupData.LedgerGroupName;
             }
         }
-        catch {}
+        catch { }
 
-        // 2. Get Max Ledger No (outside transaction)
+        bool isEmployee  = ledgerType.ToLower().Contains("employee");
+        bool isConsignee = ledgerType.ToLower().Contains("consignee");
+
+        // ── 2. Max ledger number ──────────────────────────────────────────────────────────
         var maxLedgerNo = await _connection.ExecuteScalarAsync<int?>(
             "SELECT MAX(MaxLedgerNo) FROM LedgerMaster WHERE LedgerGroupID = @GID AND IsDeletedTransaction = 0",
-            new { GID = ledgerGroupId }
-        ) ?? 0;
+            new { GID = ledgerGroupId }) ?? 0;
 
-        int successCount = 0;
+        // ── 3. Batch pre-resolve all lookups (3 queries instead of N×3) ───────────────────
 
-        // Prepare Insert SQL for LedgerMaster (Full Columns)
-        var insertMasterSql = @"
-            INSERT INTO LedgerMaster (
-                LedgerCode, MaxLedgerNo, LedgerCodePrefix,
-                LedgerGroupID, LedgerName, MailingName, Address1, Address2, Address3,
-                Country, State, City, Pincode, TelephoneNo, Email, MobileNo, Website,
-                PANNo, GSTNo, RefSalesRepresentativeID, SupplyTypeCode, GSTApplicable,
-                Distance, DeliveredQtyTolerance, IsDeletedTransaction, CompanyID, UserID, FYear,
-                CreatedDate, CreatedBy, ISLedgerActive, LegalName, MailingAddress,
-                CurrencyCode, DepartmentID, LedgerRefCode, InventoryEffect, MaintainBillWise, IsTaxType,
-                LedgerType, DateOfBirth, Designation, RefClientID
-            ) VALUES (
-                @LedgerCode, @MaxLedgerNo, @LedgerCodePrefix,
-                @LedgerGroupID, @LedgerName, @MailingName, @Address1, @Address2, @Address3,
-                @Country, @State, @City, @Pincode, @TelephoneNo, @Email, @MobileNo, @Website,
-                @PANNo, @GSTNo, @RefSalesRepresentativeID, @SupplyTypeCode, @GSTApplicable,
-                @Distance, @DeliveredQtyTolerance, 0, 2, 2, '2025-2026',
-                GETDATE(), 2, 1, @LegalName, @MailingAddress,
-                @CurrencyCode, @DepartmentID, @RefCode, 0, 0, 0,
-                @LedgerType, @DateOfBirth, @Designation, @RefClientID
-            );
-            SELECT CAST(SCOPE_IDENTITY() as int);";
-
-        // Prepare Insert SQL for LedgerMasterDetails
-        var insertDetailSql = @"
-            INSERT INTO LedgerMasterDetails (
-                LedgerID, LedgerGroupID, CompanyID, UserID, FYear,
-                FieldName, FieldValue, ParentFieldName, ParentFieldValue,
-                CreatedDate, CreatedBy, ModifiedDate, ModifiedBy,
-                SequenceNo, FieldID
-            ) VALUES (
-                @LedgerID, @LedgerGroupID, @CompanyID, @UserID, @FYear,
-                @FieldName, @FieldValue, @ParentFieldName, @ParentFieldValue,
-                GETDATE(), @CreatedBy, GETDATE(), @CreatedBy,
-                @SequenceNo, @FieldID
-            )";
-
-        // Row-by-row insert with per-row transaction
-        for (int rowIndex = 0; rowIndex < ledgers.Count; rowIndex++)
+        // 3a. SalesRep name → ID
+        var salesRepNames = ledgers
+            .Where(l => !string.IsNullOrWhiteSpace(l.SalesRepresentative))
+            .Select(l => l.SalesRepresentative!.Trim()).Distinct().ToList();
+        var salesRepMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (salesRepNames.Count > 0)
         {
-            var ledger = ledgers[rowIndex];
-            var transaction = await _connection.BeginTransactionAsync();
+            var rows = await _connection.QueryAsync<(string Name, int Id)>(
+                @"SELECT LM.LedgerName AS Name, LM.LedgerID AS Id
+                  FROM LedgerMaster LM
+                  INNER JOIN LedgerGroupMaster LG ON LG.LedgerGroupID = LM.LedgerGroupID AND LG.CompanyID = LM.CompanyID
+                  WHERE LG.LedgerGroupNameID = 27 AND LM.DepartmentID = -50
+                    AND ISNULL(LM.IsDeletedTransaction, 0) <> 1 AND LM.CompanyID = 2
+                    AND LM.LedgerName IN @Names",
+                new { Names = salesRepNames });
+            foreach (var r in rows) salesRepMap[r.Name] = r.Id;
+        }
 
+        // 3b. Department name → ID
+        var deptNames = ledgers
+            .Where(l => !string.IsNullOrWhiteSpace(l.DepartmentName))
+            .Select(l => l.DepartmentName!.Trim()).Distinct().ToList();
+        var deptMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (deptNames.Count > 0)
+        {
+            var rows = await _connection.QueryAsync<(string Name, int Id)>(
+                "SELECT DepartmentName AS Name, DepartmentID AS Id FROM DepartmentMaster WHERE DepartmentName IN @Names",
+                new { Names = deptNames });
+            foreach (var r in rows) deptMap[r.Name] = r.Id;
+        }
+
+        // 3c. Client name → ID (Consignee only)
+        var clientMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (isConsignee)
+        {
+            var clientNames = ledgers
+                .Where(l => !string.IsNullOrWhiteSpace(l.ClientName))
+                .Select(l => l.ClientName!.Trim()).Distinct().ToList();
+            if (clientNames.Count > 0)
+            {
+                var rows = await _connection.QueryAsync<(string Name, int Id)>(
+                    "SELECT LedgerName AS Name, LedgerID AS Id FROM LedgerMaster WHERE LedgerName IN @Names AND ISNULL(IsDeletedTransaction, 0) = 0",
+                    new { Names = clientNames });
+                foreach (var r in rows) clientMap[r.Name] = r.Id;
+            }
+        }
+
+        // ── 4. Build DataTable for LedgerMaster ──────────────────────────────────────────
+        var masterTable = new System.Data.DataTable("LedgerMaster");
+        masterTable.Columns.Add("LedgerCode",             typeof(string));
+        masterTable.Columns.Add("MaxLedgerNo",            typeof(int));
+        masterTable.Columns.Add("LedgerCodePrefix",       typeof(string));
+        masterTable.Columns.Add("LedgerGroupID",          typeof(int));
+        masterTable.Columns.Add("LedgerName",             typeof(string));
+        masterTable.Columns.Add("MailingName",            typeof(string));
+        masterTable.Columns.Add("Address1",               typeof(string));
+        masterTable.Columns.Add("Address2",               typeof(string));
+        masterTable.Columns.Add("Address3",               typeof(string));
+        masterTable.Columns.Add("Country",                typeof(string));
+        masterTable.Columns.Add("State",                  typeof(string));
+        masterTable.Columns.Add("City",                   typeof(string));
+        masterTable.Columns.Add("Pincode",                typeof(string));
+        masterTable.Columns.Add("TelephoneNo",            typeof(string));
+        masterTable.Columns.Add("Email",                  typeof(string));
+        masterTable.Columns.Add("MobileNo",               typeof(string));
+        masterTable.Columns.Add("Website",                typeof(string));
+        masterTable.Columns.Add("PANNo",                  typeof(string));
+        masterTable.Columns.Add("GSTNo",                  typeof(string));
+        masterTable.Columns.Add("RefSalesRepresentativeID", typeof(int));
+        masterTable.Columns.Add("SupplyTypeCode",         typeof(string));
+        masterTable.Columns.Add("GSTApplicable",          typeof(bool));
+        masterTable.Columns.Add("Distance",               typeof(decimal));
+        masterTable.Columns.Add("DeliveredQtyTolerance",  typeof(decimal));
+        masterTable.Columns.Add("IsDeletedTransaction",   typeof(bool));
+        masterTable.Columns.Add("CompanyID",              typeof(int));
+        masterTable.Columns.Add("UserID",                 typeof(int));
+        masterTable.Columns.Add("FYear",                  typeof(string));
+        masterTable.Columns.Add("CreatedDate",            typeof(DateTime));
+        masterTable.Columns.Add("CreatedBy",              typeof(int));
+        masterTable.Columns.Add("ISLedgerActive",         typeof(bool));
+        masterTable.Columns.Add("LegalName",              typeof(string));
+        masterTable.Columns.Add("MailingAddress",         typeof(string));
+        masterTable.Columns.Add("CurrencyCode",           typeof(string));
+        masterTable.Columns.Add("DepartmentID",           typeof(int));
+        masterTable.Columns.Add("LedgerRefCode",          typeof(string));
+        masterTable.Columns.Add("InventoryEffect",        typeof(bool));
+        masterTable.Columns.Add("MaintainBillWise",       typeof(bool));
+        masterTable.Columns.Add("IsTaxType",              typeof(bool));
+        masterTable.Columns.Add("LedgerType",             typeof(string));
+        masterTable.Columns.Add("DateOfBirth",            typeof(DateTime));
+        masterTable.Columns.Add("Designation",            typeof(string));
+        masterTable.Columns.Add("RefClientID",            typeof(int));
+
+        // ── 4a. Query ACTUAL DB column sizes so truncation never occurs ──────────────────────
+        var colSizeQuery = @"
+            SELECT c.name AS ColName,
+                   CASE WHEN c.max_length = -1 THEN 4000
+                        WHEN t.name LIKE 'n%'  THEN c.max_length / 2
+                        ELSE c.max_length
+                   END AS MaxChars
+            FROM sys.columns c
+            JOIN sys.types   t ON c.user_type_id = t.user_type_id
+            WHERE c.object_id = OBJECT_ID('LedgerMaster')
+              AND t.name IN ('nvarchar','varchar','char','nchar')";
+        var schemaRows = await _connection.QueryAsync<(string ColName, int MaxChars)>(colSizeQuery);
+        var colSizes   = schemaRows.ToDictionary(r => r.ColName, r => r.MaxChars, StringComparer.OrdinalIgnoreCase);
+        // Helper: get actual DB max for a column, fallback to safeDefault if not found
+        int ColMax(string colName, int safeDefault = 250) =>
+            colSizes.TryGetValue(colName, out int sz) ? sz : safeDefault;
+
+        // Per-row metadata for the details phase
+        var rowMeta = new List<(string LedgerCode, LedgerMasterDto Ledger, int? SalesRepId, int? DeptId, int? ClientId, string SupplyType, bool GstApplicable, string LegalName)>();
+
+        // ── Helper: safely truncate a string to maxLen, returns DBNull if null/empty ────────
+        static object T(string? value, int maxLen)
+        {
+            if (value == null) return DBNull.Value;
+            var v = value.Trim();
+            return v.Length == 0 ? DBNull.Value : (object)(v.Length > maxLen ? v[..maxLen] : v);
+        }
+        // Same but always returns a non-null string (for required fields like LedgerName)
+        static string TS(string? value, int maxLen)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return "";
+            var v = value.Trim();
+            return v.Length > maxLen ? v[..maxLen] : v;
+        }
+        // Smart email cleaner: extracts actual email address from messy strings
+        // e.g. "Harit Mathur/Ho <Harit.Mathur@Bajajallianz.Co.In>" → "Harit.Mathur@Bajajallianz.Co.In"
+        // e.g. "a@x.com ][ b@x.com ][ c@x.com"   → "a@x.com"  (takes first only)
+        static object CleanEmail(string? value, int maxLen)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return DBNull.Value;
+            var raw = value.Trim();
+
+            // 1. Try to extract from angle-brackets first: <email@domain>
+            var angleMatch = System.Text.RegularExpressions.Regex.Match(raw, @"<([^<>\s]+@[^<>\s]+)>");
+            if (angleMatch.Success)
+            {
+                var extracted = angleMatch.Groups[1].Value.Trim();
+                return extracted.Length > maxLen ? extracted[..maxLen] : extracted;
+            }
+
+            // 2. Extract first valid-looking email token from the string
+            var emailMatch = System.Text.RegularExpressions.Regex.Match(raw, @"[\w.+\-]+@[\w.\-]+\.[a-zA-Z]{2,}");
+            if (emailMatch.Success)
+            {
+                var extracted = emailMatch.Value.Trim();
+                return extracted.Length > maxLen ? extracted[..maxLen] : extracted;
+            }
+
+            // 3. Fallback: just truncate whatever is there
+            return raw.Length > maxLen ? raw[..maxLen] : raw;
+        }
+        // Smart phone cleaner: takes the first number from multi-value cells
+        // e.g. "04994-232324-04994-232325-0-9895751799" → split by ][, /, ,, ;, space + take first
+        // e.g. "01234-567890 ][ 09876-543210"           → "01234-567890"
+        static object CleanPhone(string? value, int maxLen)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return DBNull.Value;
+            var raw = value.Trim();
+
+            // Split on common multi-value separators used in Excel exports
+            var separators = new[] { "][", " / ", "/", ", ", ";", " ; ",  " " };
+            foreach (var sep in separators)
+            {
+                if (raw.Contains(sep))
+                {
+                    var first = raw.Split(new[] { sep }, StringSplitOptions.RemoveEmptyEntries)[0].Trim();
+                    if (first.Length > 0)
+                        return first.Length > maxLen ? first[..maxLen] : first;
+                }
+            }
+
+            // No separator found: just truncate
+            return raw.Length > maxLen ? raw[..maxLen] : raw;
+        }
+
+        for (int i = 0; i < ledgers.Count; i++)
+        {
+            var ledger = ledgers[i];
+            maxLedgerNo++;
+            string ledgerCode = $"{prefix}{maxLedgerNo.ToString().PadLeft(5, '0')}";
+
+            int? salesRepId = salesRepMap.TryGetValue(ledger.SalesRepresentative?.Trim() ?? "", out int srId) ? srId : null;
+            int? deptId     = deptMap.TryGetValue(ledger.DepartmentName?.Trim() ?? "", out int dId) ? dId : null;
+            int? clientId   = isConsignee && clientMap.TryGetValue(ledger.ClientName?.Trim() ?? "", out int cId) ? cId : null;
+
+            string supplyType  = !string.IsNullOrWhiteSpace(ledger.SupplyTypeCode) ? ledger.SupplyTypeCode : "B2B";
+            bool   gstApp      = ledger.GSTApplicable ?? true;
+            string legalName   = !string.IsNullOrWhiteSpace(ledger.MailingName) ? ledger.MailingName : (ledger.LedgerName ?? "");
+
+            // ── Per-row try-catch: build DataTable row, skip on any error ──────────────────
             try
             {
-                maxLedgerNo++;
-                string ledgerCode = $"{prefix}{maxLedgerNo.ToString().PadLeft(5, '0')}";
-
-                // Lookup SalesRepresentative ID if name is provided
-                int? salesRepId = null;
-                if (!string.IsNullOrWhiteSpace(ledger.SalesRepresentative))
-                {
-                    salesRepId = await _connection.ExecuteScalarAsync<int?>(
-                        @"SELECT LM.LedgerID
-                          FROM LedgerMaster AS LM
-                          INNER JOIN LedgerGroupMaster AS LG ON LG.LedgerGroupID=LM.LedgerGroupID AND LG.CompanyID=LM.CompanyID
-                          WHERE LM.LedgerName = @Name
-                          AND LG.LedgerGroupNameID=27
-                          AND LM.DepartmentID=-50
-                          AND ISNULL(LM.IsDeletedTransaction, 0) <> 1
-                          AND LM.CompanyID=2",
-                        new { Name = ledger.SalesRepresentative },
-                        transaction: transaction
-                    );
-                }
-
-                // Lookup Department ID if name is provided
-                int? departmentId = null;
-                if (!string.IsNullOrWhiteSpace(ledger.DepartmentName))
-                {
-                     departmentId = await _connection.ExecuteScalarAsync<int?>(
-                        "SELECT DepartmentID FROM DepartmentMaster WHERE DepartmentName = @Name",
-                        new { Name = ledger.DepartmentName },
-                        transaction: transaction
-                    );
-                }
-
-                // Lookup RefClientID for Consignee
-                int? refClientId = null;
-                if (ledgerType.ToLower().Contains("consignee") && !string.IsNullOrWhiteSpace(ledger.ClientName))
-                {
-                     refClientId = await _connection.ExecuteScalarAsync<int?>(
-                        "SELECT LedgerID FROM LedgerMaster WHERE LedgerName = @Name AND (IsDeletedTransaction IS NULL OR IsDeletedTransaction = 0)",
-                        new { Name = ledger.ClientName },
-                        transaction: transaction
-                     );
-                }
-
-                // Apply Defaults
-                string supplyTypeCode = !string.IsNullOrWhiteSpace(ledger.SupplyTypeCode) ? ledger.SupplyTypeCode : "B2B";
-                bool gstApplicable = ledger.GSTApplicable ?? true;
-                string legalName = !string.IsNullOrWhiteSpace(ledger.MailingName) ? ledger.MailingName : (ledger.LedgerName ?? "");
-
-                // INSERT INTO LedgerMaster
-                var ledgerIdObj = await _connection.ExecuteScalarAsync<object>(insertMasterSql, new
-                {
-                    LedgerCode = ledgerCode,
-                    MaxLedgerNo = maxLedgerNo,
-                    LedgerCodePrefix = prefix,
-                    ledger.LedgerGroupID,
-                    ledger.LedgerName,
-                    MailingName = ledger.MailingName ?? ledger.LedgerName,
-                    Address1 = ledger.Address1 ?? (object)DBNull.Value,
-                    Address2 = ledger.Address2 ?? (object)DBNull.Value,
-                    Address3 = ledger.Address3 ?? (object)DBNull.Value,
-                    Country = ledger.Country ?? (object)DBNull.Value,
-                    State = ledger.State ?? (object)DBNull.Value,
-                    City = ledger.City ?? (object)DBNull.Value,
-                    Pincode = ledger.Pincode ?? (object)DBNull.Value,
-                    TelephoneNo = ledger.TelephoneNo ?? (object)DBNull.Value,
-                    Email = ledger.Email ?? (object)DBNull.Value,
-                    MobileNo = ledger.MobileNo ?? (object)DBNull.Value,
-                    Website = ledger.Website ?? (object)DBNull.Value,
-                    PANNo = ledger.PANNo ?? (object)DBNull.Value,
-                    GSTNo = ledger.GSTNo ?? (object)DBNull.Value,
-                    RefSalesRepresentativeID = salesRepId ?? (object)DBNull.Value,
-                    SupplyTypeCode = supplyTypeCode,
-                    GSTApplicable = gstApplicable,
-                    Distance = ledger.Distance ?? (object)DBNull.Value,
-                    DeliveredQtyTolerance = ledger.DeliveredQtyTolerance ?? (object)DBNull.Value,
-                    LegalName = legalName,
-                    MailingAddress = ledger.MailingAddress ?? (object)DBNull.Value,
-                    CurrencyCode = ledger.CurrencyCode ?? (object)DBNull.Value,
-                    DepartmentID = departmentId ?? 0,
-                    RefCode = ledger.RefCode ?? (object)DBNull.Value,
-                    LedgerType = ledgerType,
-                    DateOfBirth = ledger.DateOfBirth ?? (object)DBNull.Value,
-                    Designation = ledger.Designation ?? (object)DBNull.Value,
-                    RefClientID = refClientId ?? (object)DBNull.Value
-                }, transaction: transaction);
-
-                int newLedgerId = Convert.ToInt32(ledgerIdObj);
-
-                // INSERT INTO LedgerMasterDetails (Explicit Sequence)
-                var details = new List<(string Name, object? Value, int Seq)>();
-
-                bool isEmployee = ledgerType.ToLower().Contains("employee");
-
-                if (isEmployee)
-                {
-                    details = new List<(string Name, object? Value, int Seq)>
-                    {
-                        ("LedgerName", ledger.LedgerName, 1),
-                        ("MailingName", ledger.MailingName, 2),
-                        ("Address1", ledger.Address1, 3),
-                        ("Address2", ledger.Address2, 4),
-                        ("Address3", ledger.Address3, 5),
-                        ("Country", ledger.Country, 6),
-                        ("State", ledger.State, 7),
-                        ("City", ledger.City, 8),
-                        ("Pincode", ledger.Pincode, 9),
-                        ("MailingAddress", ledger.MailingAddress, 10),
-                        ("DateOfBirth", ledger.DateOfBirth?.ToString("yyyy-MM-dd"), 11),
-                        ("TelephoneNo", ledger.TelephoneNo, 12),
-                        ("MobileNo", ledger.MobileNo, 13),
-                        ("Email", ledger.Email, 14),
-                        ("PANNo", ledger.PANNo, 15),
-                        ("DepartmentID", departmentId?.ToString(), 16),
-                        ("Designation", ledger.Designation, 17),
-                        ("ISLedgerActive", "True", 0)
-                    };
-                }
-                else
-                {
-                    details = new List<(string Name, object? Value, int Seq)>
-                    {
-                        ("LedgerName", ledger.LedgerName, 1),
-                        ("MailingName", ledger.MailingName, 2),
-                        ("Address1", ledger.Address1, 3),
-                        ("Address2", ledger.Address2, 4),
-                        ("Address3", ledger.Address3, 5),
-                        ("Country", ledger.Country, 6),
-                        ("State", ledger.State, 7),
-                        ("City", ledger.City, 8),
-                        ("Pincode", ledger.Pincode, 9),
-                        ("MailingAddress", ledger.MailingAddress, 10),
-                        ("TelephoneNo", ledger.TelephoneNo, 11),
-                        ("MobileNo", ledger.MobileNo, 12),
-                        ("Email", ledger.Email, 13),
-                        ("Website", ledger.Website, 14),
-                        ("PANNo", ledger.PANNo, 15),
-                        ("GSTNo", ledger.GSTNo, 16),
-                        ("CurrencyCode", ledger.CurrencyCode, 17),
-                        ("GSTApplicable", gstApplicable.ToString(), 18),
-                        ("LegalName", legalName, 19),
-                        ("SupplyTypeCode", supplyTypeCode, 20),
-                        ("RefCode", ledger.RefCode, 21),
-                        ("DeliveredQtyTolerance", ledger.DeliveredQtyTolerance?.ToString(), 22),
-                        ("GSTRegistrationType", ledger.GSTRegistrationType, 24),
-                        ("ISLedgerActive", "True", 0)
-                    };
-
-                    if (refClientId.HasValue)
-                    {
-                        details.Add(("RefClientID", refClientId.Value, 23));
-                    }
-                }
-
-                foreach (var item in details)
-                {
-                    await _connection.ExecuteAsync(insertDetailSql, new {
-                        LedgerID = newLedgerId,
-                        LedgerGroupID = ledgerGroupId,
-                        CompanyID = 2,
-                        UserID = 2,
-                        FYear = "2025-2026",
-                        FieldName = item.Name,
-                        FieldValue = item.Value ?? (object)DBNull.Value,
-                        ParentFieldName = item.Name,
-                        ParentFieldValue = item.Value ?? (object)DBNull.Value,
-                        CreatedBy = 2,
-                        SequenceNo = item.Seq,
-                        FieldID = 0
-                    }, transaction: transaction);
-                }
-
-                await transaction.CommitAsync();
-                successCount++;
+                object DBN = DBNull.Value;
+                masterTable.Rows.Add(
+                    TS(ledgerCode,                                  ColMax("LedgerCode", 20)),
+                    maxLedgerNo,
+                    TS(prefix,                                      ColMax("LedgerCodePrefix", 10)),
+                    ledgerGroupId,
+                    TS(ledger.LedgerName,                           ColMax("LedgerName", 250)),
+                    TS(ledger.MailingName ?? ledger.LedgerName,     ColMax("MailingName", 250)),
+                    T(ledger.Address1,                              ColMax("Address1", 500)),
+                    T(ledger.Address2,                              ColMax("Address2", 500)),
+                    T(ledger.Address3,                              ColMax("Address3", 500)),
+                    T(ledger.Country,                               ColMax("Country", 100)),
+                    T(ledger.State,                                 ColMax("State", 100)),
+                    T(ledger.City,                                  ColMax("City", 100)),
+                    T(ledger.Pincode,                               ColMax("Pincode", 20)),
+                    CleanPhone(ledger.TelephoneNo,                  ColMax("TelephoneNo", 30)),
+                    CleanEmail(ledger.Email,                        ColMax("Email", 100)),
+                    CleanPhone(ledger.MobileNo,                     ColMax("MobileNo", 30)),
+                    T(ledger.Website,                               ColMax("Website", 250)),
+                    T(ledger.PANNo,                                 ColMax("PANNo", 10)),
+                    T(ledger.GSTNo,                                 ColMax("GSTNo", 15)),
+                    salesRepId.HasValue ? (object)salesRepId.Value : DBN,
+                    TS(supplyType,                                  ColMax("SupplyTypeCode", 10)),
+                    gstApp,
+                    ledger.Distance.HasValue              ? (object)ledger.Distance.Value              : DBN,
+                    ledger.DeliveredQtyTolerance.HasValue ? (object)ledger.DeliveredQtyTolerance.Value : DBN,
+                    false, 2, 2, "2025-2026", DateTime.Now, 2, true,
+                    TS(legalName,                                   ColMax("LegalName", 250)),
+                    T(ledger.MailingAddress,                        ColMax("MailingAddress", 1000)),
+                    T(ledger.CurrencyCode,                          ColMax("CurrencyCode", 10)),
+                    deptId ?? 0,
+                    T(ledger.RefCode,                               ColMax("LedgerRefCode", 50)),
+                    false, false, false,
+                    TS(ledgerType,                                  ColMax("LedgerType", 100)),
+                    ledger.DateOfBirth.HasValue ? (object)ledger.DateOfBirth.Value : DBN,
+                    T(ledger.Designation,                          ColMax("Designation", 100)),
+                    clientId.HasValue ? (object)clientId.Value : DBN
+                );
+                rowMeta.Add((ledgerCode, ledger, salesRepId, deptId, clientId, supplyType, gstApp, legalName));
             }
-            catch (Exception ex)
+            catch (Exception rowEx)
             {
-                await transaction.RollbackAsync();
-                maxLedgerNo--; // Revert the incremented number since this row failed
+                // This row had unresolvable data — skip it, log clear reason
+                maxLedgerNo--; // revert counter so next row gets correct code
+                string rowLabel = $"Row {i + 1}" + (!string.IsNullOrWhiteSpace(ledger.LedgerName) ? $" ({ledger.LedgerName})" : "");
+                result.ErrorMessages.Add($"{rowLabel} – {rowEx.Message}");
                 result.ErrorRows++;
-                result.ErrorMessages.Add($"Row {rowIndex + 1} ({ledger.LedgerName}): {ex.Message}");
-                try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Ledger Row {rowIndex + 1} Failed: {ex.Message}\n"); } catch {}
             }
         }
 
-        result.ImportedRows = successCount;
-        if (result.ErrorRows > 0)
+
+
+        // ── 5. Phase 1: SqlBulkCopy → LedgerMaster ───────────────────────────────────────
+        // Values are already capped to exact DB column sizes via ColMax(), so no truncation errors.
+        if (masterTable.Rows.Count > 0)
         {
-            result.Success = successCount > 0;
-            result.Message = $"Imported {successCount} of {ledgers.Count} ledger(s). {result.ErrorRows} row(s) failed.";
+            using var bulkCopy = new Microsoft.Data.SqlClient.SqlBulkCopy(_connection);
+            bulkCopy.DestinationTableName = "LedgerMaster";
+            bulkCopy.BatchSize            = 500;
+            bulkCopy.BulkCopyTimeout      = 300;
+
+            var cols = new[] {
+                "LedgerCode","MaxLedgerNo","LedgerCodePrefix","LedgerGroupID",
+                "LedgerName","MailingName","Address1","Address2","Address3",
+                "Country","State","City","Pincode","TelephoneNo","Email","MobileNo","Website",
+                "PANNo","GSTNo","RefSalesRepresentativeID","SupplyTypeCode","GSTApplicable",
+                "Distance","DeliveredQtyTolerance","IsDeletedTransaction","CompanyID","UserID","FYear",
+                "CreatedDate","CreatedBy","ISLedgerActive","LegalName","MailingAddress",
+                "CurrencyCode","DepartmentID","LedgerRefCode","InventoryEffect","MaintainBillWise",
+                "IsTaxType","LedgerType","DateOfBirth","Designation","RefClientID"
+            };
+            foreach (var col in cols)
+                bulkCopy.ColumnMappings.Add(col, col);
+
+            await bulkCopy.WriteToServerAsync(masterTable);
         }
-        else
+
+
+        // ── 6. Retrieve the generated LedgerIDs by LedgerCode ────────────────────────────
+        // SQL Server allows max 2100 parameters per query; batch to 1000 to stay safe.
+        var ledgerCodes = rowMeta.Select(r => r.LedgerCode).ToList();
+        var codeToId    = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        const int idBatchSize = 1000;
+        for (int b = 0; b < ledgerCodes.Count; b += idBatchSize)
         {
-            result.Success = true;
-            result.Message = $"Successfully imported {successCount} ledger(s)";
+            var batch = ledgerCodes.Skip(b).Take(idBatchSize).ToList();
+            var batchIds = await _connection.QueryAsync<(string LedgerCode, int LedgerID)>(
+                "SELECT LedgerCode, LedgerID FROM LedgerMaster WHERE LedgerCode IN @Codes AND CompanyID = 2",
+                new { Codes = batch });
+            foreach (var (code, id) in batchIds)
+                codeToId[code] = id;
         }
+
+        // ── 7. Build DataTable for LedgerMasterDetails ───────────────────────────────────
+        var detailsTable = new System.Data.DataTable("LedgerMasterDetails");
+        detailsTable.Columns.Add("LedgerID",         typeof(int));
+        detailsTable.Columns.Add("LedgerGroupID",    typeof(int));
+        detailsTable.Columns.Add("CompanyID",        typeof(int));
+        detailsTable.Columns.Add("UserID",           typeof(int));
+        detailsTable.Columns.Add("FYear",            typeof(string));
+        detailsTable.Columns.Add("FieldName",        typeof(string));
+        detailsTable.Columns.Add("FieldValue",       typeof(string));
+        detailsTable.Columns.Add("ParentFieldName",  typeof(string));
+        detailsTable.Columns.Add("ParentFieldValue", typeof(string));
+        detailsTable.Columns.Add("CreatedDate",      typeof(DateTime));
+        detailsTable.Columns.Add("CreatedBy",        typeof(int));
+        detailsTable.Columns.Add("ModifiedDate",     typeof(DateTime));
+        detailsTable.Columns.Add("ModifiedBy",       typeof(int));
+        detailsTable.Columns.Add("SequenceNo",       typeof(int));
+        detailsTable.Columns.Add("FieldID",          typeof(int));
+
+        int insertedCount = 0;
+        foreach (var (ledgerCode, ledger, salesRepId, deptId, clientId, supplyType, gstApp, legalName) in rowMeta)
+        {
+            if (!codeToId.TryGetValue(ledgerCode, out int newLedgerId))
+            {
+                // ID wasn't returned — row was filtered or duplicate LedgerCode
+                string rowLabel = !string.IsNullOrWhiteSpace(ledger.LedgerName) ? $"({ledger.LedgerName})" : ledgerCode;
+                result.ErrorMessages.Add($"{rowLabel} – Insert succeeded but ID could not be retrieved (possible duplicate LedgerCode)");
+                result.ErrorRows++;
+                continue;
+            }
+
+            insertedCount++;
+
+            var details = isEmployee
+                ? new List<(string Name, string? Value, int Seq)>
+                {
+                    ("LedgerName",    ledger.LedgerName,  1),
+                    ("MailingName",   ledger.MailingName, 2),
+                    ("Address1",      ledger.Address1,    3),
+                    ("Address2",      ledger.Address2,    4),
+                    ("Address3",      ledger.Address3,    5),
+                    ("Country",       ledger.Country,     6),
+                    ("State",         ledger.State,       7),
+                    ("City",          ledger.City,        8),
+                    ("Pincode",       ledger.Pincode,     9),
+                    ("MailingAddress",ledger.MailingAddress, 10),
+                    ("DateOfBirth",   ledger.DateOfBirth?.ToString("yyyy-MM-dd"), 11),
+                    ("TelephoneNo",   ledger.TelephoneNo, 12),
+                    ("MobileNo",      ledger.MobileNo,    13),
+                    ("Email",         ledger.Email,       14),
+                    ("PANNo",         ledger.PANNo,       15),
+                    ("DepartmentID",  deptId?.ToString(), 16),
+                    ("Designation",   ledger.Designation, 17),
+                    ("ISLedgerActive","True",             0)
+                }
+                : new List<(string Name, string? Value, int Seq)>
+                {
+                    ("LedgerName",            ledger.LedgerName,                   1),
+                    ("MailingName",           ledger.MailingName,                  2),
+                    ("Address1",              ledger.Address1,                     3),
+                    ("Address2",              ledger.Address2,                     4),
+                    ("Address3",              ledger.Address3,                     5),
+                    ("Country",               ledger.Country,                      6),
+                    ("State",                 ledger.State,                        7),
+                    ("City",                  ledger.City,                         8),
+                    ("Pincode",               ledger.Pincode,                      9),
+                    ("MailingAddress",        ledger.MailingAddress,               10),
+                    ("TelephoneNo",           ledger.TelephoneNo,                  11),
+                    ("MobileNo",              ledger.MobileNo,                     12),
+                    ("Email",                 ledger.Email,                        13),
+                    ("Website",               ledger.Website,                      14),
+                    ("PANNo",                 ledger.PANNo,                        15),
+                    ("GSTNo",                 ledger.GSTNo,                        16),
+                    ("CurrencyCode",          ledger.CurrencyCode,                 17),
+                    ("GSTApplicable",         gstApp.ToString(),                   18),
+                    ("LegalName",             legalName,                           19),
+                    ("SupplyTypeCode",        supplyType,                          20),
+                    ("RefCode",               ledger.RefCode,                      21),
+                    ("DeliveredQtyTolerance", ledger.DeliveredQtyTolerance?.ToString(), 22),
+                    ("GSTRegistrationType",   ledger.GSTRegistrationType,          24),
+                    ("ISLedgerActive",        "True",                              0)
+                };
+
+            if (isConsignee && clientId.HasValue)
+                details.Add(("RefClientID", clientId.Value.ToString(), 23));
+
+            var now = DateTime.Now;
+            foreach (var (name, value, seq) in details)
+            {
+                if (value == null) continue;
+                detailsTable.Rows.Add(
+                    newLedgerId, ledgerGroupId, 2, 2, "2025-2026",
+                    name, value, name, value,
+                    now, 2, now, 2, seq, 0);
+            }
+        }
+
+        // ── 8. Phase 2: SqlBulkCopy → LedgerMasterDetails ────────────────────────────────
+        if (detailsTable.Rows.Count > 0)
+        {
+            using var detailsBulk = new Microsoft.Data.SqlClient.SqlBulkCopy(_connection);
+            detailsBulk.DestinationTableName = "LedgerMasterDetails";
+            detailsBulk.BatchSize            = 1000;
+            detailsBulk.BulkCopyTimeout      = 300;
+
+            var detailCols = new[] {
+                "LedgerID","LedgerGroupID","CompanyID","UserID","FYear",
+                "FieldName","FieldValue","ParentFieldName","ParentFieldValue",
+                "CreatedDate","CreatedBy","ModifiedDate","ModifiedBy","SequenceNo","FieldID"
+            };
+            foreach (var col in detailCols)
+                detailsBulk.ColumnMappings.Add(col, col);
+
+            await detailsBulk.WriteToServerAsync(detailsTable);
+        }
+
+        // ── 9. Build final result ─────────────────────────────────────────────────────────
+        result.ImportedRows = insertedCount;
+        result.Success      = insertedCount > 0;
+        result.Message      = result.ErrorRows == 0
+            ? $"Successfully imported {insertedCount} of {ledgers.Count} ledger(s)"
+            : $"Import completed. Inserted: {insertedCount}, Failed: {result.ErrorRows}, Total: {ledgers.Count}";
 
         return result;
     }
+
+
+
 
     public async Task<List<CountryStateDto>> GetCountryStatesAsync()
     {

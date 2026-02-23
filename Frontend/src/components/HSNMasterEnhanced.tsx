@@ -956,6 +956,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         onGridReady={(params) => gridApiRef.current = params.api}
                         rowData={hsnData}
                         columnDefs={columnDefs}
+                        defaultColDef={{ sortable: true, filter: true, resizable: true, minWidth: 50 }}
                         rowClassRules={rowClassRules}
                         rowSelection="multiple"
                         onSelectionChanged={() => {
@@ -964,7 +965,8 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         }}
                         onCellValueChanged={onCellValueChanged}
                         pagination={true}
-                        paginationPageSize={20}
+                        paginationPageSize={1000}
+                        paginationPageSizeSelector={[1000, 2000, 5000]}
                         suppressRowClickSelection={true}
                         isExternalFilterPresent={isExternalFilterPresent}
                         doesExternalFilterPass={doesExternalFilterPass}

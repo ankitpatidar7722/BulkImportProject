@@ -16,55 +16,112 @@ public class ItemService : IItemService
 
     public async Task<List<ItemMasterDto>> GetAllItemsAsync(int itemGroupId)
     {
+        // ── Use stored procedure dbo.GetData for fast, optimised loading ──────
+        if (_connection.State != System.Data.ConnectionState.Open)
+            await _connection.OpenAsync();
+
+        try
+        {
+            var rows = await _connection.QueryAsync<dynamic>(
+                "EXEC dbo.GetData @TblName, @CompanyID, @ItemGroupID",
+                new { TblName = "ItemMaster", CompanyID = 2, ItemGroupID = itemGroupId });
+
+            var itemsList = new List<ItemMasterDto>();
+            foreach (var row in rows)
+            {
+                var dict = (IDictionary<string, object>)row;
+
+                T? Val<T>(string key)
+                {
+                    if (!dict.TryGetValue(key, out var v) || v == null || v is DBNull) return default;
+                    try { return (T)Convert.ChangeType(v, typeof(T)); } catch { return default; }
+                }
+                string? Str(string key) => dict.TryGetValue(key, out var v) && v != null && v is not DBNull ? v.ToString() : null;
+                decimal? Dec(string key) { var s = Str(key); return decimal.TryParse(s, out var d) ? d : null; }
+                int? Int32(string key)  { var s = Str(key); return int.TryParse(s, out var i)  ? i : null; }
+                bool? Bool(string key)  { var s = Str(key); return bool.TryParse(s, out var b)  ? b : null; }
+
+                itemsList.Add(new ItemMasterDto
+                {
+                    ItemID              = Int32("ItemID"),
+                    ItemName            = Str("ItemName"),
+                    ItemCode            = Str("ItemCode"),
+                    ItemGroupID         = Int32("ItemGroupID"),
+                    ItemGroupName       = Str("ItemGroupName"),
+                    ProductHSNID        = Int32("ProductHSNID"),
+                    HSNGroup            = Str("HSNGroup") ?? Str("ProductHSNName"),
+                    ProductHSNName      = Str("ProductHSNName") ?? Str("HSNGroup"),
+                    HSNCode             = Str("HSNCode"),
+                    StockUnit           = Str("StockUnit"),
+                    PurchaseUnit        = Str("PurchaseUnit"),
+                    EstimationUnit      = Str("EstimationUnit"),
+                    EstimationRate      = Dec("EstimationRate"),
+                    UnitPerPacking      = Dec("UnitPerPacking"),
+                    WtPerPacking        = Dec("WtPerPacking"),
+                    ConversionFactor    = Dec("ConversionFactor"),
+                    ItemSubGroupID      = Int32("ItemSubGroupID"),
+                    ItemSubGroupName    = Str("ItemSubGroupName"),
+                    ItemType            = Str("ItemType"),
+                    StockType           = Str("StockType"),
+                    StockCategory       = Str("StockCategory"),
+                    SizeW               = Dec("SizeW"),
+                    SizeL               = Dec("SizeL"),
+                    ItemSize            = Str("ItemSize"),
+                    PurchaseRate        = Dec("PurchaseRate"),
+                    StockRefCode        = Str("StockRefCode"),
+                    ItemDescription     = Str("ItemDescription"),
+                    Quality             = Str("Quality"),
+                    GSM                 = Dec("GSM"),
+                    Manufecturer        = Str("Manufecturer"),
+                    Finish              = Str("Finish"),
+                    ManufecturerItemCode= Str("ManufecturerItemCode"),
+                    Caliper             = Dec("Caliper"),
+                    ShelfLife           = Int32("ShelfLife"),
+                    MinimumStockQty     = Dec("MinimumStockQty"),
+                    IsStandardItem      = Bool("IsStandardItem"),
+                    IsRegularItem       = Bool("IsRegularItem"),
+                    PackingType         = Str("PackingType"),
+                    BF                  = Str("BF"),
+                    InkColour           = Str("InkColour"),
+                    PantoneCode         = Str("PantoneCode"),
+                    PurchaseOrderQuantity = Dec("PurchaseOrderQuantity"),
+                    Thickness           = Dec("Thickness"),
+                    Density             = Dec("Density"),
+                    ReleaseGSM          = Dec("ReleaseGSM"),
+                    AdhesiveGSM         = Dec("AdhesiveGSM"),
+                    TotalGSM            = Dec("TotalGSM"),
+                    CertificationType   = Str("CertificationType"),
+                    IsDeletedTransaction = Bool("IsDeletedTransaction") ?? false,
+                });
+            }
+            return itemsList;
+        }
+        catch (Exception ex)
+        {
+            // SP may not exist yet — fall back to direct query so app still works
+            try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] GetData SP failed, falling back: {ex.Message}\n"); } catch { }
+            return await GetAllItemsAsyncFallback(itemGroupId);
+        }
+    }
+
+    // Fallback: original JOIN query used when SP is unavailable
+    private async Task<List<ItemMasterDto>> GetAllItemsAsyncFallback(int itemGroupId)
+    {
         var query = @"
             SELECT
-                i.ItemID,
-                i.ItemName,
-                i.ItemCode,
-                i.ItemGroupID,
+                i.ItemID, i.ItemName, i.ItemCode, i.ItemGroupID,
                 ig.ItemGroupName,
                 i.ProductHSNID,
-                hsn.DisplayName as HSNGroup,
-                hsn.DisplayName as ProductHSNName,
-                i.StockUnit,
-                i.PurchaseUnit,
-                i.EstimationUnit,
-                i.EstimationRate,
-                i.UnitPerPacking,
-                i.WtPerPacking,
-                i.ConversionFactor,
-                i.ItemSubGroupID,
-                isg.ItemSubGroupName,
-                i.ItemType,
-                i.StockType,
-                i.StockCategory,
-                i.SizeW,
-                i.SizeL,
-                i.ItemSize,
-                i.PurchaseRate,
-                i.StockRefCode,
-                i.ItemDescription,
-                i.Quality,
-                i.GSM,
-                i.Manufecturer,
-                i.Finish,
-                i.ManufecturerItemCode,
-                i.Caliper,
-                i.ShelfLife,
-                i.MinimumStockQty,
-                i.IsStandardItem,
-                i.IsRegularItem,
-                i.PackingType,
-                i.BF,
-                i.InkColour,
-                i.PantoneCode,
-                i.PurchaseOrderQuantity,
-                i.Thickness,
-                i.Density,
-                i.ReleaseGSM,
-                i.AdhesiveGSM,
-                i.TotalGSM,
-                hsn.HSNCode,
+                hsn.DisplayName as HSNGroup, hsn.DisplayName as ProductHSNName, hsn.HSNCode,
+                i.StockUnit, i.PurchaseUnit, i.EstimationUnit, i.EstimationRate,
+                i.UnitPerPacking, i.WtPerPacking, i.ConversionFactor,
+                i.ItemSubGroupID, isg.ItemSubGroupName,
+                i.ItemType, i.StockType, i.StockCategory,
+                i.SizeW, i.SizeL, i.ItemSize, i.PurchaseRate, i.StockRefCode, i.ItemDescription,
+                i.Quality, i.GSM, i.Manufecturer, i.Finish, i.ManufecturerItemCode, i.Caliper,
+                i.ShelfLife, i.MinimumStockQty, i.IsStandardItem, i.IsRegularItem,
+                i.PackingType, i.BF, i.InkColour, i.PantoneCode, i.PurchaseOrderQuantity,
+                i.Thickness, i.Density, i.ReleaseGSM, i.AdhesiveGSM, i.TotalGSM,
                 CAST(ISNULL(i.IsDeletedTransaction, 0) AS BIT) as IsDeletedTransaction
             FROM ItemMaster i
             LEFT JOIN ItemGroupMaster ig ON i.ItemGroupID = ig.ItemGroupID
@@ -74,137 +131,60 @@ public class ItemService : IItemService
               AND (i.IsDeletedTransaction IS NULL OR i.IsDeletedTransaction = 0)
             ORDER BY i.ItemName";
 
-        var items = await _connection.QueryAsync<ItemMasterDto>(query, new { ItemGroupID = itemGroupId });
+        var items = (await _connection.QueryAsync<ItemMasterDto>(query, new { ItemGroupID = itemGroupId }))
+            .GroupBy(i => i.ItemID).Select(g => g.First()).ToList();
 
-        // Deduplicate items to ensure unique ItemIDs (safeguard against potential join multiplication)
-        var countBefore = items.Count();
-        items = items.GroupBy(i => i.ItemID).Select(g => g.First()).ToList();
-        var countAfter = items.Count();
-        if (countBefore != countAfter)
-        {
-             // Log the deduplication for debugging purposes (optional, could use ILogger)
-             System.Diagnostics.Debug.WriteLine($"ItemService: Removed {countBefore - countAfter} duplicate items from query result.");
-        }
-
-        // Load ALL detail fields in a single batch query (instead of N+1 per-item queries)
-        var itemsList = items.ToList();
-        var itemIds = itemsList.Where(i => i.ItemID.HasValue).Select(i => i.ItemID!.Value).ToList();
-
+        var itemIds = items.Where(i => i.ItemID.HasValue).Select(i => i.ItemID!.Value).ToList();
         if (itemIds.Count > 0)
         {
-            var allDetailsQuery = @"
-                SELECT ItemID, FieldName, FieldValue
-                FROM ItemMasterDetails
-                WHERE ItemID IN @ItemIDs AND ISNULL(IsDeletedTransaction, 0) = 0";
-
-            var allDetails = await _connection.QueryAsync<dynamic>(allDetailsQuery, new { ItemIDs = itemIds });
-
-            // Group details by ItemID for O(1) lookup
-            var detailsByItemId = allDetails
-                .GroupBy(d => (int)d.ItemID)
-                .ToDictionary(g => g.Key, g => g.ToList());
-
-            // Map detail fields back to item properties
-            foreach (var item in itemsList)
+            const int batch = 1000;
+            var allDetails = new List<dynamic>();
+            for (int b = 0; b < itemIds.Count; b += batch)
             {
-                if (!item.ItemID.HasValue || !detailsByItemId.TryGetValue(item.ItemID.Value, out var details))
-                    continue;
-
-                foreach (var detail in details)
+                var chunk = itemIds.Skip(b).Take(batch).ToList();
+                var details = await _connection.QueryAsync<dynamic>(
+                    "SELECT ItemID, FieldName, FieldValue FROM ItemMasterDetails WHERE ItemID IN @IDs AND ISNULL(IsDeletedTransaction,0)=0",
+                    new { IDs = chunk });
+                allDetails.AddRange(details);
+            }
+            var detailMap = allDetails.GroupBy(d => (int)d.ItemID)
+                                      .ToDictionary(g => g.Key, g => g.ToList());
+            foreach (var item in items)
+            {
+                if (!item.ItemID.HasValue || !detailMap.TryGetValue(item.ItemID.Value, out var details)) continue;
+                foreach (var d in details)
                 {
-                    string fieldName = detail.FieldName;
-                    string fieldValue = detail.FieldValue;
-
-                    switch (fieldName)
+                    string fn = d.FieldName; string fv = d.FieldValue ?? "";
+                    switch (fn)
                     {
-                        case "Quality":
-                            item.Quality = fieldValue;
-                            break;
-                        case "GSM":
-                            if (decimal.TryParse(fieldValue, out decimal gsm))
-                                item.GSM = gsm;
-                            break;
-                        case "Manufecturer":
-                            item.Manufecturer = fieldValue;
-                            break;
-                        case "Finish":
-                            item.Finish = fieldValue;
-                            break;
-                        case "ManufecturerItemCode":
-                            item.ManufecturerItemCode = fieldValue;
-                            break;
-                        case "Caliper":
-                            if (decimal.TryParse(fieldValue, out decimal caliper))
-                                item.Caliper = caliper;
-                            break;
-                        case "ShelfLife":
-                            if (int.TryParse(fieldValue, out int shelfLife))
-                                item.ShelfLife = shelfLife;
-                            break;
-                        case "EstimationRate":
-                            if (decimal.TryParse(fieldValue, out decimal estRate))
-                                item.EstimationRate = estRate;
-                            break;
-                        case "MinimumStockQty":
-                            if (decimal.TryParse(fieldValue, out decimal minStock))
-                                item.MinimumStockQty = minStock;
-                            break;
-                        case "IsStandardItem":
-                            if (bool.TryParse(fieldValue, out bool isStandard))
-                                item.IsStandardItem = isStandard;
-                            break;
-                        case "IsRegularItem":
-                            if (bool.TryParse(fieldValue, out bool isRegular))
-                                item.IsRegularItem = isRegular;
-                            break;
-                        case "PackingType":
-                            item.PackingType = fieldValue;
-                            break;
-                        case "CertificationType":
-                            item.CertificationType = fieldValue;
-                            break;
-                        case "BF":
-                            item.BF = fieldValue;
-                            break;
-                        case "InkColour":
-                            item.InkColour = fieldValue;
-                            break;
-                        case "PantoneCode":
-                            item.PantoneCode = fieldValue;
-                            break;
-                        case "ItemType":
-                            item.ItemType = fieldValue;
-                            break;
-                        case "PurchaseOrderQuantity":
-                            if (decimal.TryParse(fieldValue, out decimal poQty))
-                                item.PurchaseOrderQuantity = poQty;
-                            break;
-                        case "Thickness":
-                            if (decimal.TryParse(fieldValue, out decimal thickness))
-                                item.Thickness = thickness;
-                            break;
-                        case "Density":
-                            if (decimal.TryParse(fieldValue, out decimal density))
-                                item.Density = density;
-                            break;
-                        case "ReleaseGSM":
-                            if (decimal.TryParse(fieldValue, out decimal releaseGsm))
-                                item.ReleaseGSM = releaseGsm;
-                            break;
-                        case "AdhesiveGSM":
-                            if (decimal.TryParse(fieldValue, out decimal adhesiveGsm))
-                                item.AdhesiveGSM = adhesiveGsm;
-                            break;
-                        case "TotalGSM":
-                            if (decimal.TryParse(fieldValue, out decimal totalGsm))
-                                item.TotalGSM = totalGsm;
-                            break;
+                        case "Quality": item.Quality = fv; break;
+                        case "GSM": if (decimal.TryParse(fv, out var g)) item.GSM = g; break;
+                        case "Manufecturer": item.Manufecturer = fv; break;
+                        case "Finish": item.Finish = fv; break;
+                        case "ManufecturerItemCode": item.ManufecturerItemCode = fv; break;
+                        case "Caliper": if (decimal.TryParse(fv, out var c)) item.Caliper = c; break;
+                        case "ShelfLife": if (int.TryParse(fv, out var sl)) item.ShelfLife = sl; break;
+                        case "EstimationRate": if (decimal.TryParse(fv, out var er)) item.EstimationRate = er; break;
+                        case "MinimumStockQty": if (decimal.TryParse(fv, out var ms)) item.MinimumStockQty = ms; break;
+                        case "IsStandardItem": if (bool.TryParse(fv, out var ist)) item.IsStandardItem = ist; break;
+                        case "IsRegularItem": if (bool.TryParse(fv, out var ir)) item.IsRegularItem = ir; break;
+                        case "PackingType": item.PackingType = fv; break;
+                        case "CertificationType": item.CertificationType = fv; break;
+                        case "BF": item.BF = fv; break;
+                        case "InkColour": item.InkColour = fv; break;
+                        case "PantoneCode": item.PantoneCode = fv; break;
+                        case "ItemType": item.ItemType = fv; break;
+                        case "PurchaseOrderQuantity": if (decimal.TryParse(fv, out var po)) item.PurchaseOrderQuantity = po; break;
+                        case "Thickness": if (decimal.TryParse(fv, out var th)) item.Thickness = th; break;
+                        case "Density": if (decimal.TryParse(fv, out var dn)) item.Density = dn; break;
+                        case "ReleaseGSM": if (decimal.TryParse(fv, out var rg)) item.ReleaseGSM = rg; break;
+                        case "AdhesiveGSM": if (decimal.TryParse(fv, out var ag)) item.AdhesiveGSM = ag; break;
+                        case "TotalGSM": if (decimal.TryParse(fv, out var tg)) item.TotalGSM = tg; break;
                     }
                 }
             }
         }
-
-        return itemsList;
+        return items;
     }
 
     public async Task<bool> SoftDeleteItemAsync(int itemId)
@@ -893,38 +873,30 @@ public class ItemService : IItemService
     public async Task<ImportResultDto> ImportItemsAsync(List<ItemMasterDto> items, int itemGroupId)
     {
         var result = new ImportResultDto();
-        if (_connection.State != System.Data.ConnectionState.Open) await _connection.OpenAsync();
+        result.TotalRows = items.Count;
 
-        // Fetch lookup data BEFORE starting transaction
+        if (_connection.State != System.Data.ConnectionState.Open)
+            await _connection.OpenAsync();
+
+        // ─── 1. Fetch lookup tables ───────────────────────────────────────────
         var hsnGroups = await GetHSNGroupsAsync();
-        var hsnGroupMapping = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var hsn in hsnGroups)
-        {
-            if (!string.IsNullOrWhiteSpace(hsn.DisplayName) && !hsnGroupMapping.ContainsKey(hsn.DisplayName))
-            {
-                hsnGroupMapping[hsn.DisplayName.Trim()] = hsn.ProductHSNID;
-            }
-        }
+        var hsnMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var h in hsnGroups)
+            if (!string.IsNullOrWhiteSpace(h.DisplayName) && !hsnMap.ContainsKey(h.DisplayName))
+                hsnMap[h.DisplayName.Trim()] = h.ProductHSNID;
 
-        var itemSubGroups = await GetItemSubGroupsAsync(itemGroupId);
-        var itemSubGroupMapping = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var subGroup in itemSubGroups)
-        {
-            if (!string.IsNullOrWhiteSpace(subGroup.ItemSubGroupName) && !itemSubGroupMapping.ContainsKey(subGroup.ItemSubGroupName))
-            {
-                itemSubGroupMapping[subGroup.ItemSubGroupName.Trim()] = subGroup.ItemSubGroupID;
-            }
-        }
+        var subGroups = await GetItemSubGroupsAsync(itemGroupId);
+        var subGroupMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sg in subGroups)
+            if (!string.IsNullOrWhiteSpace(sg.ItemSubGroupName) && !subGroupMap.ContainsKey(sg.ItemSubGroupName))
+                subGroupMap[sg.ItemSubGroupName.Trim()] = sg.ItemSubGroupID;
 
-        // Get ItemGroup info
-        var itemGroupQuery = @"
-            SELECT ItemGroupID, ItemGroupName, ItemGroupPrefix, 
-                   ItemNameFormula, ItemDescriptionFormula
+        var itemGroup = await _connection.QueryFirstOrDefaultAsync<ItemGroupDto>(@"
+            SELECT ItemGroupID, ItemGroupName, ItemGroupPrefix, ItemNameFormula, ItemDescriptionFormula
             FROM ItemGroupMaster
-            WHERE ItemGroupID = @ItemGroupID AND CompanyID = 2 AND IsDeletedTransaction = 0";
-        
-        var itemGroup = await _connection.QueryFirstOrDefaultAsync<ItemGroupDto>(itemGroupQuery, new { ItemGroupID = itemGroupId });
-        
+            WHERE ItemGroupID = @ItemGroupID AND CompanyID = 2 AND IsDeletedTransaction = 0",
+            new { ItemGroupID = itemGroupId });
+
         if (itemGroup == null)
         {
             result.Success = false;
@@ -932,61 +904,24 @@ public class ItemService : IItemService
             return result;
         }
 
-        // Get Max Item No (outside transaction)
         var maxItemNo = await _connection.ExecuteScalarAsync<int?>(
-            "SELECT MAX(MaxItemNo) FROM ItemMaster WHERE ItemGroupID = @ItemGroupID AND IsDeletedTransaction = 0",
-            new { ItemGroupID = itemGroupId }
-        ) ?? 0;
+            "SELECT ISNULL(MAX(MaxItemNo), 0) FROM ItemMaster WHERE ItemGroupID = @ItemGroupID AND IsDeletedTransaction = 0",
+            new { ItemGroupID = itemGroupId }) ?? 0;
 
-        int successCount = 0;
-        result.TotalRows = items.Count;
+        // ─── 2. Pre-process rows: build prepared rows + collect errors ────────
+        string defaultItemType = itemGroupId == 4 ? "Varnish"
+            : itemGroupId == 5 ? "LAMINATION FILM"
+            : itemGroupId == 6 ? "FOIL"
+            : itemGroupId == 8 ? "OTHER MATERIAL"
+            : itemGroupId == 13 ? "Paper" : "PAPER";
 
-        var insertMasterSql = @"
-            INSERT INTO ItemMaster (
-                ItemName, ItemCode, MaxItemNo, ItemCodePrefix, ItemGroupID, ProductHSNID,
-                StockUnit, PurchaseUnit, EstimationUnit, EstimationRate,
-                UnitPerPacking, WtPerPacking, ConversionFactor,
-                ItemSubGroupID, StockType, StockCategory, ItemType,
-                SizeW, SizeL, ItemSize, PurchaseRate, StockRefCode, ItemDescription,
-                Quality, GSM, Manufecturer, Finish, ManufecturerItemCode, Caliper,
-                ShelfLife, MinimumStockQty, IsStandardItem, IsRegularItem, PackingType, BF,
-                InkColour, PantoneCode, PurchaseOrderQuantity,
-                Thickness, Density,
-                ReleaseGSM, AdhesiveGSM, TotalGSM,
-                ISItemActive, CompanyID, UserID, FYear, CreatedBy, CreatedDate, IsDeletedTransaction
-            )
-            OUTPUT INSERTED.ItemID
-            VALUES (
-                @ItemName, @ItemCode, @MaxItemNo, @ItemCodePrefix, @ItemGroupID, @ProductHSNID,
-                @StockUnit, @PurchaseUnit, @EstimationUnit, @EstimationRate,
-                @UnitPerPacking, @WtPerPacking, @ConversionFactor,
-                @ItemSubGroupID, @StockType, @StockCategory, @ItemType,
-                @SizeW, @SizeL, @ItemSize, @PurchaseRate, @StockRefCode, @ItemDescription,
-                @Quality, @GSM, @Manufecturer, @Finish, @ManufecturerItemCode, @Caliper,
-                @ShelfLife, @MinimumStockQty, @IsStandardItem, @IsRegularItem, @PackingType, @BF,
-                @InkColour, @PantoneCode, @PurchaseOrderQuantity,
-                @Thickness, @Density,
-                @ReleaseGSM, @AdhesiveGSM, @TotalGSM,
-                @ISItemActive, @CompanyID, @UserID, @FYear, @CreatedBy, @CreatedDate, 0
-            )";
+        var masterRows = new List<(int RowIndex, int MaxItemNo, string ItemCode, ItemMasterDto Item,
+                                   int ProductHSNID, int ItemSubGroupID, string ItemType,
+                                   string? ItemSize, string ItemDescription)>();
 
-        var insertDetailSql = @"
-            INSERT INTO ItemMasterDetails (
-                ItemID, ParentFieldName, ParentFieldValue, FieldName, FieldValue,
-                SequenceNo, ItemGroupID, CompanyID, UserID, FYear,
-                CreatedBy, CreatedDate, IsDeletedTransaction
-            ) VALUES (
-                @ItemID, @ParentFieldName, @ParentFieldValue, @FieldName, @FieldValue,
-                @SequenceNo, @ItemGroupID, @CompanyID, @UserID, @FYear,
-                @CreatedBy, GETDATE(), 0
-            )";
-
-        // Row-by-row insert with per-row transaction
-        for (int rowIndex = 0; rowIndex < items.Count; rowIndex++)
+        for (int i = 0; i < items.Count; i++)
         {
-            var item = items[rowIndex];
-            var transaction = await _connection.BeginTransactionAsync();
-
+            var item = items[i];
             try
             {
                 maxItemNo++;
@@ -994,217 +929,252 @@ public class ItemService : IItemService
 
                 string? itemSize = item.ItemSize;
                 if (string.IsNullOrEmpty(itemSize) && item.SizeW.HasValue && item.SizeL.HasValue)
-                {
                     itemSize = $"{item.SizeW} X {item.SizeL}";
-                }
 
-                var descriptionParts = new List<string>();
-                if (!string.IsNullOrEmpty(item.ItemType)) descriptionParts.Add($"ItemType:{item.ItemType}");
-                if (!string.IsNullOrEmpty(item.InkColour)) descriptionParts.Add($"InkColour:{item.InkColour}");
-                if (!string.IsNullOrEmpty(item.PantoneCode)) descriptionParts.Add($"PantoneCode:{item.PantoneCode}");
-                if (!string.IsNullOrEmpty(item.Quality)) descriptionParts.Add($"Quality:{item.Quality}");
-                if (item.GSM.HasValue) descriptionParts.Add($"GSM:{item.GSM}");
-                if (item.ReleaseGSM.HasValue) descriptionParts.Add($"ReleaseGSM:{item.ReleaseGSM}");
-                if (item.AdhesiveGSM.HasValue) descriptionParts.Add($"AdhesiveGSM:{item.AdhesiveGSM}");
-                if (!string.IsNullOrEmpty(item.Manufecturer)) descriptionParts.Add($"Manufecturer:{item.Manufecturer}");
-                if (!string.IsNullOrEmpty(item.Finish)) descriptionParts.Add($"Finish:{item.Finish}");
-                if (item.SizeW.HasValue) descriptionParts.Add($"SizeW:{item.SizeW}");
-                if (item.SizeL.HasValue) descriptionParts.Add($"SizeL:{item.SizeL}");
-                if (item.Caliper.HasValue) descriptionParts.Add($"Caliper:{item.Caliper}");
-                string itemDescription = string.Join(", ", descriptionParts);
-
-                string itemType = item.ItemType ?? item.StockCategory?.ToUpper() ??
-                    (itemGroupId == 4 ? "Varnish" : itemGroupId == 5 ? "LAMINATION FILM" : itemGroupId == 6 ? "FOIL" : itemGroupId == 8 ? "OTHER MATERIAL" : itemGroupId == 13 ? "Paper" : "PAPER");
+                var descParts = new List<string>();
+                if (!string.IsNullOrEmpty(item.ItemType))     descParts.Add($"ItemType:{item.ItemType}");
+                if (!string.IsNullOrEmpty(item.InkColour))    descParts.Add($"InkColour:{item.InkColour}");
+                if (!string.IsNullOrEmpty(item.PantoneCode))  descParts.Add($"PantoneCode:{item.PantoneCode}");
+                if (!string.IsNullOrEmpty(item.Quality))      descParts.Add($"Quality:{item.Quality}");
+                if (item.GSM.HasValue)                        descParts.Add($"GSM:{item.GSM}");
+                if (item.ReleaseGSM.HasValue)                 descParts.Add($"ReleaseGSM:{item.ReleaseGSM}");
+                if (item.AdhesiveGSM.HasValue)                descParts.Add($"AdhesiveGSM:{item.AdhesiveGSM}");
+                if (!string.IsNullOrEmpty(item.Manufecturer)) descParts.Add($"Manufecturer:{item.Manufecturer}");
+                if (!string.IsNullOrEmpty(item.Finish))       descParts.Add($"Finish:{item.Finish}");
+                if (item.SizeW.HasValue)                      descParts.Add($"SizeW:{item.SizeW}");
+                if (item.SizeL.HasValue)                      descParts.Add($"SizeL:{item.SizeL}");
+                if (item.Caliper.HasValue)                    descParts.Add($"Caliper:{item.Caliper}");
 
                 int productHSNID = 0;
-                if (!string.IsNullOrWhiteSpace(item.HSNGroup) &&
-                    hsnGroupMapping.TryGetValue(item.HSNGroup.Trim(), out int hsnId))
-                {
-                    productHSNID = hsnId;
-                }
-                else if (!string.IsNullOrWhiteSpace(item.ProductHSNName) &&
-                         hsnGroupMapping.TryGetValue(item.ProductHSNName.Trim(), out int hsnIdByName))
-                {
-                     productHSNID = hsnIdByName;
-                }
+                if (!string.IsNullOrWhiteSpace(item.HSNGroup) && hsnMap.TryGetValue(item.HSNGroup.Trim(), out int hId))
+                    productHSNID = hId;
+                else if (!string.IsNullOrWhiteSpace(item.ProductHSNName) && hsnMap.TryGetValue(item.ProductHSNName.Trim(), out int hId2))
+                    productHSNID = hId2;
 
-                int itemSubGroupID = 0;
-                if (!string.IsNullOrWhiteSpace(item.ItemSubGroupName) &&
-                    itemSubGroupMapping.TryGetValue(item.ItemSubGroupName.Trim(), out int subGroupId))
-                {
-                    itemSubGroupID = subGroupId;
-                }
+                int subGroupID = 0;
+                if (!string.IsNullOrWhiteSpace(item.ItemSubGroupName) && subGroupMap.TryGetValue(item.ItemSubGroupName.Trim(), out int sgId))
+                    subGroupID = sgId;
 
-                // INSERT INTO ItemMaster
-                var itemIdObj = await _connection.ExecuteScalarAsync<object>(insertMasterSql, new
-                {
-                    ItemName = item.ItemName ?? (object)DBNull.Value,
-                    ItemCode = itemCode,
-                    MaxItemNo = maxItemNo,
-                    ItemCodePrefix = itemGroup.ItemGroupPrefix ?? (object)DBNull.Value,
-                    ItemGroupID = itemGroupId,
-                    ProductHSNID = productHSNID > 0 ? productHSNID : (object)DBNull.Value,
-                    StockUnit = item.StockUnit ?? (object)DBNull.Value,
-                    PurchaseUnit = item.PurchaseUnit ?? (object)DBNull.Value,
-                    EstimationUnit = item.EstimationUnit ?? (object)DBNull.Value,
-                    EstimationRate = item.EstimationRate ?? (object)DBNull.Value,
-                    UnitPerPacking = item.UnitPerPacking ?? (object)DBNull.Value,
-                    WtPerPacking = item.WtPerPacking ?? (object)DBNull.Value,
-                    ConversionFactor = item.ConversionFactor ?? (object)DBNull.Value,
-                    ItemSubGroupID = itemSubGroupID > 0 ? itemSubGroupID : (object)DBNull.Value,
-                    StockType = item.StockType ?? (object)DBNull.Value,
-                    StockCategory = item.StockCategory ?? (object)DBNull.Value,
-                    ItemType = itemType,
-                    SizeW = item.SizeW ?? (object)DBNull.Value,
-                    SizeL = item.SizeL ?? (object)DBNull.Value,
-                    ItemSize = itemSize ?? (object)DBNull.Value,
-                    PurchaseRate = item.PurchaseRate ?? (object)DBNull.Value,
-                    StockRefCode = item.StockRefCode ?? (object)DBNull.Value,
-                    ItemDescription = itemDescription ?? (object)DBNull.Value,
-                    Quality = item.Quality ?? (object)DBNull.Value,
-                    GSM = item.GSM ?? (object)DBNull.Value,
-                    Manufecturer = item.Manufecturer ?? (object)DBNull.Value,
-                    Finish = item.Finish ?? (object)DBNull.Value,
-                    ManufecturerItemCode = item.ManufecturerItemCode ?? (object)DBNull.Value,
-                    Caliper = item.Caliper ?? (object)DBNull.Value,
-                    ShelfLife = item.ShelfLife ?? (object)DBNull.Value,
-                    MinimumStockQty = item.MinimumStockQty ?? (object)DBNull.Value,
-                    IsStandardItem = item.IsStandardItem ?? (object)DBNull.Value,
-                    IsRegularItem = item.IsRegularItem ?? (object)DBNull.Value,
-                    PackingType = item.PackingType ?? (object)DBNull.Value,
-                    BF = item.BF ?? (object)DBNull.Value,
-                    InkColour = item.InkColour ?? (object)DBNull.Value,
-                    PantoneCode = item.PantoneCode ?? (object)DBNull.Value,
-                    PurchaseOrderQuantity = item.PurchaseOrderQuantity ?? (object)DBNull.Value,
-                    Thickness = item.Thickness ?? (object)DBNull.Value,
-                    Density = item.Density ?? (object)DBNull.Value,
-                    ReleaseGSM = item.ReleaseGSM ?? (object)DBNull.Value,
-                    AdhesiveGSM = item.AdhesiveGSM ?? (object)DBNull.Value,
-                    TotalGSM = item.TotalGSM ?? (object)DBNull.Value,
-                    ISItemActive = 1,
-                    CompanyID = 2,
-                    UserID = 2,
-                    FYear = "2025-2026",
-                    CreatedBy = 2,
-                    CreatedDate = DateTime.Now
-                }, transaction: transaction);
+                string resolvedItemType = item.ItemType ?? item.StockCategory?.ToUpper() ?? defaultItemType;
 
-                int newItemId = Convert.ToInt32(itemIdObj);
-
-                // INSERT INTO ItemMasterDetails - Add ALL fields as separate rows
-                int seq = 1;
-                var detailFields = new List<(string FieldName, string FieldValue)>();
-
-                if (!string.IsNullOrEmpty(item.BF))
-                    detailFields.Add(("BF", item.BF));
-                if (!string.IsNullOrEmpty(item.InkColour))
-                    detailFields.Add(("InkColour", item.InkColour));
-                if (!string.IsNullOrEmpty(item.PantoneCode))
-                    detailFields.Add(("PantoneCode", item.PantoneCode));
-                if (!string.IsNullOrEmpty(item.ItemType))
-                    detailFields.Add(("ItemType", item.ItemType));
-                if (itemSubGroupID > 0)
-                    detailFields.Add(("ItemSubGroupID", itemSubGroupID.ToString()));
-                if (!string.IsNullOrEmpty(item.StockType))
-                    detailFields.Add(("StockType", item.StockType));
-                if (item.PurchaseOrderQuantity.HasValue)
-                    detailFields.Add(("PurchaseOrderQuantity", item.PurchaseOrderQuantity.ToString()!));
-                if (!string.IsNullOrEmpty(item.Quality))
-                    detailFields.Add(("Quality", item.Quality));
-                if (item.GSM.HasValue)
-                    detailFields.Add(("GSM", item.GSM.ToString()!));
-                if (!string.IsNullOrEmpty(item.Manufecturer))
-                    detailFields.Add(("Manufecturer", item.Manufecturer));
-                if (!string.IsNullOrEmpty(item.Finish))
-                    detailFields.Add(("Finish", item.Finish));
-                if (!string.IsNullOrEmpty(item.ManufecturerItemCode))
-                    detailFields.Add(("ManufecturerItemCode", item.ManufecturerItemCode));
-                if (item.Caliper.HasValue)
-                    detailFields.Add(("Caliper", item.Caliper.ToString()!));
-                if (item.SizeW.HasValue)
-                    detailFields.Add(("SizeW", item.SizeW.ToString()!));
-                if (item.SizeL.HasValue)
-                    detailFields.Add(("SizeL", item.SizeL.ToString()!));
-                if (!string.IsNullOrEmpty(item.PurchaseUnit))
-                    detailFields.Add(("PurchaseUnit", item.PurchaseUnit));
-                if (item.PurchaseRate.HasValue)
-                    detailFields.Add(("PurchaseRate", item.PurchaseRate.ToString()!));
-                if (item.ShelfLife.HasValue)
-                    detailFields.Add(("ShelfLife", item.ShelfLife.ToString()!));
-                if (!string.IsNullOrEmpty(item.EstimationUnit))
-                    detailFields.Add(("EstimationUnit", item.EstimationUnit));
-                if (item.EstimationRate.HasValue)
-                    detailFields.Add(("EstimationRate", item.EstimationRate.ToString()!));
-                if (!string.IsNullOrEmpty(item.StockUnit))
-                    detailFields.Add(("StockUnit", item.StockUnit));
-                if (item.MinimumStockQty.HasValue)
-                    detailFields.Add(("MinimumStockQty", item.MinimumStockQty.ToString()!));
-                if (item.IsStandardItem.HasValue)
-                    detailFields.Add(("IsStandardItem", item.IsStandardItem.ToString()!));
-                if (item.IsRegularItem.HasValue)
-                    detailFields.Add(("IsRegularItem", item.IsRegularItem.ToString()!));
-                if (!string.IsNullOrEmpty(item.PackingType))
-                    detailFields.Add(("PackingType", item.PackingType));
-                if (item.UnitPerPacking.HasValue)
-                    detailFields.Add(("UnitPerPacking", item.UnitPerPacking.ToString()!));
-                if (item.WtPerPacking.HasValue)
-                    detailFields.Add(("WtPerPacking", item.WtPerPacking.ToString()!));
-                if (!string.IsNullOrEmpty(itemSize))
-                    detailFields.Add(("ItemSize", itemSize));
-                if (productHSNID > 0)
-                {
-                    detailFields.Add(("ProductHSNID", productHSNID.ToString()));
-                    detailFields.Add(("ProductHSNName", productHSNID.ToString()));
-                }
-                if (item.Thickness.HasValue)
-                    detailFields.Add(("Thickness", item.Thickness.ToString()!));
-                if (item.Density.HasValue)
-                    detailFields.Add(("Density", item.Density.ToString()!));
-                if (item.ReleaseGSM.HasValue)
-                    detailFields.Add(("ReleaseGSM", item.ReleaseGSM.ToString()!));
-                if (item.AdhesiveGSM.HasValue)
-                    detailFields.Add(("AdhesiveGSM", item.AdhesiveGSM.ToString()!));
-                if (item.TotalGSM.HasValue)
-                    detailFields.Add(("TotalGSM", item.TotalGSM.ToString()!));
-                if (!string.IsNullOrEmpty(item.StockRefCode))
-                    detailFields.Add(("StockRefCode", item.StockRefCode));
-                if (!string.IsNullOrEmpty(item.CertificationType))
-                    detailFields.Add(("CertificationType", item.CertificationType));
-
-                detailFields.Add(("ISItemActive", "True"));
-
-                // Insert details row-by-row within same transaction
-                foreach (var field in detailFields)
-                {
-                    await _connection.ExecuteAsync(insertDetailSql, new
-                    {
-                        ItemID = newItemId,
-                        ParentFieldName = field.FieldName,
-                        ParentFieldValue = field.FieldValue,
-                        FieldName = field.FieldName,
-                        FieldValue = field.FieldValue,
-                        SequenceNo = seq++,
-                        ItemGroupID = itemGroupId,
-                        CompanyID = 2,
-                        UserID = 2,
-                        FYear = "2025-2026",
-                        CreatedBy = 2
-                    }, transaction: transaction);
-                }
-
-                await transaction.CommitAsync();
-                successCount++;
+                masterRows.Add((i, maxItemNo, itemCode, item, productHSNID, subGroupID,
+                                resolvedItemType, itemSize, string.Join(", ", descParts)));
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                maxItemNo--; // Revert the incremented number since this row failed
+                maxItemNo--;
                 result.ErrorRows++;
-                result.ErrorMessages.Add($"Row {rowIndex + 1} ({item.ItemName}): {ex.Message}");
-                try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Item Row {rowIndex + 1} Failed: {ex.Message}\n"); } catch { }
+                result.ErrorMessages.Add($"Row {i + 1} ({item.ItemName}): Pre-process error – {ex.Message}");
             }
         }
 
+        if (masterRows.Count == 0)
+        {
+            result.Success = false;
+            result.Message = "All rows failed pre-processing. Nothing was imported.";
+            return result;
+        }
+
+        // ─── 3. SqlBulkCopy → ItemMaster ─────────────────────────────────────
+        var masterTable = new System.Data.DataTable();
+        masterTable.Columns.Add("ItemName",              typeof(string));
+        masterTable.Columns.Add("ItemCode",              typeof(string));
+        masterTable.Columns.Add("MaxItemNo",             typeof(int));
+        masterTable.Columns.Add("ItemCodePrefix",        typeof(string));
+        masterTable.Columns.Add("ItemGroupID",           typeof(int));
+        masterTable.Columns.Add("ProductHSNID",          typeof(object));
+        masterTable.Columns.Add("StockUnit",             typeof(string));
+        masterTable.Columns.Add("PurchaseUnit",          typeof(string));
+        masterTable.Columns.Add("EstimationUnit",        typeof(string));
+        masterTable.Columns.Add("EstimationRate",        typeof(object));
+        masterTable.Columns.Add("UnitPerPacking",        typeof(object));
+        masterTable.Columns.Add("WtPerPacking",          typeof(object));
+        masterTable.Columns.Add("ConversionFactor",      typeof(object));
+        masterTable.Columns.Add("ItemSubGroupID",        typeof(object));
+        masterTable.Columns.Add("StockType",             typeof(string));
+        masterTable.Columns.Add("StockCategory",         typeof(string));
+        masterTable.Columns.Add("ItemType",              typeof(string));
+        masterTable.Columns.Add("SizeW",                 typeof(object));
+        masterTable.Columns.Add("SizeL",                 typeof(object));
+        masterTable.Columns.Add("ItemSize",              typeof(string));
+        masterTable.Columns.Add("PurchaseRate",          typeof(object));
+        masterTable.Columns.Add("StockRefCode",          typeof(string));
+        masterTable.Columns.Add("ItemDescription",       typeof(string));
+        masterTable.Columns.Add("Quality",               typeof(string));
+        masterTable.Columns.Add("GSM",                   typeof(object));
+        masterTable.Columns.Add("Manufecturer",          typeof(string));
+        masterTable.Columns.Add("Finish",                typeof(string));
+        masterTable.Columns.Add("ManufecturerItemCode",  typeof(string));
+        masterTable.Columns.Add("Caliper",               typeof(object));
+        masterTable.Columns.Add("ShelfLife",             typeof(object));
+        masterTable.Columns.Add("MinimumStockQty",       typeof(object));
+        masterTable.Columns.Add("IsStandardItem",        typeof(object));
+        masterTable.Columns.Add("IsRegularItem",         typeof(object));
+        masterTable.Columns.Add("PackingType",           typeof(string));
+        masterTable.Columns.Add("BF",                    typeof(string));
+        masterTable.Columns.Add("InkColour",             typeof(string));
+        masterTable.Columns.Add("PantoneCode",           typeof(string));
+        masterTable.Columns.Add("PurchaseOrderQuantity", typeof(object));
+        masterTable.Columns.Add("Thickness",             typeof(object));
+        masterTable.Columns.Add("Density",               typeof(object));
+        masterTable.Columns.Add("ReleaseGSM",            typeof(object));
+        masterTable.Columns.Add("AdhesiveGSM",           typeof(object));
+        masterTable.Columns.Add("TotalGSM",              typeof(object));
+        masterTable.Columns.Add("ISItemActive",          typeof(int));
+        masterTable.Columns.Add("CompanyID",             typeof(int));
+        masterTable.Columns.Add("UserID",                typeof(int));
+        masterTable.Columns.Add("FYear",                 typeof(string));
+        masterTable.Columns.Add("CreatedBy",             typeof(int));
+        masterTable.Columns.Add("CreatedDate",           typeof(DateTime));
+        masterTable.Columns.Add("IsDeletedTransaction",  typeof(bool));
+
+        object N(object? v) => v ?? DBNull.Value;
+
+        foreach (var r in masterRows)
+        {
+            var it = r.Item;
+            masterTable.Rows.Add(
+                N(it.ItemName), r.ItemCode, r.MaxItemNo,
+                N(itemGroup.ItemGroupPrefix),
+                itemGroupId,
+                r.ProductHSNID > 0 ? (object)r.ProductHSNID : DBNull.Value,
+                N(it.StockUnit), N(it.PurchaseUnit), N(it.EstimationUnit),
+                N(it.EstimationRate), N(it.UnitPerPacking), N(it.WtPerPacking), N(it.ConversionFactor),
+                r.ItemSubGroupID > 0 ? (object)r.ItemSubGroupID : DBNull.Value,
+                N(it.StockType), N(it.StockCategory), r.ItemType,
+                N(it.SizeW), N(it.SizeL), N(r.ItemSize),
+                N(it.PurchaseRate), N(it.StockRefCode), N(r.ItemDescription),
+                N(it.Quality), N(it.GSM), N(it.Manufecturer), N(it.Finish),
+                N(it.ManufecturerItemCode), N(it.Caliper), N(it.ShelfLife),
+                N(it.MinimumStockQty), N(it.IsStandardItem), N(it.IsRegularItem),
+                N(it.PackingType), N(it.BF), N(it.InkColour), N(it.PantoneCode),
+                N(it.PurchaseOrderQuantity), N(it.Thickness), N(it.Density),
+                N(it.ReleaseGSM), N(it.AdhesiveGSM), N(it.TotalGSM),
+                1, 2, 2, "2025-2026", 2, DateTime.Now, false
+            );
+        }
+
+        // Bulk copy master rows
+        using var bulkCopy = new SqlBulkCopy(_connection)
+        {
+            DestinationTableName = "ItemMaster",
+            BatchSize = 500,
+            BulkCopyTimeout = 300
+        };
+        foreach (System.Data.DataColumn col in masterTable.Columns)
+            bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
+
+        // Capture the server time just before the bulk copy so the ID retrieval is exact
+        var bulkStartTime = await _connection.ExecuteScalarAsync<DateTime>("SELECT GETDATE()");
+
+        await bulkCopy.WriteToServerAsync(masterTable);
+
+        // ─── 4. Retrieve newly inserted ItemIDs (match by ItemCode + timestamp) ──
+        var itemCodes = masterRows.Select(r => r.ItemCode).ToList();
+        var insertedItems = (await _connection.QueryAsync<(string ItemCode, int ItemID)>(
+            @"SELECT ItemCode, ItemID FROM ItemMaster
+              WHERE ItemCode IN @Codes
+                AND IsDeletedTransaction = 0
+                AND CreatedDate >= @BulkStartTime",
+            new { Codes = itemCodes, BulkStartTime = bulkStartTime }))
+            .ToDictionary(x => x.ItemCode, x => x.ItemID);
+
+        int successCount = 0;
+
+        // ─── 5. Build ItemMasterDetails DataTable for SqlBulkCopy ───────────
+        var detailTable = new System.Data.DataTable();
+        detailTable.Columns.Add("ItemID",            typeof(int));
+        detailTable.Columns.Add("ParentFieldName",   typeof(string));
+        detailTable.Columns.Add("ParentFieldValue",  typeof(string));
+        detailTable.Columns.Add("FieldName",         typeof(string));
+        detailTable.Columns.Add("FieldValue",        typeof(string));
+        detailTable.Columns.Add("SequenceNo",        typeof(int));
+        detailTable.Columns.Add("ItemGroupID",       typeof(int));
+        detailTable.Columns.Add("CompanyID",         typeof(int));
+        detailTable.Columns.Add("UserID",            typeof(int));
+        detailTable.Columns.Add("FYear",             typeof(string));
+        detailTable.Columns.Add("CreatedBy",         typeof(int));
+        detailTable.Columns.Add("CreatedDate",       typeof(DateTime));
+        detailTable.Columns.Add("IsDeletedTransaction", typeof(bool));
+
+        foreach (var r in masterRows)
+        {
+            if (!insertedItems.TryGetValue(r.ItemCode, out int newItemId))
+            {
+                result.ErrorRows++;
+                result.ErrorMessages.Add($"Row {r.RowIndex + 1} ({r.Item.ItemName}): ItemID not found after bulk insert.");
+                continue;
+            }
+
+            successCount++;
+            var it = r.Item;
+            int seq = 1;
+            var now = DateTime.Now;
+
+            void AddDetail(string fn, string? fv)
+            {
+                if (string.IsNullOrEmpty(fv)) return;
+                detailTable.Rows.Add(newItemId, fn, fv, fn, fv, seq++,
+                    itemGroupId, 2, 2, "2025-2026", 2, now, false);
+            }
+
+            AddDetail("BF",                    it.BF);
+            AddDetail("InkColour",             it.InkColour);
+            AddDetail("PantoneCode",           it.PantoneCode);
+            AddDetail("ItemType",              r.ItemType);
+            if (r.ItemSubGroupID > 0) AddDetail("ItemSubGroupID", r.ItemSubGroupID.ToString());
+            AddDetail("StockType",             it.StockType);
+            if (it.PurchaseOrderQuantity.HasValue) AddDetail("PurchaseOrderQuantity", it.PurchaseOrderQuantity.ToString());
+            AddDetail("Quality",               it.Quality);
+            if (it.GSM.HasValue)               AddDetail("GSM",              it.GSM.ToString());
+            AddDetail("Manufecturer",          it.Manufecturer);
+            AddDetail("Finish",                it.Finish);
+            AddDetail("ManufecturerItemCode",  it.ManufecturerItemCode);
+            if (it.Caliper.HasValue)           AddDetail("Caliper",          it.Caliper.ToString());
+            if (it.SizeW.HasValue)             AddDetail("SizeW",            it.SizeW.ToString());
+            if (it.SizeL.HasValue)             AddDetail("SizeL",            it.SizeL.ToString());
+            AddDetail("PurchaseUnit",          it.PurchaseUnit);
+            if (it.PurchaseRate.HasValue)      AddDetail("PurchaseRate",     it.PurchaseRate.ToString());
+            if (it.ShelfLife.HasValue)         AddDetail("ShelfLife",        it.ShelfLife.ToString());
+            AddDetail("EstimationUnit",        it.EstimationUnit);
+            if (it.EstimationRate.HasValue)    AddDetail("EstimationRate",   it.EstimationRate.ToString());
+            AddDetail("StockUnit",             it.StockUnit);
+            if (it.MinimumStockQty.HasValue)   AddDetail("MinimumStockQty",  it.MinimumStockQty.ToString());
+            if (it.IsStandardItem.HasValue)    AddDetail("IsStandardItem",   it.IsStandardItem.ToString());
+            if (it.IsRegularItem.HasValue)     AddDetail("IsRegularItem",    it.IsRegularItem.ToString());
+            AddDetail("PackingType",           it.PackingType);
+            if (it.UnitPerPacking.HasValue)    AddDetail("UnitPerPacking",   it.UnitPerPacking.ToString());
+            if (it.WtPerPacking.HasValue)      AddDetail("WtPerPacking",     it.WtPerPacking.ToString());
+            AddDetail("ItemSize",              r.ItemSize);
+            if (r.ProductHSNID > 0)
+            {
+                AddDetail("ProductHSNID",      r.ProductHSNID.ToString());
+                AddDetail("ProductHSNName",    r.ProductHSNID.ToString());
+            }
+            if (it.Thickness.HasValue)         AddDetail("Thickness",        it.Thickness.ToString());
+            if (it.Density.HasValue)           AddDetail("Density",          it.Density.ToString());
+            if (it.ReleaseGSM.HasValue)        AddDetail("ReleaseGSM",       it.ReleaseGSM.ToString());
+            if (it.AdhesiveGSM.HasValue)       AddDetail("AdhesiveGSM",      it.AdhesiveGSM.ToString());
+            if (it.TotalGSM.HasValue)          AddDetail("TotalGSM",         it.TotalGSM.ToString());
+            AddDetail("StockRefCode",          it.StockRefCode);
+            AddDetail("CertificationType",     it.CertificationType);
+            AddDetail("ISItemActive",          "True");
+        }
+
+        // Bulk-copy all detail rows in a single operation
+        using var detailBulkCopy = new SqlBulkCopy(_connection)
+        {
+            DestinationTableName = "ItemMasterDetails",
+            BatchSize = 1000,
+            BulkCopyTimeout = 300
+        };
+        foreach (System.Data.DataColumn col in detailTable.Columns)
+            detailBulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
+
+        if (detailTable.Rows.Count > 0)
+            await detailBulkCopy.WriteToServerAsync(detailTable);
+
+        // ─── 6. Build result ──────────────────────────────────────────────────
         result.ImportedRows = successCount;
         if (result.ErrorRows > 0)
         {
@@ -1214,7 +1184,7 @@ public class ItemService : IItemService
         else
         {
             result.Success = true;
-            result.Message = $"Successfully imported {successCount} item(s)";
+            result.Message = $"Successfully imported {successCount} item(s).";
         }
 
         return result;

@@ -86,6 +86,11 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     // Success Popup State (Import)
     const [successInfo, setSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
 
+    // Import Progress State (live counter overlay)
+    const [importProgress, setImportProgress] = useState<{
+        active: boolean; step: string; pct: number; total: number;
+    } | null>(null);
+
     // Clear Success Popup State
     const [clearSuccessInfo, setClearSuccessInfo] = useState<{ rowCount: number; groupName: string } | null>(null);
 
@@ -635,94 +640,96 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
         setIsLoading(true);
         try {
-            // 1. Full Re-Validation (with same cleaning as Check Validation)
+            // 1. Re-Validation (duplicate-only gate)
             const cleanedForValidation = cleanItemDataForApi(itemData);
             const result = await validateItems(cleanedForValidation, itemGroupId);
             setValidationResult(result);
 
-            if (!result.isValid) {
-                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
-
-                // Aggregate failures by column
+            // Block ONLY if duplicates are found
+            const duplicateRows = result.rows.filter((row: ItemRowValidation) => row.rowStatus === ValidationStatus.Duplicate);
+            if (duplicateRows.length > 0) {
+                setImportProgress(null);
                 const columnFailures = new Map<string, Set<string>>();
-
-                result.rows.forEach((row: ItemRowValidation) => {
-                    // 1. Handle Duplicates
-                    if (row.rowStatus === ValidationStatus.Duplicate) {
-                        const col = 'ItemName';
-                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
-                        columnFailures.get(col)!.add('Duplicate data found');
-                    }
-
-                    // 2. Handle Cell Validations
-                    if (row.cellValidations && row.cellValidations.length > 0) {
-                        row.cellValidations.forEach((cell: any) => {
-                            const col = cell.columnName || 'Unknown';
-                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
-
-                            let reason = cell.validationMessage;
-                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
-                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
-                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
-
-                            columnFailures.get(col)!.add(reason);
-                        });
-                    }
+                duplicateRows.forEach((_row: ItemRowValidation) => {
+                    const col = 'ItemName';
+                    if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                    columnFailures.get(col)!.add('Duplicate data found');
                 });
-
-                // Construct Message
                 const messages: string[] = [];
-                columnFailures.forEach((reasons, col) => {
-                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
-                });
-
+                columnFailures.forEach((reasons, col) => messages.push(`${col} – ${Array.from(reasons).join(', ')}`));
                 setValidationModalContent({
-                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
-                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues that were not attributed to specific columns.']
+                    title: `Import Blocked: ${duplicateRows.length} Duplicate Row${duplicateRows.length !== 1 ? 's' : ''} Found`,
+                    messages: messages.length > 0 ? messages : ['Duplicate rows detected. Please remove them before importing.']
                 });
                 setShowValidationModal(true);
-                showError('Validation failed. Please correct highlighted errors before saving.');
-                return; // ABORT
-            }
-
-            // 2. Confirmation
-            if (!window.confirm(`Validation passed. Import ${itemData.length} item(s)?`)) {
+                showError('Import blocked due to duplicate rows. Please resolve them first.');
                 return;
             }
 
-            // 3. Import (use same cleaning — at this point all values are valid after validation passed)
+            // 2. Show live progress overlay — bulk import is a single HTTP call
+            const total = itemData.length;
+            setImportProgress({ active: true, step: `Importing Item Master (${itemGroupName})...`, pct: 10, total });
+
+            // Simulate progress stages while the bulk request is in-flight
+            const progressTimer = setInterval(() => {
+                setImportProgress(prev => {
+                    if (!prev) return prev;
+                    const next = Math.min(prev.pct + 15, 90);
+                    return { ...prev, pct: next };
+                });
+            }, 800);
+
+            // 3. Bulk Import
             const cleanedData = cleanItemDataForApi(itemData);
 
-            console.log('[ItemImport] Sending data:', cleanedData);
-            const importRes = await importItems(cleanedData, itemGroupId);
+            // Use try/catch so we can read the response body even on non-2xx status
+            let importRes: any = null;
+            try {
+                importRes = await importItems(cleanedData, itemGroupId);
+            } catch (axiosErr: any) {
+                // Axios throws on 4xx/5xx — try to extract ImportResultDto from response body
+                importRes = axiosErr?.response?.data ?? null;
+                if (!importRes) {
+                    clearInterval(progressTimer);
+                    setImportProgress(null);
+                    showError(axiosErr?.message || 'Import request failed');
+                    return;
+                }
+            } finally {
+                clearInterval(progressTimer);
+                setImportProgress({ active: true, step: 'Finalising...', pct: 100, total });
+                await new Promise(r => setTimeout(r, 400));
+                setImportProgress(null);
+            }
 
-            if (importRes.success) {
-                console.log('[ItemImport] Success:', importRes);
-                // Show success popup instead of toast
-                setSuccessInfo({ rowCount: importRes.importedRows ?? cleanedData.length, groupName: itemGroupName });
+            // Handle result — success means at least some rows were imported
+            const imported = importRes?.importedRows ?? importRes?.ImportedRows ?? 0;
+            const isSuccess = importRes?.success ?? importRes?.Success ?? false;
+            const errRows = importRes?.errorRows ?? importRes?.ErrorRows ?? 0;
+            const errMsgs = importRes?.errorMessages ?? importRes?.ErrorMessages ?? [];
 
-                // If some rows failed, also show failed rows list after success popup
-                if (importRes.errorRows > 0 && importRes.errorMessages && importRes.errorMessages.length > 0) {
+            if (isSuccess || imported > 0) {
+                setSuccessInfo({ rowCount: imported || cleanedData.length, groupName: itemGroupName });
+                if (errRows > 0 && errMsgs.length > 0) {
                     setValidationModalContent({
-                        title: `${importRes.errorRows} Row(s) Failed During Import`,
-                        messages: importRes.errorMessages
+                        title: `${errRows} Row(s) Skipped During Import`,
+                        messages: errMsgs
                     });
+                    // Show error modal AFTER success popup is dismissed (user clicks OK first)
                 }
             } else {
-                if (importRes.errorMessages && importRes.errorMessages.length > 0) {
-                    setValidationModalContent({
-                        title: 'Import Failed',
-                        messages: importRes.errorMessages
-                    });
+                if (errMsgs.length > 0) {
+                    setValidationModalContent({ title: 'Import Failed', messages: errMsgs });
                     setShowValidationModal(true);
                 } else {
-                    showError(importRes.message || 'Import failed');
+                    const msg = importRes?.message ?? importRes?.Message ?? 'Import failed — no rows were inserted.';
+                    showError(msg);
                 }
             }
         } catch (error: any) {
-            console.error('[ItemImport] Error:', error);
-            const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || 'Import failed';
-            showError(errorMsg);
+            setImportProgress(null);
+            console.error('[ItemImport] Unexpected error:', error);
+            showError(error?.message || 'An unexpected error occurred during import.');
         } finally {
             setIsLoading(false);
         }
@@ -2431,8 +2438,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         isExternalFilterPresent={isExternalFilterPresent}
                         doesExternalFilterPass={doesExternalFilterPass}
                         pagination={true}
-                        paginationPageSize={20}
-                        paginationPageSizeSelector={[20, 50, 100]}
+                        paginationPageSize={1000}
+                        paginationPageSizeSelector={[1000, 2000, 5000]}
                         tooltipShowDelay={300}
                         tooltipInteraction={true}
                         overlayNoRowsTemplate='<span class="text-gray-500 dark:text-gray-400 text-lg">No records found</span>'
@@ -2790,6 +2797,67 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                             >
                                 Ok
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Import Success Popup ───────────────────────────────────────── */}
+            {successInfo && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-[#1e293b] rounded-2xl shadow-2xl max-w-sm w-full p-8 border border-gray-100 dark:border-gray-700 flex flex-col items-center text-center gap-4">
+                        {/* Green checkmark circle */}
+                        <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                            <svg className="w-9 h-9 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Import Successful!</h3>
+                        <p className="text-gray-500 dark:text-gray-400 text-base">
+                            <span className="text-3xl font-bold text-green-600 dark:text-green-400 block mb-1">
+                                {successInfo.rowCount.toLocaleString()}
+                            </span>
+                            rows imported into <strong>{successInfo.groupName}</strong>
+                        </p>
+                        <button
+                            onClick={() => {
+                                setSuccessInfo(null);
+                                // Reset to idle state after successful import
+                                setItemData([]);
+                                setValidationResult(null);
+                                setMode('idle');
+                                setFilterType('all');
+                                // Show error details if any rows were skipped
+                                if (validationModalContent) setShowValidationModal(true);
+                            }}
+                            className="mt-2 w-full px-6 py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-xl font-semibold text-lg transition-colors"
+                        >
+                            OK
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Import Progress Overlay */}
+            {importProgress?.active && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 border border-gray-200 dark:border-gray-700">
+                        <div className="flex flex-col items-center gap-4">
+                            {/* Spinner */}
+                            <div className="w-14 h-14 rounded-full border-4 border-blue-200 dark:border-blue-900 border-t-blue-600 dark:border-t-blue-400 animate-spin" />
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 text-center">
+                                {importProgress.step}
+                            </h3>
+                            {/* Progress bar */}
+                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                                <div
+                                    className="h-3 bg-blue-600 dark:bg-blue-400 rounded-full transition-all duration-500"
+                                    style={{ width: `${importProgress.pct}%` }}
+                                />
+                            </div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                {importProgress.pct}% &bull; {importProgress.total.toLocaleString()} rows
+                            </p>
                         </div>
                     </div>
                 </div>
