@@ -20,7 +20,9 @@ public class LedgerService : ILedgerService
         //   LedgerGroupID = 1  → Clients    : PIVOT on GSTRegistrationType, PartyType, CustomerCategory, CreditDays
         //   LedgerGroupID = 4  → Consignees : specific columns + ClientName self-join
         //   All others         : LM.* + DepartmentMaster JOIN
-        var ledgerList = (await _connection.QueryAsync<LedgerMasterDto>(
+
+        // Query as dynamic first to handle malformed column names from SP's PIVOT
+        var dynamicResults = (await _connection.QueryAsync<dynamic>(
             "GetLedgerMasterData",
             new
             {
@@ -30,6 +32,93 @@ public class LedgerService : ILedgerService
             },
             commandType: System.Data.CommandType.StoredProcedure
         )).ToList();
+
+        if (dynamicResults.Count == 0)
+            return new List<LedgerMasterDto>();
+
+        // Manually map dynamic results to LedgerMasterDto with robust error handling
+        var ledgerList = new List<LedgerMasterDto>();
+
+        foreach (var row in dynamicResults)
+        {
+            var ledger = new LedgerMasterDto();
+            var dict = (IDictionary<string, object>)row;
+
+            // Helper to safely get and parse values
+            object? GetValue(string key) => dict.ContainsKey(key) ? dict[key] : null;
+
+            string? GetString(string key)
+            {
+                var val = GetValue(key);
+                return val == null || val == DBNull.Value ? null : val.ToString();
+            }
+
+            int? GetInt(string key)
+            {
+                var val = GetString(key);
+                if (string.IsNullOrWhiteSpace(val)) return null;
+                return int.TryParse(val, out var result) ? result : null;
+            }
+
+            decimal? GetDecimal(string key)
+            {
+                var val = GetString(key);
+                if (string.IsNullOrWhiteSpace(val)) return null;
+                return decimal.TryParse(val, out var result) ? result : null;
+            }
+
+            bool GetBool(string key)
+            {
+                var val = GetValue(key);
+                if (val == null || val == DBNull.Value) return false;
+                if (val is bool b) return b;
+                var str = val.ToString()?.Trim().ToLower();
+                return str == "1" || str == "true";
+            }
+
+            // Map all properties, handling malformed column names
+            ledger.LedgerID = GetInt("LedgerID") ?? 0;
+            ledger.LedgerName = GetString("LedgerName");
+            ledger.MailingName = GetString("MailingName");
+            ledger.Address1 = GetString("Address1");
+            ledger.Address2 = GetString("Address2");
+            ledger.Address3 = GetString("Address3");
+            ledger.City = GetString("City");
+            ledger.State = GetString("State");
+            ledger.Country = GetString("Country");
+            ledger.Pincode = GetString("Pincode");
+            ledger.MobileNo = GetString("MobileNo");
+            ledger.TelephoneNo = GetString("TelephoneNo") ?? GetString("PhoneNo");
+            ledger.Email = GetString("Email") ?? GetString("EmailID");
+            ledger.Website = GetString("Website");
+            ledger.LedgerGroupID = GetInt("LedgerGroupID") ?? 0;
+            ledger.SalesRepresentative = GetString("SalesRepresentative") ?? GetString("ContactPerson");
+            ledger.Designation = GetString("Designation");
+            ledger.GSTNo = GetString("GSTNo") ?? GetString("GSTIN");
+            ledger.PANNo = GetString("PANNo") ?? GetString("PAN");
+            ledger.DeliveredQtyTolerance = GetDecimal("DeliveredQtyTolerance");
+            ledger.SupplyTypeCode = GetString("SupplyTypeCode");
+            ledger.Distance = GetDecimal("Distance");
+            ledger.LegalName = GetString("LegalName");
+            ledger.MailingAddress = GetString("MailingAddress");
+            ledger.IsDeletedTransaction = GetBool("IsDeletedTransaction");
+
+            // Handle CreditDays with both "CreditDays" and "CreditDays=" column names (database is nvarchar)
+            ledger.CreditDays = GetString("CreditDays") ?? GetString("CreditDays=");
+
+            // Handle other PIVOT columns that might have malformed names
+            ledger.GSTRegistrationType = GetString("GSTRegistrationType") ?? GetString("GSTRegistrationType=");
+            ledger.RefCode = GetString("RefCode") ?? GetString("RefCode=");
+            ledger.CurrencyCode = GetString("CurrencyCode") ?? GetString("CurrencyCode=");
+
+            // Additional fields from stored procedure
+            ledger.DepartmentName = GetString("DepartmentName");
+            ledger.ClientName = GetString("ClientName");
+            ledger.DepartmentID = GetInt("DepartmentID");
+            ledger.RefClientID = GetInt("RefClientID");
+
+            ledgerList.Add(ledger);
+        }
 
         if (ledgerList.Count == 0)
             return ledgerList;
@@ -82,9 +171,8 @@ public class LedgerService : ILedgerService
                 if (fields.TryGetValue("GSTRegistrationType", out var gstRegType))
                     ledger.GSTRegistrationType = gstRegType;
 
-                if (fields.TryGetValue("CreditDays", out var creditDaysStr) &&
-                    int.TryParse(creditDaysStr, out int creditDays))
-                    ledger.CreditDays = creditDays;
+                if (fields.TryGetValue("CreditDays", out var creditDaysStr))
+                    ledger.CreditDays = creditDaysStr;
             }
         }
 

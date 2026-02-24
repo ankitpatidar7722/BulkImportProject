@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import ClearSuccessPopup from './ClearSuccessPopup';
 import NoDataPopup from './NoDataPopup';
 import { Database, Trash2, Upload, Download, CheckCircle2, AlertCircle, FilePlus2, RefreshCw, XCircle, ShieldAlert, Lock } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { useMessageModal } from './MessageModal';
+import DropdownCellRenderer from './DropdownCellRenderer';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -48,6 +49,7 @@ interface LedgerMasterEnhancedProps {
 
 const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroupId, ledgerGroupName }) => {
     const { isDark } = useTheme();
+    const { showMessage, ModalRenderer } = useMessageModal();
 
     const [ledgerData, setLedgerData] = useState<LedgerMasterDto[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -70,13 +72,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     // Re-Upload Confirmation State
     const [showReUploadModal, setShowReUploadModal] = useState(false);
 
-    // Standard Error Modal State
-    const [showErrorModal, setShowErrorModal] = useState(false);
-    const [errorModalMessage, setErrorModalMessage] = useState<string>('');
-
     const showError = (message: string) => {
-        setErrorModalMessage(message);
-        setShowErrorModal(true);
+        showMessage('error', 'Error', message);
     };
 
     // Import Progress State
@@ -146,7 +143,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         const userAnswer = parseInt(captchaInput);
         if (isNaN(userAnswer) || userAnswer !== captchaQuestion.answer) {
             setCaptchaError(true);
-            toast.error('❌ Incorrect CAPTCHA answer. Please try again.');
+            showMessage('error', 'Incorrect Answer', 'The CAPTCHA answer you entered is incorrect. Please try again.');
             return;
         }
 
@@ -186,18 +183,13 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             if (deletedCount > 0 && clearActionType === 'clearOnly') {
                 setClearSuccessInfo({ rowCount: deletedCount, groupName: `${ledgerGroupName} Ledger Group` });
             } else if (deletedCount === 0 && clearActionType === 'clearOnly') {
-                toast.success('No existing data to clear.');
+                showMessage('info', 'No Data Found', `No existing data was found in the database for the ${ledgerGroupName} Ledger Group. Nothing was cleared.`);
             }
             setLedgerData([]);
             setValidationResult(null);
             setMode('idle');
 
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
-                if (deletedCount > 0) {
-                    toast.success(`✅ Cleared ${deletedCount} record(s). Opening upload...`);
-                } else {
-                    toast.success('No existing data to clear. Proceeding...');
-                }
                 fileInputRef.current.value = '';
                 fileInputRef.current.click();
             }
@@ -205,7 +197,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             handleClearCancel();
         } catch (error: any) {
             console.error(error);
-            toast.error(error.response?.data?.message || 'Failed to clear data. Check credentials.');
+            showMessage('error', 'Clear Data Failed', error.response?.data?.message || 'Unable to clear data. Please verify your credentials and try again.');
         } finally {
             setIsLoading(false);
         }
@@ -345,7 +337,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: {
                     values: clients.map(c => c.ledgerName || c.LedgerName || '').filter(Boolean)
-                }
+                },
+                cellRenderer: DropdownCellRenderer
             },
 
             { field: 'address1', headerName: 'Address1' },
@@ -359,7 +352,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                     return {
                         values: distinctCountries
                     };
-                }
+                },
+                cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'state',
@@ -376,7 +370,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                     return {
                         values: filteredStates.sort()
                     };
-                }
+                },
+                cellRenderer: DropdownCellRenderer
             },
             { field: 'city', headerName: 'City' },
             { field: 'pincode', headerName: 'Pincode' },
@@ -404,6 +399,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 cellEditorParams: {
                     values: departments.map(d => d.departmentName || d.DepartmentName || '').filter(Boolean)
                 },
+                cellRenderer: DropdownCellRenderer,
                 hide: !isEmployee
             },
             {
@@ -427,10 +423,66 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 cellEditorParams: {
                     values: salesRepresentatives.map(sr => sr.employeeName || sr.EmployeeName || '').filter(Boolean)
                 },
+                cellRenderer: DropdownCellRenderer,
                 hide: isSupplier || isEmployee || isConsignee || isVendor || isTransporter
             },
             { field: 'supplyTypeCode', headerName: 'SupplyTypeCode', hide: isEmployee || isVendor || isTransporter },
-            { field: 'gstApplicable', headerName: 'GSTApplicable', cellEditor: 'agCheckboxCellEditor', hide: isEmployee || isConsignee || isTransporter },
+            {
+                field: 'gstApplicable',
+                headerName: 'GSTApplicable',
+                valueGetter: (params: any) => {
+                    const val = params.data?.gstApplicable;
+                    if (val === true || val === 'TRUE') return 'TRUE';
+                    if (val === false || val === 'FALSE') return 'FALSE';
+                    return val; // Invalid value, show as-is
+                },
+                cellStyle: (params: any): Record<string, string> | null => {
+                    const val = params.data?.gstApplicable;
+                    // Purple highlight for invalid boolean values
+                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                        return {
+                            backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff',
+                            color: isDark ? '#e9d5ff' : '#581c87'
+                        };
+                    }
+                    // Otherwise use default cellStyle logic
+                    const rowIndex = ledgerData.indexOf(params.data);
+                    if (rowIndex === -1) return null;
+                    const rowValidation = validationMap.get(rowIndex);
+                    if (rowValidation?.rowStatus === ValidationStatus.Duplicate) {
+                        return { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.2)' : '#fee2e2' };
+                    }
+                    const cellVal = findLedgerCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
+                    if (cellVal) {
+                        const colors: Record<number, string> = {
+                            [ValidationStatus.MissingData]: isDark ? 'rgba(37, 99, 235, 0.2)' : '#dbeafe',
+                            [ValidationStatus.Mismatch]: isDark ? 'rgba(202, 138, 4, 0.2)' : '#fef9c3',
+                            [ValidationStatus.InvalidContent]: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff'
+                        };
+                        const bgColor = colors[cellVal.status];
+                        return bgColor ? { backgroundColor: bgColor } : null;
+                    }
+                    return null;
+                },
+                tooltipValueGetter: (params: any) => {
+                    const val = params.data?.gstApplicable;
+                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                        return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
+                    }
+                    // Otherwise use default tooltip logic
+                    const rowIndex = ledgerData.indexOf(params.data);
+                    if (rowIndex === -1) return null;
+                    const rowValidation = validationMap.get(rowIndex);
+                    if (!rowValidation) return null;
+                    const cellVal = findLedgerCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
+                    if (cellVal) return cellVal.validationMessage;
+                    if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
+                        return rowValidation.errorMessage || 'Duplicate row detected';
+                    }
+                    return null;
+                },
+                hide: isEmployee || isConsignee || isTransporter
+            },
             { field: 'refCode', headerName: 'RefCode', hide: isEmployee || isVendor || isTransporter },
             { field: 'gstRegistrationType', headerName: 'GSTRegistrationType', hide: isEmployee || isConsignee || isVendor || isTransporter },
             { field: 'creditDays', headerName: 'CreditDays', hide: isSupplier || isEmployee || isConsignee || isVendor || isTransporter },
@@ -638,7 +690,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             if (data.length === 0) {
                 setNoDataMessage(`No data found in database against the selected ${ledgerGroupName}`);
             } else {
-                toast.success(`Loaded ${data.length} ledger(s)`);
+                showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} ledger record(s) for the ${ledgerGroupName} group.`);
             }
         } catch (error: any) {
             showError(error?.response?.data?.error || 'Failed to load data');
@@ -716,7 +768,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             setLedgerData(newLedgerData);
             setValidationResult(null); // Reset validation as indices shift
             setMode('preview');
-            toast.success(`Removed ${selectedIndices.size} row(s). Please re-run validation.`);
+            showMessage('info', 'Rows Removed', `${selectedIndices.size} row(s) have been removed from the preview. Please re-run validation before importing.`);
             return;
         }
 
@@ -733,10 +785,10 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             }
 
             if (deletedCount > 0) {
-                toast.success(`Successfully removed ${deletedCount} ledger(s) from database`);
+                showMessage('success', 'Records Deleted', `${deletedCount} ledger record(s) have been successfully removed from the database.`);
                 await handleLoadData();
             } else {
-                toast.error('No database records were selected for deletion');
+                showMessage('warning', 'Nothing Deleted', 'No database records were found for deletion. Please select rows that exist in the database.');
             }
         } catch (error: any) {
             showError(error?.response?.data?.error || 'Failed to remove ledgers');
@@ -785,9 +837,20 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                         }
                     }
 
-                    let gstApplicable = true;
+                    // Strict boolean validation: only accept true/false (case-insensitive), normalize to uppercase
+                    let gstApplicable: any = true;
                     if (row.GSTApplicable !== undefined && row.GSTApplicable !== null && row.GSTApplicable !== '') {
-                        gstApplicable = row.GSTApplicable === true || row.GSTApplicable === 'true' || row.GSTApplicable === 1;
+                        const val = String(row.GSTApplicable).trim().toLowerCase();
+                        if (val === 'true') {
+                            gstApplicable = 'TRUE';
+                        } else if (val === 'false') {
+                            gstApplicable = 'FALSE';
+                        } else {
+                            // Invalid value - keep as-is for validation to catch
+                            gstApplicable = row.GSTApplicable;
+                        }
+                    } else {
+                        gstApplicable = 'TRUE'; // Default
                     }
 
                     let supplyTypeCode = 'B2B';
@@ -889,7 +952,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
                 setLedgerData(ledgers);
                 setMode('preview');
-                toast.success(`Loaded ${ledgers.length} rows from Excel`);
+                showMessage('success', 'File Loaded', `Successfully loaded ${ledgers.length} row(s) from the Excel file. Please click "Check Validation" before importing.`);
             } catch (error) {
                 showError('Failed to parse Excel file');
                 console.error(error);
@@ -920,11 +983,15 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                         rawValues[key] = strVal;
                     }
                 } else if (boolFields.has(key)) {
-                    const strVal = String(value).trim().toLowerCase();
-                    if (['true', 'false', '1', '0', 'yes', 'no'].includes(strVal)) {
-                        cleaned[key] = strVal === 'true' || strVal === '1' || strVal === 'yes';
+                    const strVal = String(value).trim();
+                    // Only accept uppercase TRUE or FALSE (already normalized from Excel)
+                    if (strVal === 'TRUE') {
+                        cleaned[key] = true;
+                    } else if (strVal === 'FALSE') {
+                        cleaned[key] = false;
                     } else {
-                        rawValues[key] = String(value).trim();
+                        // Invalid boolean value - send to rawValues for purple highlighting
+                        rawValues[key] = strVal;
                     }
                 } else {
                     // Ensure all string fields are sent as strings
@@ -954,7 +1021,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             setValidationResult(result);
 
             if (result.isValid) {
-                toast.success('All validations passed! Ready to import.');
+                showMessage('success', 'Validation Passed', 'All records passed validation successfully. The data is ready to be imported.');
             } else {
                 const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
 
@@ -1016,6 +1083,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         // ── Step 1: Validation ─────────────────────────────────────────────
         setImportProgress({ active: true, step: 'Validating data…', pct: 5, total });
         setIsLoading(true);
+        // Clear old validation errors to prevent showing stale messages after successful import
+        setValidationModalContent(null);
 
         try {
             const cleanedForValidation = cleanLedgerDataForApi(ledgerData);
@@ -1222,7 +1291,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `${ledgerGroupName}.xlsx`);
-        toast.success('Data exported successfully');
+        showMessage('success', 'Export Complete', 'The data has been exported to an Excel file and downloaded successfully.');
     };
 
     // Display rows now handled by AG Grid Filtering
@@ -1993,30 +2062,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 </div>
             )}
 
-            {/* Standard Error Popup Modal */}
-            {showErrorModal && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100 dark:border-red-900/30 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
-                                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                                Error
-                            </h3>
-                            <div className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center whitespace-pre-wrap">
-                                {errorModalMessage}
-                            </div>
-                            <button
-                                onClick={() => setShowErrorModal(false)}
-                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
-                            >
-                                OK
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Standardized Message Modal */}
+            {ModalRenderer}
 
             {/* Validation Result Modal */}
             {showValidationModal && validationModalContent && (

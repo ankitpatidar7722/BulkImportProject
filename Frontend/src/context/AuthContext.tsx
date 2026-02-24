@@ -6,7 +6,7 @@ import {
     CompanyLoginRequest,
     UserLoginRequest
 } from '../services/api';
-import toast from 'react-hot-toast';
+
 
 interface AuthContextType {
     loginStep: 0 | 1 | 2; // 0: None, 1: Company, 2: User
@@ -50,41 +50,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, []);
 
     const companyLogin = async (data: CompanyLoginRequest) => {
-        try {
-            const response = await companyLoginApi(data);
-            if (response.companyToken) {
-                localStorage.setItem('companyToken', response.companyToken);
-                localStorage.setItem('companyName', response.companyName);
-                setCompanyName(response.companyName);
-                setLoginStep(1);
-                toast.success('Company Verified');
-            } else {
-                toast.error(response.message || 'Login Failed');
-            }
-        } catch (error: any) {
-            toast.error(error.response?.data?.message || 'Login Failed');
-            throw error;
+        const response = await companyLoginApi(data);
+        if (response.companyToken) {
+            localStorage.setItem('companyToken', response.companyToken);
+            localStorage.setItem('companyName', response.companyName);
+            setCompanyName(response.companyName);
+            setLoginStep(1);
+        } else {
+            throw new Error(response.message || 'Company login failed. Please check your credentials.');
         }
     };
 
     const userLogin = async (data: UserLoginRequest) => {
-        try {
-            const response = await userLoginApi(data);
-            if (response.token) {
-                localStorage.setItem('authToken', response.token);
-                localStorage.setItem('userName', response.userName);
-                localStorage.setItem('fYear', response.fYear); // response.fYear usually matches input but logic in backend ensures it's stored
+        const response = await userLoginApi(data);
+        if (response.token) {
+            localStorage.setItem('authToken', response.token);
+            localStorage.setItem('userName', response.userName);
+            localStorage.setItem('fYear', response.fYear);
 
-                setUserName(response.userName);
-                setFYear(response.fYear); // Use input or response
-                setLoginStep(2);
-                toast.success('Login Successful');
-            } else {
-                toast.error(response.message || 'Login Failed');
-            }
-        } catch (error: any) {
-            toast.error(error.response?.data?.message || 'Login Failed');
-            throw error;
+            setUserName(response.userName);
+            setFYear(response.fYear);
+            setLoginStep(2);
+        } else {
+            throw new Error(response.message || 'User login failed. Please check your credentials.');
         }
     };
 

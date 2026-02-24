@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './Login.css';
 import { useAuth } from '../context/AuthContext';
 import { User, Building2, Calendar, ArrowRight, Loader2, ArrowLeft, Lock, ChevronRight } from 'lucide-react';
+import { useMessageModal } from './MessageModal';
 
 // Custom Typewriter Component (Dependency-free)
 const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[], speed?: number, wait?: number }) => {
@@ -50,6 +51,7 @@ const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[], spee
 
 const Login: React.FC = () => {
     const { loginStep, companyLogin, userLogin, companyName, isLoading, logout } = useAuth();
+    const { showMessage, ModalRenderer } = useMessageModal();
 
     // Form States
     const [companyUser, setCompanyUser] = useState('');
@@ -67,8 +69,8 @@ const Login: React.FC = () => {
         setIsSubmitting(true);
         try {
             await companyLogin({ companyUserID: companyUser, password: companyPass });
-        } catch (error) {
-            // Toast handled in context
+        } catch (error: any) {
+            showMessage('error', 'Login Failed', error.message || 'Invalid company credentials. Please try again.');
         } finally {
             setIsSubmitting(false);
         }
@@ -79,8 +81,8 @@ const Login: React.FC = () => {
         setIsSubmitting(true);
         try {
             await userLogin({ userName: userName, password: userPass, fYear: fYear });
-        } catch (error) {
-            // Toast handled in context
+        } catch (error: any) {
+            showMessage('error', 'Login Failed', error.message || 'Invalid credentials. Please check your username and password.');
         } finally {
             setIsSubmitting(false);
         }
@@ -111,6 +113,7 @@ const Login: React.FC = () => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50 relative overflow-hidden p-4 font-sans text-gray-900 selection:bg-orange-500/20 selection:text-orange-700">
+            {ModalRenderer}
 
             {/* Background Ambient Glows (Light Mode) */}
             <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] bg-orange-200/30 rounded-full blur-[120px] animate-pulse-slow" />

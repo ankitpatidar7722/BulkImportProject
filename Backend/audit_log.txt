@@ -1,2 +1,4 @@
 [13-02-2026 17:53:17] User: admin, Module: HSN Master, Action: Clear Data, Reason: Fresh
 [23-02-2026 11:29:02] User: admin, Module: HSN Master, Action: Clear Data, Reason: sds
+[24-02-2026 16:43:49] User: admin, Module: HSN Master, Action: Clear Data, Reason: ew
+[24-02-2026 16:44:51] User: admin, Module: HSN Master, Action: Clear Data, Reason: sd

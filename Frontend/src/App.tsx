@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -63,28 +63,7 @@ function App() {
             <AuthProvider>
                 <Router>
                     <AuthGate />
-                    <Toaster
-                        position="top-right"
-                        toastOptions={{
-                            duration: 4000,
-                            style: {
-                                background: 'var(--toast-bg)',
-                                color: 'var(--toast-color)',
-                            },
-                            success: {
-                                iconTheme: {
-                                    primary: '#10b981',
-                                    secondary: '#fff',
-                                },
-                            },
-                            error: {
-                                iconTheme: {
-                                    primary: '#ef4444',
-                                    secondary: '#fff',
-                                },
-                            },
-                        }}
-                    />
+
                 </Router>
             </AuthProvider>
         </ThemeProvider>

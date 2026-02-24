@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Building2, Save, Edit2, Loader2 } from 'lucide-react';
 import { getCompany, updateCompany, CompanyDto } from '../services/api';
-import toast from 'react-hot-toast';
+import { useMessageModal } from '../components/MessageModal';
 
 const CompanyMaster: React.FC = () => {
+    const { showMessage, ModalRenderer } = useMessageModal();
     const [company, setCompany] = useState<CompanyDto | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -22,7 +23,7 @@ const CompanyMaster: React.FC = () => {
             setFormData(data);
         } catch (error) {
             console.error(error);
-            toast.error('Failed to load company details');
+            showMessage('error', 'Load Error', 'Failed to load company details. Please try refreshing the page.');
         } finally {
             setIsLoading(false);
         }
@@ -45,10 +46,10 @@ const CompanyMaster: React.FC = () => {
             await updateCompany(formData);
             setCompany(formData);
             setIsEditing(false);
-            toast.success('Company details saved successfully');
+            showMessage('success', 'Saved Successfully', 'Company details have been updated successfully.');
         } catch (error) {
             console.error(error);
-            toast.error('Failed to save changes');
+            showMessage('error', 'Save Failed', 'Failed to save company changes. Please try again.');
         } finally {
             setIsSaving(false);
         }
@@ -173,6 +174,7 @@ const CompanyMaster: React.FC = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-[#020617] dark:to-[#0f172a]">
+            {ModalRenderer}
             {/* Fixed Header */}
             <div className="sticky top-0 z-20 bg-white dark:bg-[#0f172a] border-b border-gray-200 dark:border-gray-800 shadow-sm">
                 <div className="px-6 py-4">

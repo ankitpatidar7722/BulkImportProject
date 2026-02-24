@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import ClearSuccessPopup from './ClearSuccessPopup';
 import NoDataPopup from './NoDataPopup';
 import { Database, Trash2, Upload, Download, CheckCircle2, AlertCircle, FilePlus2, RefreshCw, XCircle, ShieldAlert, Lock } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { useMessageModal } from './MessageModal';
+import DropdownCellRenderer from './DropdownCellRenderer';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -39,6 +40,7 @@ interface ToolMasterEnhancedProps {
 
 const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, toolGroupName }) => {
     const { isDark } = useTheme();
+    const { showMessage, ModalRenderer } = useMessageModal();
 
     const [toolData, setToolData] = useState<ToolMasterDto[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -59,13 +61,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
     // Re-Upload Confirmation State
     const [showReUploadModal, setShowReUploadModal] = useState(false);
 
-    // Standard Error Modal State
-    const [showErrorModal, setShowErrorModal] = useState(false);
-    const [errorModalMessage, setErrorModalMessage] = useState<string>('');
-
     const showError = (message: string) => {
-        setErrorModalMessage(message);
-        setShowErrorModal(true);
+        showMessage('error', 'Error', message);
     };
 
     // Success Popup State (Import)
@@ -122,7 +119,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         const userAnswer = parseInt(captchaInput);
         if (isNaN(userAnswer) || userAnswer !== captchaQuestion.answer) {
             setCaptchaError(true);
-            toast.error('Incorrect CAPTCHA answer. Please try again.');
+            showMessage('error', 'Incorrect Answer', 'The CAPTCHA answer you entered is incorrect. Please try again.');
             return;
         }
         if (clearFlowStep < 3) {
@@ -158,18 +155,13 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             if (deletedCount > 0 && clearActionType === 'clearOnly') {
                 setClearSuccessInfo({ rowCount: deletedCount, groupName: `${toolGroupName} Tool Group` });
             } else if (deletedCount === 0 && clearActionType === 'clearOnly') {
-                toast.success('No existing data to clear.');
+                showMessage('info', 'No Data Found', `No existing data was found in the database for the ${toolGroupName} Tool Group. Nothing was cleared.`);
             }
             setToolData([]);
             setValidationResult(null);
             setMode('idle');
 
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
-                if (deletedCount > 0) {
-                    toast.success(`✅ Cleared ${deletedCount} record(s). Opening upload...`);
-                } else {
-                    toast.success('No existing data to clear. Proceeding...');
-                }
                 setIsLoading(false);
                 fileInputRef.current.value = '';
                 fileInputRef.current.click();
@@ -179,7 +171,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
 
             handleClearCancel();
         } catch (error: any) {
-            toast.error(error.response?.data?.message || 'Failed to clear data. Check credentials.');
+            showMessage('error', 'Clear Data Failed', error.response?.data?.message || 'Unable to clear data. Please verify your credentials and try again.');
         } finally {
             setIsLoading(false);
         }
@@ -249,7 +241,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
             },
             { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
             { field: 'manufacturerItemCode', headerName: 'ManufecturerItemCode', minWidth: 170 },
@@ -258,15 +251,61 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
             },
             { field: 'minimumStockQty', headerName: 'MinimumStockQty', minWidth: 140 },
-            { field: 'isStandardItem', headerName: 'IsStandardItem', minWidth: 120 },
-            { field: 'isRegularItem', headerName: 'IsRegularItem', minWidth: 120 },
+            {
+                field: 'isStandardItem', headerName: 'IsStandardItem', minWidth: 120,
+                valueGetter: (params: any) => {
+                    const val = params.data?.isStandardItem;
+                    if (val === true || val === 'TRUE') return 'TRUE';
+                    if (val === false || val === 'FALSE') return 'FALSE';
+                    return val;
+                },
+                cellStyle: (params: any): Record<string, string> | null => {
+                    const val = params.data?.isStandardItem;
+                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                        return { backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff', color: isDark ? '#e9d5ff' : '#581c87' };
+                    }
+                    return null;
+                },
+                tooltipValueGetter: (params: any) => {
+                    const val = params.data?.isStandardItem;
+                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                        return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
+                    }
+                    return null;
+                }
+            },
+            {
+                field: 'isRegularItem', headerName: 'IsRegularItem', minWidth: 120,
+                valueGetter: (params: any) => {
+                    const val = params.data?.isRegularItem;
+                    if (val === true || val === 'TRUE') return 'TRUE';
+                    if (val === false || val === 'FALSE') return 'FALSE';
+                    return val;
+                },
+                cellStyle: (params: any): Record<string, string> | null => {
+                    const val = params.data?.isRegularItem;
+                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                        return { backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff', color: isDark ? '#e9d5ff' : '#581c87' };
+                    }
+                    return null;
+                },
+                tooltipValueGetter: (params: any) => {
+                    const val = params.data?.isRegularItem;
+                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                        return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
+                    }
+                    return null;
+                }
+            },
             {
                 field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellRenderer: DropdownCellRenderer
             },
         ];
     }, [units, hsnGroups]);
@@ -419,7 +458,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             if (data.length === 0) {
                 setNoDataMessage(`No data found in database against the selected ${toolGroupName}`);
             } else {
-                toast.success(`Loaded ${data.length} tool(s)`);
+                showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} tool record(s) for the ${toolGroupName} group.`);
             }
         } catch (error: any) {
             showError(error?.response?.data?.error || 'Failed to load data');
@@ -481,7 +520,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             setToolData(newToolData);
             setValidationResult(null);
             setMode('preview');
-            toast.success(`Removed ${selectedIndices.size} row(s). Please re-run validation.`);
+            showMessage('info', 'Rows Removed', `${selectedIndices.size} row(s) have been removed from the preview. Please re-run validation before importing.`);
             return;
         }
 
@@ -495,10 +534,10 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 }
             }
             if (deletedCount > 0) {
-                toast.success(`Successfully removed ${deletedCount} tool(s) from database`);
+                showMessage('success', 'Records Deleted', `${deletedCount} tool record(s) have been successfully removed from the database.`);
                 await handleLoadData();
             } else {
-                toast.error('No database records were selected for deletion');
+                showMessage('warning', 'Nothing Deleted', 'No database records were found for deletion. Please select rows that exist in the database.');
             }
         } catch (error: any) {
             showError(error?.response?.data?.error || 'Failed to remove tools');
@@ -544,16 +583,29 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                     let shelfLife = row.ShelfLife;
                     if (shelfLife === undefined || shelfLife === null || shelfLife === '') shelfLife = 365;
 
-                    // IsStandardItem default true
-                    let isStandardItem = true;
+                    // Strict boolean validation: normalize to uppercase TRUE/FALSE
+                    let isStandardItem: any = 'TRUE';
                     if (row.IsStandardItem !== undefined && row.IsStandardItem !== null && row.IsStandardItem !== '') {
-                        isStandardItem = row.IsStandardItem === true || row.IsStandardItem === 'true' || row.IsStandardItem === 1;
+                        const val = String(row.IsStandardItem).trim().toLowerCase();
+                        if (val === 'true') {
+                            isStandardItem = 'TRUE';
+                        } else if (val === 'false') {
+                            isStandardItem = 'FALSE';
+                        } else {
+                            isStandardItem = row.IsStandardItem; // Invalid value, keep for validation
+                        }
                     }
 
-                    // IsRegularItem default true
-                    let isRegularItem = true;
+                    let isRegularItem: any = 'TRUE';
                     if (row.IsRegularItem !== undefined && row.IsRegularItem !== null && row.IsRegularItem !== '') {
-                        isRegularItem = row.IsRegularItem === true || row.IsRegularItem === 'true' || row.IsRegularItem === 1;
+                        const val = String(row.IsRegularItem).trim().toLowerCase();
+                        if (val === 'true') {
+                            isRegularItem = 'TRUE';
+                        } else if (val === 'false') {
+                            isRegularItem = 'FALSE';
+                        } else {
+                            isRegularItem = row.IsRegularItem; // Invalid value, keep for validation
+                        }
                     }
 
                     return {
@@ -586,7 +638,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
 
                 setToolData(tools);
                 setMode('preview');
-                toast.success(`Loaded ${tools.length} rows from Excel`);
+                showMessage('success', 'File Loaded', `Successfully loaded ${tools.length} row(s) from the Excel file. Please click "Check Validation" before importing.`);
             } catch (error) {
                 showError('Failed to parse Excel file');
                 console.error(error);
@@ -626,11 +678,15 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                         rawValues[key] = strVal;
                     }
                 } else if (boolFields.has(key)) {
-                    const strVal = String(value).trim().toLowerCase();
-                    if (['true', 'false', '1', '0', 'yes', 'no'].includes(strVal)) {
-                        cleaned[key] = strVal === 'true' || strVal === '1' || strVal === 'yes';
+                    const strVal = String(value).trim();
+                    // Only accept uppercase TRUE or FALSE (already normalized from Excel)
+                    if (strVal === 'TRUE') {
+                        cleaned[key] = true;
+                    } else if (strVal === 'FALSE') {
+                        cleaned[key] = false;
                     } else {
-                        rawValues[key] = String(value).trim();
+                        // Invalid boolean value - send to rawValues for purple highlighting
+                        rawValues[key] = strVal;
                     }
                 } else {
                     cleaned[key] = typeof value === 'number' ? String(value) : value;
@@ -655,7 +711,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             setMode('validated');
 
             if (result.isValid) {
-                toast.success('All validations passed! Ready to import.');
+                showMessage('success', 'Validation Passed', 'All records passed validation successfully. The data is ready to be imported.');
             } else {
                 const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
 
@@ -702,6 +758,9 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         if (toolData.length === 0) { showError('No data to import'); return; }
 
         setIsLoading(true);
+        // Clear old validation errors to prevent showing stale messages after successful import
+        setValidationModalContent(null);
+
         try {
             const cleanedForValidation = cleanToolDataForApi(toolData);
             const result = await validateTools(cleanedForValidation, toolGroupId);
@@ -806,7 +865,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `${toolGroupName}.xlsx`);
-        toast.success('Data exported successfully');
+        showMessage('success', 'Export Complete', 'The data has been exported to an Excel file and downloaded successfully.');
     };
 
     return (
@@ -1245,22 +1304,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 </div>
             )}
 
-            {/* Standard Error Popup Modal */}
-            {showErrorModal && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100 dark:border-red-900/30 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
-                                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Error</h3>
-                            <div className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center whitespace-pre-wrap">{errorModalMessage}</div>
-                            <button onClick={() => setShowErrorModal(false)}
-                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium">OK</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Standardized Message Modal */}
+            {ModalRenderer}
 
             {/* Validation Result Modal */}
             {showValidationModal && validationModalContent && (

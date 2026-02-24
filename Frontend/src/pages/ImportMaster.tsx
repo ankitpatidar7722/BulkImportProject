@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload, RefreshCw } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { useMessageModal } from '../components/MessageModal';
 import LedgerMasterEnhanced from '../components/LedgerMasterEnhanced';
 import HSNMasterEnhanced from '../components/HSNMasterEnhanced';
 import SparePartMasterEnhanced from '../components/SparePartMasterEnhanced';
@@ -21,6 +21,7 @@ import {
 } from '../services/api';
 
 const ImportMaster: React.FC = () => {
+    const { showMessage, ModalRenderer } = useMessageModal();
     const [modules, setModules] = useState<ModuleDto[]>([]);
     const [subModules, setSubModules] = useState<ModuleDto[]>([]);
     const [selectedModule, setSelectedModule] = useState<string>('');
@@ -118,7 +119,7 @@ const ImportMaster: React.FC = () => {
             console.log('Fetched Modules:', data);
             setModules(data);
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to fetch modules');
+            showMessage('error', 'Load Error', error?.response?.data?.error || 'Failed to fetch modules. Please try refreshing the page.');
         }
     };
 
@@ -185,7 +186,7 @@ const ImportMaster: React.FC = () => {
                 const groups = await getItemGroups();
                 setItemGroups(groups);
             } catch (error: any) {
-                toast.error('Failed to fetch item groups');
+                showMessage('error', 'Load Error', 'Failed to fetch item groups. Please try again.');
                 console.error(error);
             }
         } else if (module && (module.moduleName.includes('ProductGroupMaster') || module.moduleDisplayName?.includes('HSN') || module.moduleDisplayName?.includes('Product Group'))) {
@@ -215,7 +216,7 @@ const ImportMaster: React.FC = () => {
                 const groups = await getToolGroups();
                 setToolGroups(groups);
             } catch (error: any) {
-                toast.error('Failed to fetch tool groups');
+                showMessage('error', 'Load Error', 'Failed to fetch tool groups. Please try again.');
                 console.error(error);
             }
         } else {
@@ -267,7 +268,7 @@ const ImportMaster: React.FC = () => {
 
             } catch (error: any) {
                 console.error('Failed to fetch sub-modules', error);
-                toast.error(error?.response?.data?.error || 'Failed to fetch sub-modules');
+                showMessage('error', 'Load Error', error?.response?.data?.error || 'Failed to fetch sub-modules. Please try again.');
                 setSubModules([]);
             }
         }
@@ -292,7 +293,7 @@ const ImportMaster: React.FC = () => {
 
         const extension = file.name.toLowerCase();
         if (!extension.endsWith('.xlsx')) {
-            toast.error('Only .xlsx Excel files are supported. Please convert old .xls files to .xlsx format.');
+            showMessage('error', 'Invalid File Type', 'Only .xlsx Excel files are supported. Please convert old .xls files to .xlsx format and try again.');
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
@@ -302,14 +303,14 @@ const ImportMaster: React.FC = () => {
         setIsPreviewShown(false);
         setShowErrorModal(false);
         setErrorList([]);
-        toast.success('File uploaded successfully');
+        showMessage('success', 'File Ready', `"${file.name}" has been selected and is ready for preview or import.`);
     };
 
     const handleShowPreview = async () => {
         console.log('[Preview] Starting preview...');
         if (!uploadedFile) {
             console.error('[Preview] No file uploaded');
-            toast.error('Please upload a file first');
+            showMessage('error', 'No File Selected', 'Please upload an Excel (.xlsx) file before requesting a preview.');
             return;
         }
 
@@ -321,12 +322,12 @@ const ImportMaster: React.FC = () => {
             console.log('[Preview] API response:', data);
             setPreviewData(data);
             setIsPreviewShown(true);
-            toast.success('Preview loaded successfully');
+            showMessage('success', 'Preview Ready', 'The Excel file has been parsed and is ready for review before importing.');
         } catch (error: any) {
             console.error('[Preview] Error:', error);
             console.error('[Preview] Error response:', error?.response);
             console.error('[Preview] Error data:', error?.response?.data);
-            toast.error(error?.response?.data?.error || 'Failed to load preview');
+            showMessage('error', 'Preview Failed', error?.response?.data?.error || 'Failed to load the file preview. Please check the file format and try again.');
         } finally {
             setIsLoading(false);
             console.log('[Preview] Loading complete');
@@ -335,7 +336,7 @@ const ImportMaster: React.FC = () => {
 
     const handleImportClick = () => {
         if (!uploadedFile) {
-            toast.error('Please upload a file first');
+            showMessage('error', 'No File Selected', 'Please upload an Excel (.xlsx) file before importing.');
             return;
         }
         setShowConfirmModal(true);
@@ -345,14 +346,14 @@ const ImportMaster: React.FC = () => {
         setShowConfirmModal(false); // Close modal
 
         if (!uploadedFile) {
-            toast.error('Please upload a file first');
+            showMessage('error', 'No File Selected', 'Please upload an Excel (.xlsx) file before importing.');
             return;
         }
 
         if (isLedgerMode) {
             // Ledger import mode
             if (selectedLedgerGroup <= 0) {
-                toast.error('Please select a Ledger Group');
+                showMessage('error', 'No Group Selected', 'Please select a Ledger Group before importing.');
                 return;
             }
 
@@ -364,13 +365,13 @@ const ImportMaster: React.FC = () => {
                 const result = await importLedger(uploadedFile, selectedLedgerGroup);
 
                 if (result.success) {
-                    toast.success(result.message);
+                    showMessage('success', 'Import Successful', result.message || 'Ledger data has been imported successfully.');
                     setUploadedFile(null);
                     setPreviewData(null);
                     setIsPreviewShown(false);
                     if (fileInputRef.current) fileInputRef.current.value = '';
                 } else {
-                    toast.error(result.message);
+                    showMessage('error', 'Import Failed', result.message || 'Import failed. Please review the errors and try again.');
 
                     if (result.errorMessages && result.errorMessages.length > 0) {
                         setErrorList(result.errorMessages);
@@ -378,14 +379,14 @@ const ImportMaster: React.FC = () => {
                     }
                 }
             } catch (error: any) {
-                toast.error(error?.response?.data?.error || 'Failed to import ledger data');
+                showMessage('error', 'Import Error', error?.response?.data?.error || 'Failed to import ledger data. Please try again.');
             } finally {
                 setIsLoading(false);
             }
         } else if (isItemMode) {
             // Item Master import mode
             if (selectedItemGroup <= 0) {
-                toast.error('Please select an Item Group');
+                showMessage('error', 'No Group Selected', 'Please select an Item Group before importing.');
                 return;
             }
 
@@ -397,13 +398,13 @@ const ImportMaster: React.FC = () => {
                 const result = await importItemMaster(uploadedFile, selectedItemGroup);
 
                 if (result.success) {
-                    toast.success(result.message);
+                    showMessage('success', 'Import Successful', result.message || 'Item master data has been imported successfully.');
                     setUploadedFile(null);
                     setPreviewData(null);
                     setIsPreviewShown(false);
                     if (fileInputRef.current) fileInputRef.current.value = '';
                 } else {
-                    toast.error(result.message);
+                    showMessage('error', 'Import Failed', result.message || 'Import failed. Please review the errors and try again.');
 
                     if (result.errorMessages && result.errorMessages.length > 0) {
                         setErrorList(result.errorMessages);
@@ -411,14 +412,14 @@ const ImportMaster: React.FC = () => {
                     }
                 }
             } catch (error: any) {
-                toast.error(error?.response?.data?.error || 'Failed to import item data');
+                showMessage('error', 'Import Error', error?.response?.data?.error || 'Failed to import item data. Please try again.');
             } finally {
                 setIsLoading(false);
             }
         } else {
             // Standard module import mode
             if (!selectedModule) {
-                toast.error('Please select a module');
+                showMessage('error', 'No Module Selected', 'Please select a module before importing.');
                 return;
             }
 
@@ -434,7 +435,7 @@ const ImportMaster: React.FC = () => {
                 const isToolMaster = moduleName === 'ToolMaster' || selectedModuleData?.moduleDisplayName?.toLowerCase().includes('tool master');
 
                 if (isToolMaster && !selectedSubModule) {
-                    toast.error('Please select a Tool Group');
+                    showMessage('error', 'No Group Selected', 'Please select a Tool Group before importing.');
                     setIsLoading(false);
                     return;
                 }
@@ -443,13 +444,13 @@ const ImportMaster: React.FC = () => {
                 const result = await importExcel(uploadedFile, moduleName, subModuleId);
 
                 if (result.success) {
-                    toast.success(result.message);
+                    showMessage('success', 'Import Successful', result.message || 'Data has been imported successfully.');
                     setUploadedFile(null);
                     setPreviewData(null);
                     setIsPreviewShown(false);
                     if (fileInputRef.current) fileInputRef.current.value = '';
                 } else {
-                    toast.error(result.message);
+                    showMessage('error', 'Import Failed', result.message || 'Import failed. Please review the errors and try again.');
 
                     if (result.errorMessages && result.errorMessages.length > 0) {
                         setErrorList(result.errorMessages);
@@ -457,7 +458,7 @@ const ImportMaster: React.FC = () => {
                     }
                 }
             } catch (error: any) {
-                toast.error(error?.response?.data?.error || 'Failed to import data');
+                showMessage('error', 'Import Error', error?.response?.data?.error || 'Failed to import data. Please try again.');
             } finally {
                 setIsLoading(false);
             }
@@ -483,11 +484,19 @@ const ImportMaster: React.FC = () => {
         } else if (isToolMode) {
             setSelectedToolGroup(0);
             setIsFileUploadEnabled(false);
+        } else if (isHSNMode) {
+            // Force remount for HSN Master
+            setRefreshKey(prev => prev + 1);
+            setIsFileUploadEnabled(true);
+        } else if (isSparePartMode) {
+            // Force remount for Spare Part Master
+            setRefreshKey(prev => prev + 1);
+            setIsFileUploadEnabled(true);
         } else if (showSubModuleDropdown) {
             setSelectedSubModule('');
             setIsFileUploadEnabled(false);
         } else {
-            // For modules without sub-selection (HSN, SparePart), force remount
+            // For other modules without sub-selection, force remount
             setRefreshKey(prev => prev + 1);
             setIsFileUploadEnabled(true);
         }
@@ -588,6 +597,7 @@ const ImportMaster: React.FC = () => {
         <div className="p-3 md:p-4 bg-gray-50 dark:bg-[#020617] min-h-screen transition-colors duration-200">
             <ErrorModal />
             <ConfirmationModal />
+            {ModalRenderer}
 
             {/* Header */}
             <div className="mb-4">

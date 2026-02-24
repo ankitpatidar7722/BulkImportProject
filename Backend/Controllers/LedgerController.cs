@@ -69,7 +69,14 @@ public class LedgerController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = ex.Message });
+            // Enhanced error logging
+            try
+            {
+                var logMsg = $"[{DateTime.Now}] GetLedgersByGroup Error (GroupID: {ledgerGroupId}): {ex.Message}\nStack: {ex.StackTrace}\nInner: {ex.InnerException?.Message}\n";
+                System.IO.File.AppendAllText("debug_log.txt", logMsg);
+            }
+            catch { }
+            return StatusCode(500, new { error = ex.Message, details = ex.InnerException?.Message });
         }
     }
 

@@ -267,7 +267,7 @@ public class ItemService : IItemService
         if (itemGroupId == 2) // REEL
         {
             requiredFields = new[] {
-                "Quality", "BF", "SizeW", "GSM", "Manufecturer", "Finish",
+                "Quality", "SizeW", "GSM", "Manufecturer", "Finish",
                 "PurchaseUnit", "PurchaseRate", "EstimationUnit", "EstimationRate",
                 "StockUnit", "ProductHSNName"
             };
@@ -1070,14 +1070,24 @@ public class ItemService : IItemService
         await bulkCopy.WriteToServerAsync(masterTable);
 
         // ─── 4. Retrieve newly inserted ItemIDs (match by ItemCode + timestamp) ──
+        // SQL Server has a parameter limit of 2100, so batch the queries
         var itemCodes = masterRows.Select(r => r.ItemCode).ToList();
-        var insertedItems = (await _connection.QueryAsync<(string ItemCode, int ItemID)>(
-            @"SELECT ItemCode, ItemID FROM ItemMaster
-              WHERE ItemCode IN @Codes
-                AND IsDeletedTransaction = 0
-                AND CreatedDate >= @BulkStartTime",
-            new { Codes = itemCodes, BulkStartTime = bulkStartTime }))
-            .ToDictionary(x => x.ItemCode, x => x.ItemID);
+        var insertedItems = new Dictionary<string, int>();
+
+        const int batchSize = 2000;
+        for (int i = 0; i < itemCodes.Count; i += batchSize)
+        {
+            var batch = itemCodes.Skip(i).Take(batchSize).ToList();
+            var batchResults = await _connection.QueryAsync<(string ItemCode, int ItemID)>(
+                @"SELECT ItemCode, ItemID FROM ItemMaster
+                  WHERE ItemCode IN @Codes
+                    AND IsDeletedTransaction = 0
+                    AND CreatedDate >= @BulkStartTime",
+                new { Codes = batch, BulkStartTime = bulkStartTime });
+
+            foreach (var item in batchResults)
+                insertedItems[item.ItemCode] = item.ItemID;
+        }
 
         int successCount = 0;
 

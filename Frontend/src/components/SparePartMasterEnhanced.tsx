@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import ClearSuccessPopup from './ClearSuccessPopup';
 import NoDataPopup from './NoDataPopup';
 import { Database, Trash2, Upload, Download, CheckCircle2, AlertCircle, FilePlus2, RefreshCw, XCircle, ShieldAlert, Lock } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { useMessageModal } from './MessageModal';
+import DropdownCellRenderer from './DropdownCellRenderer';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -35,6 +36,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 const SparePartMasterEnhanced: React.FC = () => {
     const { isDark } = useTheme();
+    const { showMessage, ModalRenderer } = useMessageModal();
 
     const [sparePartData, setSparePartData] = useState<SparePartMasterDto[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -48,13 +50,8 @@ const SparePartMasterEnhanced: React.FC = () => {
     // Re-Upload Confirmation State
     const [showReUploadModal, setShowReUploadModal] = useState(false);
 
-    // Standard Error Modal State
-    const [showErrorModal, setShowErrorModal] = useState(false);
-    const [errorModalMessage, setErrorModalMessage] = useState<string>('');
-
     const showError = (message: string) => {
-        setErrorModalMessage(message);
-        setShowErrorModal(true);
+        showMessage('error', 'Error', message);
     };
 
     // Success Popup State (Import)
@@ -155,18 +152,13 @@ const SparePartMasterEnhanced: React.FC = () => {
             if (deletedCount > 0 && clearActionType === 'clearOnly') {
                 setClearSuccessInfo({ rowCount: deletedCount, groupName: 'Spare Part Master' });
             } else if (deletedCount === 0 && clearActionType === 'clearOnly') {
-                toast.success('No existing data to clear.');
+                showMessage('info', 'No Data Found', 'No existing data was found in the database for Spare Part Master. Nothing was cleared.');
             }
             setSparePartData([]);
             setValidationResult(null);
             setMode('idle');
 
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
-                if (deletedCount > 0) {
-                    toast.success(`✅ Cleared ${deletedCount} record(s). Opening upload...`);
-                } else {
-                    toast.success('No existing data to clear. Proceeding...');
-                }
                 setIsLoading(false);
                 fileInputRef.current.value = '';
                 fileInputRef.current.click();
@@ -177,7 +169,7 @@ const SparePartMasterEnhanced: React.FC = () => {
             handleClearCancel();
         } catch (error: any) {
             console.error(error);
-            showError(error.response?.data?.message || 'Failed to clear data. Check credentials.');
+            showMessage('error', 'Clear Data Failed', error.response?.data?.message || 'Unable to clear data. Please verify your credentials and try again.');
         } finally {
             setIsLoading(false);
         }
@@ -258,7 +250,8 @@ const SparePartMasterEnhanced: React.FC = () => {
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: {
                     values: hsnGroups.map(h => h.displayName)
-                }
+                },
+                cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'unit',
@@ -266,7 +259,8 @@ const SparePartMasterEnhanced: React.FC = () => {
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: {
                     values: units.map(u => u.unitSymbol)
-                }
+                },
+                cellRenderer: DropdownCellRenderer
             },
             { field: 'rate', headerName: 'Rate' },
             {
@@ -275,7 +269,8 @@ const SparePartMasterEnhanced: React.FC = () => {
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: {
                     values: sparePartTypes
-                }
+                },
+                cellRenderer: DropdownCellRenderer
             },
             { field: 'minimumStockQty', headerName: 'MinimumStockQty' },
             { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity' },
@@ -442,7 +437,7 @@ const SparePartMasterEnhanced: React.FC = () => {
                 setMode('loaded');
                 setValidationResult(null);
                 setFilterType('all');
-                toast.success(`Loaded ${data.length} spare part(s)`);
+                showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} spare part record(s) from the database.`);
             }
         } catch (error: any) {
             console.error(error);
@@ -496,7 +491,7 @@ const SparePartMasterEnhanced: React.FC = () => {
     const handleRemoveRow = async () => {
         const selectedNodes = gridApiRef.current?.getSelectedNodes() || [];
         if (selectedNodes.length === 0) {
-            toast.error('Please select at least one row to remove');
+            showMessage('error', 'No Selection', 'Please select at least one row to remove.');
             return;
         }
 
@@ -512,7 +507,7 @@ const SparePartMasterEnhanced: React.FC = () => {
             setSparePartData(newSparePartData);
             setValidationResult(null); // Reset validation as indices shift
             setMode('preview');
-            toast.success(`Removed ${selectedIndices.size} row(s). Please re-run validation.`);
+            showMessage('info', 'Rows Removed', `${selectedIndices.size} row(s) have been removed from the preview. Please re-run validation before importing.`);
             return;
         }
 
@@ -529,13 +524,13 @@ const SparePartMasterEnhanced: React.FC = () => {
             }
 
             if (deletedCount > 0) {
-                toast.success(`Successfully removed ${deletedCount} spare part(s) from database`);
+                showMessage('success', 'Records Deleted', `${deletedCount} spare part record(s) have been successfully removed from the database.`);
                 await handleLoadData();
             } else {
-                toast.error('No database records were selected for deletion');
+                showMessage('warning', 'Nothing Deleted', 'No database records were found for deletion. Please select rows that exist in the database.');
             }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to remove spare parts');
+            showMessage('error', 'Delete Failed', error?.response?.data?.error || 'Failed to remove spare parts.');
         } finally {
             setIsLoading(false);
         }
@@ -578,9 +573,9 @@ const SparePartMasterEnhanced: React.FC = () => {
 
                 setSparePartData(spareParts);
                 setMode('preview');
-                toast.success(`Loaded ${spareParts.length} rows from Excel`);
+                showMessage('success', 'File Loaded', `Successfully loaded ${spareParts.length} row(s) from the Excel file. Please click "Check Validation" before importing.`);
             } catch (error) {
-                toast.error('Failed to parse Excel file');
+                showMessage('error', 'Parse Error', 'Failed to parse the Excel file. Please ensure the file is formatted correctly.');
                 console.error(error);
             }
         };
@@ -589,7 +584,7 @@ const SparePartMasterEnhanced: React.FC = () => {
 
     const handleCheckValidation = async () => {
         if (sparePartData.length === 0) {
-            toast.error('No data to validate');
+            showMessage('error', 'No Data', 'There is no data to validate. Please load data from the database or upload an Excel file first.');
             return;
         }
 
@@ -601,7 +596,7 @@ const SparePartMasterEnhanced: React.FC = () => {
             setValidationResult(result);
 
             if (result.isValid) {
-                toast.success('All validations passed! Ready to import.');
+                showMessage('success', 'Validation Passed', 'All records passed validation successfully. The data is ready to be imported.');
             } else {
                 const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
 
@@ -645,7 +640,7 @@ const SparePartMasterEnhanced: React.FC = () => {
                 setShowValidationModal(true);
             }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Validation failed');
+            showMessage('error', 'Validation Failed', error?.response?.data?.error || 'An error occurred during validation. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -658,6 +653,9 @@ const SparePartMasterEnhanced: React.FC = () => {
         }
 
         setIsLoading(true);
+        // Clear old validation errors to prevent showing stale messages after successful import
+        setValidationModalContent(null);
+
         try {
             // 1. Full Re-Validation
             const result = await validateSpareParts(sparePartData);
@@ -735,7 +733,7 @@ const SparePartMasterEnhanced: React.FC = () => {
                     });
                     setShowValidationModal(true);
                 } else {
-                    toast.error(importRes.message || 'Import failed');
+                    showMessage('error', 'Import Failed', importRes.message || 'Import failed. Please try again.');
                 }
             }
         } catch (error: any) {
@@ -749,7 +747,7 @@ const SparePartMasterEnhanced: React.FC = () => {
 
     const handleExport = async () => {
         if (sparePartData.length === 0) {
-            toast.error('No data to export');
+            showMessage('error', 'No Data', 'There is no data to export. Please load data from the database or upload an Excel file first.');
             return;
         }
 
@@ -837,7 +835,7 @@ const SparePartMasterEnhanced: React.FC = () => {
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `Spare Part Master.xlsx`);
-        toast.success('Data exported successfully with validation colors');
+        showMessage('success', 'Export Complete', 'The data has been exported to an Excel file and downloaded successfully.');
     };
 
     return (
@@ -1394,30 +1392,8 @@ const SparePartMasterEnhanced: React.FC = () => {
                 </div>
             )}
 
-            {/* Standard Error Popup Modal */}
-            {showErrorModal && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100 dark:border-red-900/30 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
-                                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                                Error
-                            </h3>
-                            <div className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center whitespace-pre-wrap">
-                                {errorModalMessage}
-                            </div>
-                            <button
-                                onClick={() => setShowErrorModal(false)}
-                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
-                            >
-                                OK
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Standardized Message Modal */}
+            {ModalRenderer}
 
             {/* Validation Result Modal */}
             {showValidationModal && validationModalContent && (

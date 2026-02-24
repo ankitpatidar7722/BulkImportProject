@@ -15,8 +15,9 @@ public class SparePartService : ISparePartService
 
     public async Task<List<SparePartMasterDto>> GetAllSparePartsAsync()
     {
+        // Optimized query: simplified WHERE clause, added NOLOCK hint, changed sort to ID
         var query = @"
-            SELECT 
+            SELECT
                 sp.SparePartID,
                 sp.SparePartName,
                 sp.SparePartGroup,
@@ -29,10 +30,10 @@ public class SparePartService : ISparePartService
                 sp.StockRefCode,
                 sp.SupplierReference,
                 sp.Narration,
-                CAST(ISNULL(sp.IsDeletedTransaction, 0) AS BIT) as IsDeletedTransaction
-            FROM SparePartMaster sp
-            WHERE (sp.IsDeletedTransaction IS NULL OR sp.IsDeletedTransaction = 0)
-            ORDER BY sp.SparePartName";
+                ISNULL(sp.IsDeletedTransaction, 0) as IsDeletedTransaction
+            FROM SparePartMaster sp WITH (NOLOCK)
+            WHERE ISNULL(sp.IsDeletedTransaction, 0) = 0
+            ORDER BY sp.SparePartID";
 
         var spareParts = await _connection.QueryAsync<SparePartMasterDto>(query);
         return spareParts.ToList();
@@ -278,9 +279,12 @@ public class SparePartService : ISparePartService
     public async Task<ImportResultDto> ImportSparePartsAsync(List<SparePartMasterDto> spareParts)
     {
         var result = new ImportResultDto();
-        if (_connection.State != System.Data.ConnectionState.Open) await _connection.OpenAsync();
-        
-        // Fetch lookup data BEFORE starting transaction
+        result.TotalRows = spareParts.Count;
+
+        if (_connection.State != System.Data.ConnectionState.Open)
+            await _connection.OpenAsync();
+
+        // ─── 1. Fetch lookup data ────────────────────────────────────────────
         var hsnGroups = await GetHSNGroupsAsync();
         var hsnGroupMapping = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var hsn in hsnGroups)
@@ -290,40 +294,24 @@ public class SparePartService : ISparePartService
                 hsnGroupMapping[hsn.DisplayName.Trim()] = hsn.ProductHSNID;
             }
         }
-        
-        // Get Max Spare Part Code (outside transaction)
+
         var maxSparePartCode = await _connection.ExecuteScalarAsync<int?>(
-            "SELECT MAX(MaxSparePartCode) FROM SparePartMaster WHERE IsDeletedTransaction = 0"
+            "SELECT ISNULL(MAX(MaxSparePartCode), 0) FROM SparePartMaster WHERE IsDeletedTransaction = 0"
         ) ?? 0;
 
-        int successCount = 0;
-        result.TotalRows = spareParts.Count;
+        // ─── 2. Pre-process rows: validate and prepare ───────────────────────
+        var validRows = new List<(int RowIndex, int MaxCode, string SparePartCode,
+                                   SparePartMasterDto SparePart, int ProductHSNID)>();
 
-        var insertSql = @"
-            INSERT INTO SparePartMaster (
-                SparePartName, SparePartCode, MaxSparePartCode, ProductHSNID,
-                SparePartGroup, SparePartType, HSNCode, Unit, Rate, HSNGroup,
-                SupplierReference, StockRefCode, PurchaseOrderQuantity,
-                MinimumStockQty, Narration,
-                VoucherPrefix, CompanyID, UserID,
-                VoucherDate, CreatedBy, CreatedDate, IsDeletedTransaction
-            ) VALUES (
-                @SparePartName, @SparePartCode, @MaxSparePartCode, @ProductHSNID,
-                @SparePartGroup, @SparePartType, @Unit, @Rate, @HSNGroup,
-                @SupplierReference, @StockRefCode, @PurchaseOrderQuantity,
-                @MinimumStockQty, @Narration,
-                @VoucherPrefix, @CompanyID, @UserID,
-                @VoucherDate, @CreatedBy, @CreatedDate, 0
-            )";
-
-        // Row-by-row insert with per-row transaction
-        for (int rowIndex = 0; rowIndex < spareParts.Count; rowIndex++)
+        for (int i = 0; i < spareParts.Count; i++)
         {
-            var sparePart = spareParts[rowIndex];
-            var transaction = await _connection.BeginTransactionAsync();
-
+            var sparePart = spareParts[i];
             try
             {
+                // Basic validation
+                if (string.IsNullOrWhiteSpace(sparePart.SparePartName))
+                    throw new Exception("SparePartName is required");
+
                 maxSparePartCode++;
                 string sparePartCode = $"SPM{maxSparePartCode.ToString().PadLeft(5, '0')}";
 
@@ -334,53 +322,117 @@ public class SparePartService : ISparePartService
                     productHSNID = hsnId;
                 }
 
-                await _connection.ExecuteAsync(insertSql, new
-                {
-                    SparePartName = sparePart.SparePartName ?? (object)DBNull.Value,
-                    SparePartCode = sparePartCode,
-                    MaxSparePartCode = maxSparePartCode,
-                    ProductHSNID = productHSNID,
-                    SparePartGroup = sparePart.SparePartGroup ?? (object)DBNull.Value,
-                    SparePartType = sparePart.SparePartType ?? (object)DBNull.Value,
-                    Unit = sparePart.Unit ?? (object)DBNull.Value,
-                    Rate = sparePart.Rate ?? (object)DBNull.Value,
-                    HSNGroup = sparePart.HSNGroup ?? (object)DBNull.Value,
-                    SupplierReference = sparePart.SupplierReference ?? (object)DBNull.Value,
-                    StockRefCode = sparePart.StockRefCode ?? (object)DBNull.Value,
-                    PurchaseOrderQuantity = sparePart.PurchaseOrderQuantity ?? (object)DBNull.Value,
-                    MinimumStockQty = sparePart.MinimumStockQty ?? (object)DBNull.Value,
-                    Narration = sparePart.Narration ?? (object)DBNull.Value,
-                    VoucherPrefix = "SPM",
-                    CompanyID = 2,
-                    UserID = 2,
-                    VoucherDate = DateTime.Now,
-                    CreatedBy = 2,
-                    CreatedDate = DateTime.Now
-                }, transaction: transaction);
-
-                await transaction.CommitAsync();
-                successCount++;
+                validRows.Add((i, maxSparePartCode, sparePartCode, sparePart, productHSNID));
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
                 maxSparePartCode--;
                 result.ErrorRows++;
-                result.ErrorMessages.Add($"Row {rowIndex + 1} ({sparePart.SparePartName}): {ex.Message}");
-                try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePart Row {rowIndex + 1} Failed: {ex.Message}\n"); } catch { }
+                result.ErrorMessages.Add($"Row {i + 1} ({sparePart.SparePartName}): Pre-validation failed – {ex.Message}");
             }
         }
 
-        result.ImportedRows = successCount;
-        if (result.ErrorRows > 0)
+        if (validRows.Count == 0)
         {
-            result.Success = successCount > 0;
-            result.Message = $"Imported {successCount} of {spareParts.Count} spare part(s). {result.ErrorRows} row(s) failed.";
+            result.Success = false;
+            result.Message = "All rows failed validation. Nothing was imported.";
+            return result;
         }
-        else
+
+        // ─── 3. Build DataTable for SqlBulkCopy ──────────────────────────────
+        var dataTable = new System.Data.DataTable();
+        dataTable.Columns.Add("SparePartName",         typeof(string));
+        dataTable.Columns.Add("SparePartCode",         typeof(string));
+        dataTable.Columns.Add("MaxSparePartCode",      typeof(int));
+        dataTable.Columns.Add("ProductHSNID",          typeof(int));
+        dataTable.Columns.Add("SparePartGroup",        typeof(string));
+        dataTable.Columns.Add("SparePartType",         typeof(string));
+        dataTable.Columns.Add("Unit",                  typeof(string));
+        dataTable.Columns.Add("Rate",                  typeof(object));
+        dataTable.Columns.Add("HSNGroup",              typeof(string));
+        dataTable.Columns.Add("SupplierReference",     typeof(string));
+        dataTable.Columns.Add("StockRefCode",          typeof(string));
+        dataTable.Columns.Add("PurchaseOrderQuantity", typeof(object));
+        dataTable.Columns.Add("MinimumStockQty",       typeof(object));
+        dataTable.Columns.Add("Narration",             typeof(string));
+        dataTable.Columns.Add("VoucherPrefix",         typeof(string));
+        dataTable.Columns.Add("CompanyID",             typeof(int));
+        dataTable.Columns.Add("UserID",                typeof(int));
+        dataTable.Columns.Add("VoucherDate",           typeof(DateTime));
+        dataTable.Columns.Add("CreatedBy",             typeof(int));
+        dataTable.Columns.Add("CreatedDate",           typeof(DateTime));
+        dataTable.Columns.Add("IsDeletedTransaction",  typeof(bool));
+
+        object N(object? v) => v ?? DBNull.Value;
+        var now = DateTime.Now;
+
+        foreach (var (rowIndex, maxCode, sparePartCode, sp, productHSNID) in validRows)
         {
+            try
+            {
+                dataTable.Rows.Add(
+                    N(sp.SparePartName),
+                    sparePartCode,
+                    maxCode,
+                    productHSNID,
+                    N(sp.SparePartGroup),
+                    N(sp.SparePartType),
+                    N(sp.Unit),
+                    N(sp.Rate),
+                    N(sp.HSNGroup),
+                    N(sp.SupplierReference),
+                    N(sp.StockRefCode),
+                    N(sp.PurchaseOrderQuantity),
+                    N(sp.MinimumStockQty),
+                    N(sp.Narration),
+                    "SPM",
+                    2,  // CompanyID
+                    2,  // UserID
+                    now,
+                    2,  // CreatedBy
+                    now,
+                    false
+                );
+            }
+            catch (Exception ex)
+            {
+                result.ErrorRows++;
+                result.ErrorMessages.Add($"Row {rowIndex + 1} ({sp.SparePartName}): DataTable build failed – {ex.Message}");
+            }
+        }
+
+        // ─── 4. SqlBulkCopy insert ───────────────────────────────────────────
+        try
+        {
+            using var bulkCopy = new Microsoft.Data.SqlClient.SqlBulkCopy(_connection)
+            {
+                DestinationTableName = "SparePartMaster",
+                BatchSize = 1000,
+                BulkCopyTimeout = 300
+            };
+
+            foreach (System.Data.DataColumn col in dataTable.Columns)
+                bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
+
+            await bulkCopy.WriteToServerAsync(dataTable);
+
+            result.ImportedRows = dataTable.Rows.Count;
             result.Success = true;
-            result.Message = $"Successfully imported {successCount} spare part(s)";
+
+            if (result.ErrorRows > 0)
+            {
+                result.Message = $"Imported {result.ImportedRows} of {spareParts.Count} spare part(s). {result.ErrorRows} row(s) failed.";
+            }
+            else
+            {
+                result.Message = $"Successfully imported {result.ImportedRows} spare part(s).";
+            }
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Message = $"Bulk insert failed: {ex.Message}";
+            try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePart Bulk Insert Error: {ex.Message}\nStack: {ex.StackTrace}\n"); } catch { }
         }
 
         return result;
@@ -437,9 +489,13 @@ public class SparePartService : ISparePartService
         var transaction = await _connection.BeginTransactionAsync();
         try
         {
-            // Delete from Master
-            var deleteMasterQuery = "Truncate Table  SparePartMaster";
-            deletedCount = await _connection.ExecuteAsync(deleteMasterQuery, transaction: transaction);
+            // First, get the count of ALL records to be deleted (TRUNCATE deletes all, so we count all)
+            var countQuery = "SELECT COUNT(*) FROM SparePartMaster";
+            deletedCount = await _connection.ExecuteScalarAsync<int>(countQuery, transaction: transaction);
+
+            // Delete ALL records from Master (matching TRUNCATE TABLE behavior)
+            var deleteMasterQuery = "DELETE FROM SparePartMaster";
+            await _connection.ExecuteAsync(deleteMasterQuery, transaction: transaction);
 
             await transaction.CommitAsync();
 

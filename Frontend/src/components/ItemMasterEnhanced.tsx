@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import ClearSuccessPopup from './ClearSuccessPopup';
 import NoDataPopup from './NoDataPopup';
 import { Database, Trash2, Upload, Download, CheckCircle2, AlertCircle, FilePlus2, RefreshCw, ShieldAlert, Lock } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { useMessageModal } from './MessageModal';
+import DropdownCellRenderer from './DropdownCellRenderer';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
@@ -42,6 +43,7 @@ interface ItemMasterEnhancedProps {
 
 const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, itemGroupName }) => {
     const { isDark } = useTheme();
+    const { showMessage, ModalRenderer } = useMessageModal();
 
     const [itemData, setItemData] = useState<ItemMasterDto[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -74,13 +76,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     // Re-Upload Confirmation State
     const [showReUploadModal, setShowReUploadModal] = useState(false);
 
-    // Standard Error Modal State
-    const [showErrorModal, setShowErrorModal] = useState(false);
-    const [errorModalMessage, setErrorModalMessage] = useState<string>('');
-
     const showError = (message: string) => {
-        setErrorModalMessage(message);
-        setShowErrorModal(true);
+        showMessage('error', 'Error', message);
     };
 
     // Success Popup State (Import)
@@ -167,7 +164,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 setMode('loaded');
                 setValidationResult(null);
                 setSelectedRows(new Set()); // Clear selection
-                toast.success(`Loaded ${data.length} item(s) from database`);
+                showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} item record(s) for the ${itemGroupName} group.`);
             }
         } catch (error: any) {
             showError(error?.response?.data?.error || 'Failed to load data');
@@ -264,7 +261,12 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
                     // Paper/REEL/INK-specific fields
                     quality: toStringOrUndefined(row.Quality || row.quality),
-                    bf: toStringOrUndefined(row.BF || row.bf),
+                    bf: (() => {
+                        // Handle BF specially: 0 is a valid value, don't treat it as falsy
+                        const bfValue = row.BF !== undefined ? row.BF : row.bf;
+                        if (bfValue === null || bfValue === undefined || bfValue === '') return undefined;
+                        return String(bfValue);
+                    })(),
                     gsm: row.GSM || row.gsm,
                     manufecturer: toStringOrUndefined(row.Manufecturer || row.manufecturer),
                     finish: toStringOrUndefined(row.Finish || row.finish),
@@ -272,8 +274,21 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     shelfLife: row.ShelfLife || row.shelfLife || 365,
                     estimationRate: row.EstimationRate || row.estimationRate,
                     minimumStockQty: row.MinimumStockQty || row.minimumStockQty,
-                    isStandardItem: row.IsStandardItem !== undefined ? row.IsStandardItem : true,
-                    isRegularItem: row.IsRegularItem !== undefined ? row.IsRegularItem : true,
+                    // Strict boolean validation: normalize to uppercase TRUE/FALSE
+                    isStandardItem: (() => {
+                        if (row.IsStandardItem === undefined || row.IsStandardItem === null || row.IsStandardItem === '') return 'TRUE';
+                        const val = String(row.IsStandardItem).trim().toLowerCase();
+                        if (val === 'true') return 'TRUE';
+                        if (val === 'false') return 'FALSE';
+                        return row.IsStandardItem; // Invalid value, keep for validation
+                    })(),
+                    isRegularItem: (() => {
+                        if (row.IsRegularItem === undefined || row.IsRegularItem === null || row.IsRegularItem === '') return 'TRUE';
+                        const val = String(row.IsRegularItem).trim().toLowerCase();
+                        if (val === 'true') return 'TRUE';
+                        if (val === 'false') return 'FALSE';
+                        return row.IsRegularItem; // Invalid value, keep for validation
+                    })(),
                     packingType: toStringOrUndefined(row.PackingType || row.packingType),
                     certificationType: toStringOrUndefined(row.CertificationType || row.certificationType) || 'NONE',
                     productHSNName: toStringOrUndefined(row.ProductHSNName || row.productHSNName),
@@ -327,6 +342,11 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
                 // Auto-calculations for REEL group
                 if (itemGroupName === 'REEL') {
+                    // BF default: if empty, set to "0"
+                    if (!item.bf || item.bf === '') {
+                        item.bf = '0';
+                    }
+
                     // Caliper calculation
                     if (item.gsm) {
                         item.caliper = parseFloat((item.gsm / 1000).toFixed(3));
@@ -495,16 +515,16 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
             if (isExistingUpload && itemData.length > 0) {
                 setItemData([...itemData, ...mappedData]);
-                toast.success(`Added ${mappedData.length} new item(s)`);
+                showMessage('success', 'Items Added', `Successfully added ${mappedData.length} new item(s) from the Excel file.`);
             } else {
                 setItemData(mappedData);
-                toast.success(`Loaded ${mappedData.length} item(s) for preview`);
+                showMessage('success', 'File Loaded', `Successfully loaded ${mappedData.length} item(s) for preview. Please click "Check Validation" before importing.`);
             }
 
             setMode('preview');
             setValidationResult(null);
         } catch (error) {
-            toast.error('Failed to parse Excel file');
+            showMessage('error', 'Parse Error', 'Failed to parse the Excel file. Please ensure the file is formatted correctly.');
         } finally {
             setIsLoading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -541,11 +561,15 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         rawValues[key] = strVal;
                     }
                 } else if (boolFields.has(key)) {
-                    const strVal = String(value).trim().toLowerCase();
-                    if (['true', 'false', '1', '0', 'yes', 'no'].includes(strVal)) {
-                        cleaned[key] = strVal === 'true' || strVal === '1' || strVal === 'yes';
+                    const strVal = String(value).trim();
+                    // Only accept uppercase TRUE or FALSE (already normalized from Excel)
+                    if (strVal === 'TRUE') {
+                        cleaned[key] = true;
+                    } else if (strVal === 'FALSE') {
+                        cleaned[key] = false;
                     } else {
-                        rawValues[key] = String(value).trim();
+                        // Invalid boolean value - send to rawValues for purple highlighting
+                        rawValues[key] = strVal;
                     }
                 } else {
                     cleaned[key] = value;
@@ -561,7 +585,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
     const handleCheckValidation = async () => {
         if (itemData.length === 0) {
-            toast.error('No data to validate');
+            showMessage('error', 'No Data', 'There is no data to validate. Please load data from the database or upload an Excel file first.');
             return;
         }
 
@@ -577,7 +601,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             setMode('validated');
 
             if (result.isValid) {
-                toast.success('All validations passed! Ready to import.');
+                showMessage('success', 'Validation Passed', 'All records passed validation successfully. The data is ready to be imported.');
             } else {
                 const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
 
@@ -639,6 +663,9 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         }
 
         setIsLoading(true);
+        // Clear old validation errors to prevent showing stale messages after successful import
+        setValidationModalContent(null);
+
         try {
             // 1. Re-Validation (duplicate-only gate)
             const cleanedForValidation = cleanItemDataForApi(itemData);
@@ -1099,12 +1126,12 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         saveAs(blob, `${itemGroupName}.xlsx`);
-        toast.success('Data exported successfully with validation colors');
+        showMessage('success', 'Export Complete', 'The data has been exported to an Excel file and downloaded successfully.');
     };
 
     const handleRemoveSelectedRows = async () => {
         if (selectedRows.size === 0) {
-            toast.error('Please select rows to remove');
+            showMessage('error', 'No Selection', 'Please select at least one row to remove.');
             return;
         }
 
@@ -1118,7 +1145,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             setSelectedRows(new Set());
             setValidationResult(null);
             setMode('preview'); // Ensure mode stays in preview/edit
-            toast.success(`Removed ${selectedRows.size} row(s) from preview`);
+            showMessage('info', 'Rows Removed', `${selectedRows.size} row(s) have been removed from the preview. Please re-run validation before importing.`);
             return;
         }
 
@@ -1137,19 +1164,19 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             }
 
             if (deletedCount > 0) {
-                toast.success(`Successfully removed ${deletedCount} item(s) from database`);
+                showMessage('success', 'Records Deleted', `${deletedCount} item record(s) have been successfully removed from the database.`);
                 await handleLoadData();
                 setSelectedRows(new Set());
             } else {
                 // Fallback if no valid IDs found in selection
                 if (itemsToDelete.length === 0 && selectedRows.size > 0) {
-                    toast.error('Selected rows do not have valid IDs or are not saved yet.');
+                    showMessage('warning', 'Cannot Delete', 'Selected rows do not have valid IDs or are not saved to the database yet.');
                 } else {
-                    toast.error('No items were deleted.');
+                    showMessage('warning', 'Nothing Deleted', 'No items were deleted. Please try again.');
                 }
             }
         } catch (error: any) {
-            toast.error(error?.response?.data?.error || 'Failed to remove items');
+            showMessage('error', 'Delete Failed', error?.response?.data?.error || 'Failed to remove items. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -1216,7 +1243,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             if (deletedCount > 0 && clearActionType === 'clearOnly') {
                 setClearSuccessInfo({ rowCount: deletedCount, groupName: `${itemGroupName} Item Group` });
             } else if (deletedCount === 0 && clearActionType === 'clearOnly') {
-                toast.success('No existing data to clear.');
+                showMessage('info', 'No Data Found', `No existing data was found in the database for the ${itemGroupName} Item Group. Nothing was cleared.`);
             }
             setItemData([]);
             setValidationResult(null);
@@ -1225,11 +1252,6 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             setIsLoading(false);
 
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
-                if (deletedCount > 0) {
-                    toast.success(`✅ Cleared ${deletedCount} record(s). Opening upload...`);
-                } else {
-                    toast.success('No existing data to clear. Proceeding...');
-                }
                 fileInputRef.current.value = '';
                 fileInputRef.current.click();
             }
@@ -1286,36 +1308,76 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 130, type: 'numericColumn' },
                 { field: 'shelfLife', headerName: 'ShelfLife', editable: isEditable, width: 110, type: 'numericColumn' },
                 {
                     field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 110, type: 'numericColumn' },
                 {
                     field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
-                    cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    valueGetter: (params: any) => {
+                        const val = params.data?.isStandardItem;
+                        if (val === true || val === 'TRUE') return 'TRUE';
+                        if (val === false || val === 'FALSE') return 'FALSE';
+                        return val;
+                    },
+                    cellStyle: (params: any): Record<string, string> | null => {
+                        const val = params.data?.isStandardItem;
+                        if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                            return { backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff', color: isDark ? '#e9d5ff' : '#581c87' };
+                        }
+                        return null;
+                    },
+                    tooltipValueGetter: (params: any) => {
+                        const val = params.data?.isStandardItem;
+                        if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                            return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
+                        }
+                        return null;
+                    }
                 },
                 {
                     field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 130,
-                    cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    valueGetter: (params: any) => {
+                        const val = params.data?.isRegularItem;
+                        if (val === true || val === 'TRUE') return 'TRUE';
+                        if (val === false || val === 'FALSE') return 'FALSE';
+                        return val;
+                    },
+                    cellStyle: (params: any): Record<string, string> | null => {
+                        const val = params.data?.isRegularItem;
+                        if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                            return { backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff', color: isDark ? '#e9d5ff' : '#581c87' };
+                        }
+                        return null;
+                    },
+                    tooltipValueGetter: (params: any) => {
+                        const val = params.data?.isRegularItem;
+                        if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                            return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
+                        }
+                        return null;
+                    }
                 },
                 {
                     field: 'packingType', headerName: 'PackingType', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: ['Sheet', 'Gross', 'Ream', 'Packet'] }
+                    cellEditorParams: { values: ['Sheet', 'Gross', 'Ream', 'Packet'] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'unitPerPacking', headerName: 'UnitPerPacking', editable: isEditable, width: 130, type: 'numericColumn' },
                 { field: 'wtPerPacking', headerName: 'WtPerPacking', editable: isEditable, width: 130, type: 'numericColumn' },
@@ -1327,12 +1389,14 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 200,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 {
                     field: 'certificationType', headerName: 'Certification Type', editable: isEditable, width: 150,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: ['NONE', 'FSC', 'PEFC'] }
+                    cellEditorParams: { values: ['NONE', 'FSC', 'PEFC'] },
+                    cellRenderer: DropdownCellRenderer
                 }
             ];
         }
@@ -1356,41 +1420,82 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 110, type: 'numericColumn' },
                 {
                     field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
-                    cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    valueGetter: (params: any) => {
+                        const val = params.data?.isStandardItem;
+                        if (val === true || val === 'TRUE') return 'TRUE';
+                        if (val === false || val === 'FALSE') return 'FALSE';
+                        return val;
+                    },
+                    cellStyle: (params: any): Record<string, string> | null => {
+                        const val = params.data?.isStandardItem;
+                        if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                            return { backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff', color: isDark ? '#e9d5ff' : '#581c87' };
+                        }
+                        return null;
+                    },
+                    tooltipValueGetter: (params: any) => {
+                        const val = params.data?.isStandardItem;
+                        if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                            return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
+                        }
+                        return null;
+                    }
                 },
                 {
                     field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 130,
-                    cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    valueGetter: (params: any) => {
+                        const val = params.data?.isRegularItem;
+                        if (val === true || val === 'TRUE') return 'TRUE';
+                        if (val === false || val === 'FALSE') return 'FALSE';
+                        return val;
+                    },
+                    cellStyle: (params: any): Record<string, string> | null => {
+                        const val = params.data?.isRegularItem;
+                        if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                            return { backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff', color: isDark ? '#e9d5ff' : '#581c87' };
+                        }
+                        return null;
+                    },
+                    tooltipValueGetter: (params: any) => {
+                        const val = params.data?.isRegularItem;
+                        if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                            return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
+                        }
+                        return null;
+                    }
                 },
                 { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 150 },
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 200,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 {
                     field: 'certificationType', headerName: 'CertificationType', editable: isEditable, width: 150,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: ['NONE', 'FSC', 'PEFC'] }
+                    cellEditorParams: { values: ['NONE', 'FSC', 'PEFC'] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
             ];
@@ -1403,7 +1508,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'itemType', headerName: 'ItemType', editable: isEditable, width: 150 },
                 { field: 'inkColour', headerName: 'InkColour', editable: isEditable, width: 120 },
@@ -1414,38 +1520,44 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
                 {
                     field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
                 { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
                 {
                     field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 {
                     field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
                 { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
             ];
@@ -1458,7 +1570,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
                 { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
@@ -1467,38 +1580,44 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
                 {
                     field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
                 { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
                 {
                     field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 {
                     field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
                 { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
             ];
@@ -1513,7 +1632,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
                 { field: 'manufecturerItemCode', headerName: 'ManufacturerItemCode', editable: isEditable, width: 180 },
@@ -1521,38 +1641,44 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
                 {
                     field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
                 { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
                 {
                     field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 {
                     field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
                 { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
             ];
@@ -1566,7 +1692,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
                 { field: 'manufecturerItemCode', headerName: 'ManufacturerItemCode', editable: isEditable, width: 180 },
@@ -1577,38 +1704,44 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
                 {
                     field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
                 { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
                 {
                     field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 {
                     field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
                 { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
             ];
@@ -1622,7 +1755,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'itemSubGroupName', headerName: 'ItemSubGroupName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) }
+                    cellEditorParams: { values: itemSubGroups.map(sg => sg.itemSubGroupName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
                 { field: 'manufecturerItemCode', headerName: 'ManufacturerItemCode', editable: isEditable, width: 180 },
@@ -1633,38 +1767,44 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
                 {
                     field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
                 { field: 'stockType', headerName: 'StockType', editable: isEditable, width: 150 },
                 {
                     field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 {
                     field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', editable: isEditable, width: 180, type: 'numericColumn' },
                 { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
             ];
@@ -1677,7 +1817,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'itemType', headerName: 'ItemType', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: ['Paper', 'Film'] }
+                    cellEditorParams: { values: ['Paper', 'Film'] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
                 { field: 'manufecturer', headerName: 'Manufacturer', editable: isEditable, width: 150 },
@@ -1696,36 +1837,42 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 {
                     field: 'purchaseUnit', headerName: 'PurchaseUnit', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'purchaseRate', headerName: 'PurchaseRate', editable: isEditable, width: 120, type: 'numericColumn' },
                 {
                     field: 'estimationUnit', headerName: 'EstimationUnit', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'estimationRate', headerName: 'EstimationRate', editable: isEditable, width: 130, type: 'numericColumn' },
                 {
                     field: 'stockUnit', headerName: 'StockUnit', editable: isEditable, width: 110,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                    cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'minimumStockQty', headerName: 'MinimumStockQty', editable: isEditable, width: 150, type: 'numericColumn' },
                 {
                     field: 'isStandardItem', headerName: 'IsStandardItem', editable: isEditable, width: 130,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 {
                     field: 'isRegularItem', headerName: 'IsRegularItem', editable: isEditable, width: 120,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: [true, false] }
+                    cellEditorParams: { values: [true, false] },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 130 },
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 180,
                     cellEditor: 'agSelectCellEditor',
-                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) }
+                    cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                    cellRenderer: DropdownCellRenderer
                 },
                 { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 300 }
             ];
@@ -1742,22 +1889,26 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: {
                     values: hsnGroups.map(h => h.displayName)
-                }
+                },
+                cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'stockUnit', headerName: 'Stock Unit', editable: isEditable, width: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'purchaseUnit', headerName: 'Purchase Unit', editable: isEditable, width: 140,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'estimationUnit', headerName: 'Estimation Unit', editable: isEditable, width: 150,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) }
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
             },
             { field: 'unitPerPacking', headerName: 'Unit/Packing', editable: isEditable, width: 140, type: 'numericColumn' },
             { field: 'wtPerPacking', headerName: 'Wt/Packing', editable: isEditable, width: 130, type: 'numericColumn' },
@@ -2079,8 +2230,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                                     setValidationResult(null);
                                     setMode('idle');
                                     if (fileInputRef.current) fileInputRef.current.value = '';
-                                    // Show failed rows list if any rows failed during import
-                                    if (validationModalContent && validationModalContent.title.includes('Failed During Import')) {
+                                    // Show failed rows list ONLY if rows failed during THIS import
+                                    if (validationModalContent && validationModalContent.title.includes('Skipped During Import')) {
                                         setShowValidationModal(true);
                                     }
                                 }}
@@ -2747,30 +2898,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 </div>
             )}
 
-            {/* Standard Error Popup Modal */}
-            {showErrorModal && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100 dark:border-red-900/30 transform transition-all scale-100 animate-in fade-in zoom-in duration-200">
-                        <div className="flex flex-col items-center text-center">
-                            <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
-                                <AlertCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
-                            </div>
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                                Error
-                            </h3>
-                            <div className="text-sm text-gray-500 dark:text-gray-400 mb-6 text-center whitespace-pre-wrap">
-                                {errorModalMessage}
-                            </div>
-                            <button
-                                onClick={() => setShowErrorModal(false)}
-                                className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
-                            >
-                                OK
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Standardized Message Modal */}
+            {ModalRenderer}
 
             {/* Validation Result Modal */}
             {showValidationModal && validationModalContent && (
@@ -2827,8 +2956,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                                 setValidationResult(null);
                                 setMode('idle');
                                 setFilterType('all');
-                                // Show error details if any rows were skipped
-                                if (validationModalContent) setShowValidationModal(true);
+                                // Show error details ONLY if rows failed during THIS import
+                                if (validationModalContent && validationModalContent.title.includes('Skipped During Import')) {
+                                    setShowValidationModal(true);
+                                }
                             }}
                             className="mt-2 w-full px-6 py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-xl font-semibold text-lg transition-colors"
                         >

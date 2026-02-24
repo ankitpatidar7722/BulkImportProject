@@ -14,10 +14,11 @@ import DataGrid, {
 import { Popup } from 'devextreme-react/popup';
 import SelectBox from 'devextreme-react/select-box';
 import { getAllModules, createModule, updateModule, deleteModule, getModuleHeads, ModuleDto } from '../services/api';
-import toast from 'react-hot-toast';
+import { useMessageModal } from '../components/MessageModal';
 import 'devextreme/dist/css/dx.light.css';
 
 const ModuleAuthority: React.FC = () => {
+    const { showMessage, ModalRenderer } = useMessageModal();
     const [modules, setModules] = useState<ModuleDto[]>([]);
     const [moduleHeads, setModuleHeads] = useState<string[]>([]);
     const [isPopupVisible, setIsPopupVisible] = useState(false);
@@ -35,7 +36,7 @@ const ModuleAuthority: React.FC = () => {
             setModuleHeads(heads);
         } catch (error) {
             console.error(error);
-            toast.error('Failed to load data');
+            showMessage('error', 'Load Error', 'Failed to load module data. Please try refreshing the page.');
         }
     };
 
@@ -67,11 +68,11 @@ const ModuleAuthority: React.FC = () => {
         e.cancel = true; // Handle async
         try {
             await deleteModule(e.data.moduleId);
-            toast.success('Module deleted');
+            showMessage('success', 'Module Deleted', 'The module has been successfully deleted.');
             loadData();
         } catch (error) {
             console.error(error);
-            toast.error('Failed to delete module');
+            showMessage('error', 'Delete Failed', 'Failed to delete the module. Please try again.');
         }
     };
 
@@ -79,16 +80,16 @@ const ModuleAuthority: React.FC = () => {
         try {
             if (isNewRecord) {
                 await createModule(formData);
-                toast.success('Module created successfully');
+                showMessage('success', 'Module Created', 'The new module has been created successfully.');
             } else {
                 await updateModule(formData);
-                toast.success('Module updated successfully');
+                showMessage('success', 'Module Updated', 'The module has been updated successfully.');
             }
             setIsPopupVisible(false);
             loadData();
         } catch (error) {
             console.error(error);
-            toast.error('Failed to save module');
+            showMessage('error', 'Save Failed', 'Failed to save the module. Please check your inputs and try again.');
         }
     };
 
@@ -98,6 +99,7 @@ const ModuleAuthority: React.FC = () => {
 
     return (
         <div className="p-8 space-y-8 bg-gray-50 dark:bg-[#020617] min-h-screen">
+            {ModalRenderer}
             <div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Module Authority</h1>
                 <p className="text-gray-500 dark:text-gray-400 mt-1">Manage system modules and hierarchy.</p>

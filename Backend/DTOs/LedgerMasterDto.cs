@@ -25,7 +25,7 @@ public class LedgerMasterDto
     public decimal? DeliveredQtyTolerance { get; set; }
     public string? RefCode { get; set; }
     public string? GSTRegistrationType { get; set; }
-    public int? CreditDays { get; set; }
+    public string? CreditDays { get; set; }  // Database column is nvarchar(64)
     public string? LegalName { get; set; }
     public string? MailingAddress { get; set; }
     public bool IsDeletedTransaction { get; set; }

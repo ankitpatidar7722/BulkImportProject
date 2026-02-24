@@ -34,3 +34,14 @@ public class UserLoginResponse
     public bool IsAdmin { get; set; }
     public string CompanyName { get; set; } = string.Empty;
 }
+
+public class UserInfoResponse
+{
+    public int UserID { get; set; }
+    public string UserName { get; set; } = string.Empty;
+    public int CompanyID { get; set; }
+    public int BranchID { get; set; }
+    public string FYear { get; set; } = string.Empty;
+    public bool IsAdmin { get; set; }
+    public string CompanyName { get; set; } = string.Empty;
+}

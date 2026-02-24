@@ -247,71 +247,136 @@ public class HSNService : IHSNService
         result.TotalRows = hsns.Count;
         await EnsureConnectionOpenAsync();
 
-        string insertQuery = @"
-            INSERT INTO ProductHSNMaster (
-                ProductHSNName, HSNCode, UnderProductHSNID, GroupLevel, CompanyID,
-                DisplayName, TariffNo, ProductCategory, GSTTaxPercentage,
-                CGSTTaxPercentage, SGSTTaxPercentage, IGSTTaxPercentage,
-                TallyProductHSNName, TallyGUID, ItemGroupID, UserID,
-                ModifiedDate, CreatedBy, CreatedDate, ModifiedBy,
-                DeletedBy, DeletedDate, IsDeletedTransaction, FYear
-            ) VALUES (
-                @ProductHSNName, @HSNCode, 0, 0, @CompanyID,
-                @DisplayName, '', @ProductCategory, @GSTTaxPercentage,
-                @CGSTTaxPercentage, @SGSTTaxPercentage, @IGSTTaxPercentage,
-                '', 0, @ItemGroupID, @UserID,
-                GETDATE(), @UserID, GETDATE(), @UserID,
-                0, NULL, 0, '2025-2026'
-            )";
+        // ─── 1. Pre-process rows: validate and prepare for bulk insert ───────
+        var validRows = new List<(int RowIndex, HSNMasterDto HSN)>();
 
-        int imported = 0;
-
-        // Row-by-row insert with per-row transaction
-        for (int rowIndex = 0; rowIndex < hsns.Count; rowIndex++)
+        for (int i = 0; i < hsns.Count; i++)
         {
-            var hsn = hsns[rowIndex];
-            using var transaction = _connection.BeginTransaction();
-
+            var hsn = hsns[i];
             try
             {
+                // Basic validation
+                if (string.IsNullOrWhiteSpace(hsn.ProductHSNName))
+                    throw new Exception("ProductHSNName is required");
+
                 if (hsn.CompanyID == 0) hsn.CompanyID = 2;
 
-                await _connection.ExecuteAsync(insertQuery, new
-                {
-                    ProductHSNName = hsn.ProductHSNName,
-                    HSNCode = hsn.HSNCode,
-                    CompanyID = hsn.CompanyID,
-                    DisplayName = hsn.DisplayName,
-                    ProductCategory = hsn.ProductCategory,
-                    GSTTaxPercentage = hsn.GSTTaxPercentage ?? 0,
-                    CGSTTaxPercentage = hsn.CGSTTaxPercentage ?? 0,
-                    SGSTTaxPercentage = hsn.SGSTTaxPercentage ?? 0,
-                    IGSTTaxPercentage = hsn.IGSTTaxPercentage ?? 0,
-                    ItemGroupID = hsn.ItemGroupID,
-                    UserID = userId
-                }, transaction);
-
-                transaction.Commit();
-                imported++;
+                validRows.Add((i, hsn));
             }
             catch (Exception ex)
             {
-                transaction.Rollback();
                 result.ErrorRows++;
-                result.ErrorMessages.Add($"Row {rowIndex + 1} ({hsn.DisplayName}): {ex.Message}");
+                result.ErrorMessages.Add($"Row {i + 1} ({hsn.DisplayName ?? hsn.ProductHSNName}): Pre-validation failed – {ex.Message}");
             }
         }
 
-        result.ImportedRows = imported;
-        if (result.ErrorRows > 0)
+        if (validRows.Count == 0)
         {
-            result.Success = imported > 0;
-            result.Message = $"Imported {imported} of {hsns.Count} HSN record(s). {result.ErrorRows} row(s) failed.";
+            result.Success = false;
+            result.Message = "All rows failed validation. Nothing was imported.";
+            return result;
         }
-        else
+
+        // ─── 2. Build DataTable for SqlBulkCopy ──────────────────────────────
+        var dataTable = new System.Data.DataTable();
+        dataTable.Columns.Add("ProductHSNName",      typeof(string));
+        dataTable.Columns.Add("HSNCode",             typeof(string));
+        dataTable.Columns.Add("UnderProductHSNID",   typeof(int));
+        dataTable.Columns.Add("GroupLevel",          typeof(int));
+        dataTable.Columns.Add("CompanyID",           typeof(int));
+        dataTable.Columns.Add("DisplayName",         typeof(string));
+        dataTable.Columns.Add("TariffNo",            typeof(string));
+        dataTable.Columns.Add("ProductCategory",     typeof(string));
+        dataTable.Columns.Add("GSTTaxPercentage",    typeof(object));
+        dataTable.Columns.Add("CGSTTaxPercentage",   typeof(object));
+        dataTable.Columns.Add("SGSTTaxPercentage",   typeof(object));
+        dataTable.Columns.Add("IGSTTaxPercentage",   typeof(object));
+        dataTable.Columns.Add("TallyProductHSNName", typeof(string));
+        dataTable.Columns.Add("TallyGUID",           typeof(int));
+        dataTable.Columns.Add("ItemGroupID",         typeof(object));
+        dataTable.Columns.Add("UserID",              typeof(int));
+        dataTable.Columns.Add("ModifiedDate",        typeof(DateTime));
+        dataTable.Columns.Add("CreatedBy",           typeof(int));
+        dataTable.Columns.Add("CreatedDate",         typeof(DateTime));
+        dataTable.Columns.Add("ModifiedBy",          typeof(int));
+        dataTable.Columns.Add("DeletedBy",           typeof(int));
+        dataTable.Columns.Add("DeletedDate",         typeof(object));
+        dataTable.Columns.Add("IsDeletedTransaction",typeof(bool));
+        dataTable.Columns.Add("FYear",               typeof(string));
+
+        object N(object? v) => v ?? DBNull.Value;
+        var now = DateTime.Now;
+
+        foreach (var (rowIndex, hsn) in validRows)
         {
+            try
+            {
+                dataTable.Rows.Add(
+                    N(hsn.ProductHSNName),
+                    N(hsn.HSNCode),
+                    0,  // UnderProductHSNID
+                    0,  // GroupLevel
+                    hsn.CompanyID,
+                    N(hsn.DisplayName),
+                    "",  // TariffNo
+                    N(hsn.ProductCategory),
+                    N(hsn.GSTTaxPercentage ?? 0),
+                    N(hsn.CGSTTaxPercentage ?? 0),
+                    N(hsn.SGSTTaxPercentage ?? 0),
+                    N(hsn.IGSTTaxPercentage ?? 0),
+                    "",  // TallyProductHSNName
+                    0,   // TallyGUID
+                    N(hsn.ItemGroupID),
+                    userId,
+                    now,
+                    userId,
+                    now,
+                    userId,
+                    0,   // DeletedBy
+                    DBNull.Value,  // DeletedDate
+                    false,
+                    "2025-2026"
+                );
+            }
+            catch (Exception ex)
+            {
+                result.ErrorRows++;
+                result.ErrorMessages.Add($"Row {rowIndex + 1} ({hsn.DisplayName ?? hsn.ProductHSNName}): DataTable build failed – {ex.Message}");
+            }
+        }
+
+        // ─── 3. SqlBulkCopy insert ───────────────────────────────────────────
+        try
+        {
+            using var bulkCopy = new Microsoft.Data.SqlClient.SqlBulkCopy(_connection)
+            {
+                DestinationTableName = "ProductHSNMaster",
+                BatchSize = 1000,
+                BulkCopyTimeout = 300
+            };
+
+            foreach (System.Data.DataColumn col in dataTable.Columns)
+                bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
+
+            await bulkCopy.WriteToServerAsync(dataTable);
+
+            result.ImportedRows = dataTable.Rows.Count;
             result.Success = true;
-            result.Message = $"Successfully imported {imported} HSN records.";
+
+            if (result.ErrorRows > 0)
+            {
+                result.Message = $"Imported {result.ImportedRows} of {hsns.Count} HSN record(s). {result.ErrorRows} row(s) failed.";
+            }
+            else
+            {
+                result.Message = $"Successfully imported {result.ImportedRows} HSN records.";
+            }
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Message = $"Bulk insert failed: {ex.Message}";
+            try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] HSN Bulk Insert Error: {ex.Message}\nStack: {ex.StackTrace}\n"); } catch { }
         }
 
         return result;
