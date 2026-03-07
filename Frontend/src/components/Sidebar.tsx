@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
     LayoutDashboard,
     Upload,
+    PackageOpen,
     Building2,
     ShieldCheck,
     X,
@@ -24,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
     const menuItems = [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
         { name: 'Import Master', path: '/import-master', icon: Upload },
+        { name: 'Stock Upload', path: '/stock-upload', icon: PackageOpen },
         { name: 'Company Master', path: '/company-master', icon: Building2 },
         { name: 'Module Authority', path: '/module-authority', icon: ShieldCheck },
     ];

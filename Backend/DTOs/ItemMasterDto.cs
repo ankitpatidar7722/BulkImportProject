@@ -44,6 +44,7 @@ public class ItemMasterDto
     public bool? IsRegularItem { get; set; }
     public string? PackingType { get; set; }
     public string? CertificationType { get; set; }
+    public string? PaperGroup { get; set; }
     public string? ProductHSNName { get; set; }
     public string? HSNCode { get; set; }
 

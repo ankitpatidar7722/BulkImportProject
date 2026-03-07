@@ -47,6 +47,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCompanyName(storedCompanyName || '');
         }
         setIsLoading(false);
+
+        // Listen for 401 Unauthorized events from API interceptor
+        const handleUnauthorized = () => {
+            // Clear state and redirect to login
+            setLoginStep(0);
+            setCompanyName('');
+            setUserName('');
+            setFYear('');
+        };
+
+        window.addEventListener('auth:unauthorized', handleUnauthorized);
+
+        return () => {
+            window.removeEventListener('auth:unauthorized', handleUnauthorized);
+        };
     }, []);
 
     const companyLogin = async (data: CompanyLoginRequest) => {

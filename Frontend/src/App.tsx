@@ -10,6 +10,7 @@ import Login from './components/Login';
 
 import Dashboard from './pages/Dashboard';
 import ImportMaster from './pages/ImportMaster';
+import StockUpload from './pages/StockUpload';
 import CompanyMaster from './pages/CompanyMaster';
 import ModuleAuthority from './pages/ModuleAuthority';
 
@@ -32,6 +33,7 @@ const AuthenticatedLayout = () => {
                     <Routes>
                         <Route path="/" element={<Dashboard />} />
                         <Route path="/import-master" element={<ImportMaster />} />
+                        <Route path="/stock-upload" element={<StockUpload />} />
                         <Route path="/company-master" element={<CompanyMaster />} />
                         <Route path="/module-authority" element={<ModuleAuthority />} />
                         <Route path="*" element={<Navigate to="/" replace />} />

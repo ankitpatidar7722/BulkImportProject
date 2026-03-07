@@ -21,8 +21,15 @@ api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401) {
-            // Optional: Dispatch event or handle logout
-            console.warn('Unauthorized access. Session might be expired.');
+            // Clear all auth data from localStorage
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('companyToken');
+            localStorage.removeItem('bulkimport_auth');
+
+            // Dispatch custom event for AuthContext to listen
+            window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+
+            console.warn('Unauthorized access. Session expired - redirecting to login.');
         }
         return Promise.reject(error);
     }
@@ -187,7 +194,7 @@ export interface LedgerMasterDto {
     deliveredQtyTolerance?: number;
     refCode?: string;
     gstRegistrationType?: string;
-    creditDays?: number;
+    creditDays?: string;  // Backend database column is nvarchar(64)
     legalName?: string;
     mailingAddress?: string;
     isDeletedTransaction?: boolean;
@@ -744,6 +751,7 @@ export interface ItemMasterDto {
     isRegularItem?: boolean;
     packingType?: string;
     certificationType?: string;
+    paperGroup?: string;
     productHSNName?: string;
     hsnCode?: string;
 
@@ -935,6 +943,121 @@ export const clearAllToolData = async (username: string, password: string, reaso
         reason,
         toolGroupId
     });
+    return response.data;
+};
+
+// ==================== ITEM STOCK API ====================
+
+export interface ItemStockRowDto {
+    rowIndex?: number;
+    itemCode?: string;
+    receiptQuantity: number;
+    landedRate: number;
+    stockUnit?: string;
+    batchNo?: string;
+    warehouseName?: string;
+    binName?: string;
+    warehouseID?: number;
+}
+
+export interface ItemStockImportResult {
+    success: boolean;
+    totalRows: number;
+    importedRows: number;
+    failedRows: number;
+    message: string;
+    errorMessages: string[];
+}
+
+export interface ItemStockEnrichedRow {
+    itemCode?: string;
+    itemID: number;
+    receiptQuantity: number;
+    landedRate: number;
+    batchNo?: string;
+    stockUnit?: string;
+    warehouseName?: string;
+    binName?: string;
+    isValid: boolean;
+    error?: string;
+}
+
+export interface ItemStockEnrichResult {
+    rows: ItemStockEnrichedRow[];
+    invalidItemCodes: string[];
+}
+
+export interface WarehouseDto {
+    warehouseID: number;
+    warehouseName: string;
+    binName?: string;
+}
+
+export const getStockWarehouses = async (): Promise<WarehouseDto[]> => {
+    const response = await api.get('/itemstock/warehouses');
+    return response.data;
+};
+
+export const getStockBins = async (warehouseName: string): Promise<WarehouseDto[]> => {
+    const response = await api.get('/itemstock/bins', { params: { warehouseName } });
+    return response.data;
+};
+
+export const enrichItemStock = async (rows: { itemCode?: string; receiptQuantity: number; landedRate: number; stockUnit?: string; warehouseName?: string; binName?: string }[], itemGroupId: number): Promise<ItemStockEnrichResult> => {
+    const response = await api.post('/itemstock/enrich', { rows, itemGroupId });
+    return response.data;
+};
+
+export const importItemStock = async (rows: ItemStockRowDto[], itemGroupId: number): Promise<ItemStockImportResult> => {
+    const response = await api.post('/itemstock/import', { rows, itemGroupId });
+    return response.data;
+};
+
+export interface ItemStockCellValidation {
+    columnName: string;
+    status: string;
+    validationMessage: string;
+}
+
+export interface ItemStockRowValidation {
+    rowIndex: number;
+    rowStatus: string;
+    errorMessage?: string;
+    cellValidations: ItemStockCellValidation[];
+}
+
+export interface ItemStockValidationSummary {
+    totalRows: number;
+    validRows: number;
+    duplicateCount: number;
+    missingDataCount: number;
+    mismatchCount: number;
+    invalidContentCount: number;
+}
+
+export interface ItemStockValidationResult {
+    isValid: boolean;
+    summary: ItemStockValidationSummary;
+    rows: ItemStockRowValidation[];
+}
+
+export const validateItemStock = async (rows: ItemStockEnrichedRow[], itemGroupId: number): Promise<ItemStockValidationResult> => {
+    const response = await api.post('/itemstock/validate', { rows, itemGroupId });
+    return response.data;
+};
+
+export const loadStockData = async (itemGroupId: number): Promise<ItemStockEnrichedRow[]> => {
+    const response = await api.get('/itemstock/load', { params: { itemGroupId } });
+    return response.data;
+};
+
+export const resetItemStock = async (itemGroupId: number): Promise<ItemStockImportResult> => {
+    const response = await api.post('/itemstock/reset-item-stock', null, { params: { itemGroupId } });
+    return response.data;
+};
+
+export const resetFloorStock = async (itemGroupId: number): Promise<ItemStockImportResult> => {
+    const response = await api.post('/itemstock/reset-floor-stock', null, { params: { itemGroupId } });
     return response.data;
 };
 

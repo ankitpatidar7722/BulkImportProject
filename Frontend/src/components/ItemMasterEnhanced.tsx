@@ -233,6 +233,19 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
             const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
 
+            // Validate PaperGroup column exists for PAPER and REEL groups
+            if ((itemGroupName === 'PAPER' || itemGroupName === 'REEL') && jsonData.length > 0) {
+                const firstRow = jsonData[0];
+                const hasColumn = Object.keys(firstRow).some(k => k === 'PaperGroup' || k === 'paperGroup' || k === 'papergroup' || k === 'PAPERGROUP');
+                if (!hasColumn) {
+                    showMessage('error', 'Incorrect Format',
+                        `You are uploading incorrect format.\nColumn 'PaperGroup' is missing in the Excel file.\nPlease export the correct format and upload again.`);
+                    setIsLoading(false);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    return;
+                }
+            }
+
             // Helper function to safely convert values to string or undefined
             const toStringOrUndefined = (value: any): string | undefined => {
                 if (value === null || value === undefined || value === '') return undefined;
@@ -291,6 +304,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     })(),
                     packingType: toStringOrUndefined(row.PackingType || row.packingType),
                     certificationType: toStringOrUndefined(row.CertificationType || row.certificationType) || 'NONE',
+                    paperGroup: toStringOrUndefined(row.PaperGroup || row.paperGroup),
                     productHSNName: toStringOrUndefined(row.ProductHSNName || row.productHSNName),
 
                     // INK & ADDITIVES-specific fields
@@ -312,6 +326,27 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
                 // Auto-calculations for PAPER group
                 if (itemGroupName === 'PAPER') {
+                    // Default PaperGroup to 'Paper' if not provided
+                    if (!item.paperGroup) item.paperGroup = 'Paper';
+
+                    // Round SizeW to 3 decimal places
+                    if (item.sizeW !== undefined && item.sizeW !== null) {
+                        const parsed = parseFloat(String(item.sizeW));
+                        if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(3));
+                    }
+
+                    // Round SizeL to 3 decimal places
+                    if (item.sizeL !== undefined && item.sizeL !== null) {
+                        const parsed = parseFloat(String(item.sizeL));
+                        if (!isNaN(parsed)) item.sizeL = parseFloat(parsed.toFixed(3));
+                    }
+
+                    // Round WtPerPacking to 9 decimal places (if from Excel)
+                    if (item.wtPerPacking !== undefined && item.wtPerPacking !== null) {
+                        const parsed = parseFloat(String(item.wtPerPacking));
+                        if (!isNaN(parsed)) item.wtPerPacking = parseFloat(parsed.toFixed(9));
+                    }
+
                     // Caliper calculation
                     if (item.gsm) {
                         item.caliper = parseFloat((item.gsm / 1000).toFixed(3));
@@ -322,10 +357,10 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         item.itemSize = `${item.sizeW} X ${item.sizeL}`;
                     }
 
-                    // WtPerPacking calculation
+                    // WtPerPacking auto-calculation (overrides Excel value if all inputs available)
                     if (item.sizeW && item.sizeL && item.gsm && item.unitPerPacking) {
                         const val = (item.sizeW * item.sizeL * item.gsm * item.unitPerPacking) / 1000000000;
-                        item.wtPerPacking = parseFloat(val.toFixed(4));
+                        item.wtPerPacking = parseFloat(val.toFixed(9));
                     }
 
                     // ItemName auto-generation if missing
@@ -342,6 +377,9 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
                 // Auto-calculations for REEL group
                 if (itemGroupName === 'REEL') {
+                    // Default PaperGroup to 'Reel' if not provided
+                    if (!item.paperGroup) item.paperGroup = 'Reel';
+
                     // BF default: if empty, set to "0"
                     if (!item.bf || item.bf === '') {
                         item.bf = '0';
@@ -576,12 +614,19 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 }
             });
 
+            // Apply decimal rounding for PAPER group before sending to API
+            if (itemGroupName === 'PAPER') {
+                if (typeof cleaned.sizeW === 'number') cleaned.sizeW = parseFloat(cleaned.sizeW.toFixed(3));
+                if (typeof cleaned.sizeL === 'number') cleaned.sizeL = parseFloat(cleaned.sizeL.toFixed(3));
+                if (typeof cleaned.wtPerPacking === 'number') cleaned.wtPerPacking = parseFloat(cleaned.wtPerPacking.toFixed(9));
+            }
+
             if (Object.keys(rawValues).length > 0) {
                 cleaned.rawValues = rawValues;
             }
             return cleaned;
         });
-    }, []);
+    }, [itemGroupName]);
 
     const handleCheckValidation = async () => {
         if (itemData.length === 0) {
@@ -775,7 +820,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
         if (itemGroupName === 'PAPER') {
             exportColumns = [
-                'Quality', 'GSM', 'Manufecturer', 'Finish', 'ManufecturerItemCode',
+                'PaperGroup', 'Quality', 'GSM', 'Manufecturer', 'Finish', 'ManufecturerItemCode',
                 'Caliper', 'SizeW', 'SizeL', 'PurchaseUnit', 'PurchaseRate',
                 'ShelfLife', 'EstimationUnit', 'EstimationRate', 'StockUnit',
                 'MinimumStockQty', 'IsStandardItem', 'IsRegularItem', 'PackingType',
@@ -784,7 +829,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             ];
         } else if (itemGroupName === 'REEL') {
             exportColumns = [
-                'Quality', 'BF', 'SizeW', 'GSM', 'Caliper', 'Manufecturer',
+                'PaperGroup', 'Quality', 'BF', 'SizeW', 'GSM', 'Caliper', 'Manufecturer',
                 'ManufecturerItemCode', 'Finish', 'ShelfLife', 'PurchaseUnit',
                 'PurchaseRate', 'EstimationUnit', 'EstimationRate', 'StockUnit',
                 'MinimumStockQty', 'IsStandardItem', 'IsRegularItem', 'StockRefCode',
@@ -865,6 +910,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
             if (itemGroupName === 'PAPER') {
                 rowValues = {
+                    PaperGroup: item.paperGroup,
                     Quality: item.quality,
                     GSM: item.gsm,
                     Manufecturer: item.manufecturer,
@@ -892,6 +938,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 };
             } else if (itemGroupName === 'REEL') {
                 rowValues = {
+                    PaperGroup: item.paperGroup,
                     Quality: item.quality,
                     BF: item.bf,
                     SizeW: item.sizeW,
@@ -1294,6 +1341,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         if (itemGroupName === 'PAPER') {
             return [
                 ...baseCols,
+                { field: 'paperGroup', headerName: 'PaperGroup', editable: isEditable, width: 120 },
                 { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
                 { field: 'gsm', headerName: 'GSM', editable: isEditable, width: 90, type: 'numericColumn' },
                 { field: 'manufecturer', headerName: 'Manufecturer', editable: isEditable, width: 150 },
@@ -1405,6 +1453,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         if (itemGroupName === 'REEL') {
             return [
                 ...baseCols,
+                { field: 'paperGroup', headerName: 'PaperGroup', editable: isEditable, width: 120 },
                 { field: 'quality', headerName: 'Quality', editable: isEditable, width: 150 },
                 { field: 'bf', headerName: 'BF', editable: isEditable, width: 100 },
                 { field: 'sizeW', headerName: 'SizeW', editable: isEditable, width: 100, type: 'numericColumn' },
@@ -1955,6 +2004,18 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         if (itemGroupName === 'PAPER') {
             const changedField = params.colDef.field;
 
+            // Round SizeW to 3 decimal places on edit
+            if (changedField === 'sizeW' && item.sizeW !== null && item.sizeW !== undefined) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(3));
+            }
+
+            // Round SizeL to 3 decimal places on edit
+            if (changedField === 'sizeL' && item.sizeL !== null && item.sizeL !== undefined) {
+                const parsed = parseFloat(String(item.sizeL));
+                if (!isNaN(parsed)) item.sizeL = parseFloat(parsed.toFixed(3));
+            }
+
             // Recalculate Caliper (GSM / 1000)
             if (changedField === 'gsm') {
                 if (item.gsm && item.gsm > 0) {
@@ -1973,14 +2034,14 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 }
             }
 
-            // Recalculate WtPerPacking ((SizeW * SizeL * GSM * UnitPerPacking) / 1000000000)
+            // Recalculate WtPerPacking ((SizeW * SizeL * GSM * UnitPerPacking) / 1000000000) → 9 decimals
             if (['sizeW', 'sizeL', 'gsm', 'unitPerPacking'].includes(changedField)) {
                 if (item.sizeW && item.sizeW > 0 &&
                     item.sizeL && item.sizeL > 0 &&
                     item.gsm && item.gsm > 0 &&
                     item.unitPerPacking && item.unitPerPacking > 0) {
                     const val = (item.sizeW * item.sizeL * item.gsm * item.unitPerPacking) / 1000000000;
-                    item.wtPerPacking = parseFloat(val.toFixed(4));
+                    item.wtPerPacking = parseFloat(val.toFixed(9));
                 } else {
                     item.wtPerPacking = null;
                 }

@@ -91,6 +91,7 @@ public class ItemService : IItemService
                     AdhesiveGSM         = Dec("AdhesiveGSM"),
                     TotalGSM            = Dec("TotalGSM"),
                     CertificationType   = Str("CertificationType"),
+                    PaperGroup          = Str("PaperGroup"),
                     IsDeletedTransaction = Bool("IsDeletedTransaction") ?? false,
                 });
             }
@@ -170,6 +171,7 @@ public class ItemService : IItemService
                         case "IsRegularItem": if (bool.TryParse(fv, out var ir)) item.IsRegularItem = ir; break;
                         case "PackingType": item.PackingType = fv; break;
                         case "CertificationType": item.CertificationType = fv; break;
+                        case "PaperGroup": item.PaperGroup = fv; break;
                         case "BF": item.BF = fv; break;
                         case "InkColour": item.InkColour = fv; break;
                         case "PantoneCode": item.PantoneCode = fv; break;
@@ -1168,6 +1170,7 @@ public class ItemService : IItemService
             if (it.TotalGSM.HasValue)          AddDetail("TotalGSM",         it.TotalGSM.ToString());
             AddDetail("StockRefCode",          it.StockRefCode);
             AddDetail("CertificationType",     it.CertificationType);
+            AddDetail("PaperGroup",            it.PaperGroup);
             AddDetail("ISItemActive",          "True");
         }
 

@@ -881,9 +881,9 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                         gstRegistrationType = row.GSTRegistrationType;
                     }
 
-                    let creditDays = 0;
+                    let creditDays: string | undefined = undefined;
                     if (row.CreditDays !== undefined && row.CreditDays !== null && row.CreditDays !== '') {
-                        creditDays = parseInt(row.CreditDays) || 0;
+                        creditDays = String(row.CreditDays);
                     }
 
                     const legalName = row.MailingName;
@@ -963,7 +963,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
     // Reusable: clean ledger data for API — extracts invalid numeric/bool values into rawValues
     const cleanLedgerDataForApi = useCallback((data: any[]) => {
-        const numericFields = new Set(['deliveredQtyTolerance', 'distance', 'creditDays']);
+        const numericFields = new Set(['deliveredQtyTolerance', 'distance']);
         const boolFields = new Set(['gstApplicable']);
 
         return data.map(item => {
