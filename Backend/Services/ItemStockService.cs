@@ -609,13 +609,46 @@ public class ItemStockService : IItemStockService
     // 1. Query all batch-wise closing stock for the ItemGroup
     // 2. Create a new PHY transaction with IssueQuantity = ClosingQty (zeroes out stock)
     // 3. Update BatchID and call UPDATE_ITEM_STOCK_VALUES
-    public async Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId)
+    public async Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId, string username, string password, string reason)
     {
         var result = new ItemStockImportResult();
 
         try
         {
             await EnsureOpenAsync();
+
+            // ─── Validate credentials against UserMaster ─────────────────────────
+            var userCheckQuery = @"
+                SELECT COUNT(1)
+                FROM UserMaster
+                WHERE UserName = @Username AND ISNULL(Password, '') = @Password";
+
+            var isValidUser = await _connection.ExecuteScalarAsync<bool>(
+                userCheckQuery,
+                new { Username = username, Password = password ?? string.Empty }
+            );
+
+            if (!isValidUser)
+            {
+                try
+                {
+                    await System.IO.File.AppendAllTextAsync(
+                        "debug_log.txt",
+                        $"[{DateTime.Now}] ResetItemStock Failed: Invalid credentials for user '{username}'. Reason: {reason}\n"
+                    );
+                }
+                catch { }
+                throw new UnauthorizedAccessException("Invalid username or password.");
+            }
+
+            try
+            {
+                await System.IO.File.AppendAllTextAsync(
+                    "debug_log.txt",
+                    $"[{DateTime.Now}] ResetItemStock Authorized: user '{username}', ItemGroupId={itemGroupId}. Reason: {reason}\n"
+                );
+            }
+            catch { }
 
             // ─── 1. Fetch all batch-wise closing stock (same query as VB.NET GetAllBatchStock) ─
             var batchStock = (await _connection.QueryAsync<dynamic>(
@@ -787,13 +820,46 @@ public class ItemStockService : IItemStockService
     // Floor stock = items issued to floor (VoucherID=-19) minus consumed (ItemConsumptionDetail)
     // Reset creates consumption records in ItemConsumptionMain/Detail (NOT ItemTransactionMain!)
     // VoucherPrefix='RTS', VoucherID=-25
-    public async Task<ItemStockImportResult> ResetFloorStockAsync(int itemGroupId)
+    public async Task<ItemStockImportResult> ResetFloorStockAsync(int itemGroupId, string username, string password, string reason)
     {
         var result = new ItemStockImportResult();
 
         try
         {
             await EnsureOpenAsync();
+
+            // ─── Validate credentials against UserMaster ─────────────────────────
+            var userCheckQuery = @"
+                SELECT COUNT(1)
+                FROM UserMaster
+                WHERE UserName = @Username AND ISNULL(Password, '') = @Password";
+
+            var isValidUser = await _connection.ExecuteScalarAsync<bool>(
+                userCheckQuery,
+                new { Username = username, Password = password ?? string.Empty }
+            );
+
+            if (!isValidUser)
+            {
+                try
+                {
+                    await System.IO.File.AppendAllTextAsync(
+                        "debug_log.txt",
+                        $"[{DateTime.Now}] ResetFloorStock Failed: Invalid credentials for user '{username}'. Reason: {reason}\n"
+                    );
+                }
+                catch { }
+                throw new UnauthorizedAccessException("Invalid username or password.");
+            }
+
+            try
+            {
+                await System.IO.File.AppendAllTextAsync(
+                    "debug_log.txt",
+                    $"[{DateTime.Now}] ResetFloorStock Authorized: user '{username}', ItemGroupId={itemGroupId}. Reason: {reason}\n"
+                );
+            }
+            catch { }
 
             // ─── 1. Fetch all floor stock (same query as VB.NET GetAllFloorStock) ─
             // Floor stock = IssueQuantity (from VoucherID=-19 transactions) minus consumed
@@ -968,10 +1034,10 @@ public class ItemStockService : IItemStockService
                 bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
             await bulkCopy.WriteToServerAsync(detailTable);
 
-            // ─── 5. Update BatchID = TransactionDetailID where BatchID = 0 ────────
+            // ─── 5. Update BatchID = ConsumptionTransactionDetailID where BatchID = 0 ─
             await _connection.ExecuteAsync(
                 @"UPDATE ItemConsumptionDetail
-                  SET BatchID = TransactionDetailID
+                  SET BatchID = ConsumptionTransactionDetailID
                   WHERE ConsumptionTransactionID = @TxnId AND CompanyID = @CompanyId
                     AND ISNULL(BatchID, 0) = 0 AND ParentTransactionID = ConsumptionTransactionID",
                 new { TxnId = consumptionTxnId, CompanyId = companyId });

@@ -19,9 +19,10 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 interface ItemStockUploadProps {
     itemGroupId: number;
     itemGroupName: string;
+    onHasDataChange?: (hasData: boolean) => void;
 }
 
-const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGroupName }) => {
+const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGroupName, onHasDataChange }) => {
     const { isDark } = useTheme();
 
     // ─── State ───────────────────────────────────────────────────────────────
@@ -59,6 +60,11 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
     const pendingFileRef = useRef<File | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // ─── Notify parent when data exists/clears ──────────────────────────────
+    useEffect(() => {
+        onHasDataChange?.(gridData.length > 0);
+    }, [gridData.length, onHasDataChange]);
 
     // ─── Fetch warehouses on mount ───────────────────────────────────────────
     useEffect(() => {
@@ -440,18 +446,6 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         setMode('preview');
     };
 
-    // ─── Reset ───────────────────────────────────────────────────────────────
-    const handleReset = () => {
-        setGridData([]);
-        setMode('idle');
-        setValidationResult(null);
-        setFilterType('all');
-        setSelectedRows(new Set());
-        setSuccessInfo(null);
-        setValidationModalContent(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-    };
-
     // ─── Load Stock from Database ───────────────────────────────────────────
     const handleLoadStock = async () => {
         // If data exists, ask confirmation before switching
@@ -583,9 +577,10 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         setIsLoading(true);
 
         try {
+            const { username, password, reason } = resetCredentials;
             const result = resetFlowType === 'item'
-                ? await resetItemStock(itemGroupId)
-                : await resetFloorStock(itemGroupId);
+                ? await resetItemStock(itemGroupId, username, password, reason)
+                : await resetFloorStock(itemGroupId, username, password, reason);
 
             const label = resetFlowType === 'item' ? 'Item Stock' : 'Floor Stock';
 
@@ -594,23 +589,25 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                     title: `${label} Reset Successful`,
                     messages: [result.message || `${label} has been reset successfully.`]
                 });
+                setShowValidationModal(true);
+
+                // Clear grid if data was loaded
+                if (mode === 'loaded') {
+                    setGridData([]);
+                    setMode('idle');
+                    setValidationResult(null);
+                    setFilterType('all');
+                }
+
+                handleResetCancel();
             } else {
+                // Invalid credentials or other failure — keep reset modal open
                 setValidationModalContent({
-                    title: 'Reset Failed',
+                    title: 'Authorization Failed',
                     messages: [result.message || `Failed to reset ${label.toLowerCase()}.`]
                 });
+                setShowValidationModal(true);
             }
-            setShowValidationModal(true);
-
-            // Clear grid if data was loaded
-            if (mode === 'loaded') {
-                setGridData([]);
-                setMode('idle');
-                setValidationResult(null);
-                setFilterType('all');
-            }
-
-            handleResetCancel();
         } catch (error: any) {
             setValidationModalContent({
                 title: 'Reset Error',
@@ -958,17 +955,6 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                     >
                         <AlertCircle className="w-5 h-5" />
                         Check Validation
-                    </button>
-                )}
-
-                {/* Reset */}
-                {gridData.length > 0 && (
-                    <button
-                        onClick={handleReset}
-                        disabled={isLoading}
-                        className="flex items-center gap-2 px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium disabled:opacity-50"
-                    >
-                        Reset
                     </button>
                 )}
 

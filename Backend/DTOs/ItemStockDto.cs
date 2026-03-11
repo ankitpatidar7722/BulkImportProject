@@ -76,6 +76,14 @@ public class WarehouseDto
     public string? BinName { get; set; }
 }
 
+public class ResetStockRequest
+{
+    public int ItemGroupId { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}
+
 public class ItemStockValidationRequest
 {
     public List<ItemStockEnrichedRow> Rows { get; set; } = new();

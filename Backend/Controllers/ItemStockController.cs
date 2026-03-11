@@ -100,15 +100,27 @@ public class ItemStockController : ControllerBase
     }
 
     [HttpPost("reset-item-stock")]
-    public async Task<IActionResult> ResetItemStock([FromQuery] int itemGroupId)
+    public async Task<IActionResult> ResetItemStock([FromBody] ResetStockRequest request)
     {
         try
         {
-            if (itemGroupId <= 0)
+            if (request.ItemGroupId <= 0)
                 return BadRequest(new { message = "itemGroupId is required" });
 
-            var result = await _itemStockService.ResetItemStockAsync(itemGroupId);
+            if (string.IsNullOrWhiteSpace(request.Username))
+                return BadRequest(new { message = "Username is required" });
+
+            var result = await _itemStockService.ResetItemStockAsync(
+                request.ItemGroupId, request.Username, request.Password, request.Reason);
             return Ok(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Ok(new ItemStockImportResult
+            {
+                Success = false,
+                Message = "Invalid username or password."
+            });
         }
         catch (Exception ex)
         {
@@ -117,15 +129,27 @@ public class ItemStockController : ControllerBase
     }
 
     [HttpPost("reset-floor-stock")]
-    public async Task<IActionResult> ResetFloorStock([FromQuery] int itemGroupId)
+    public async Task<IActionResult> ResetFloorStock([FromBody] ResetStockRequest request)
     {
         try
         {
-            if (itemGroupId <= 0)
+            if (request.ItemGroupId <= 0)
                 return BadRequest(new { message = "itemGroupId is required" });
 
-            var result = await _itemStockService.ResetFloorStockAsync(itemGroupId);
+            if (string.IsNullOrWhiteSpace(request.Username))
+                return BadRequest(new { message = "Username is required" });
+
+            var result = await _itemStockService.ResetFloorStockAsync(
+                request.ItemGroupId, request.Username, request.Password, request.Reason);
             return Ok(result);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Ok(new ItemStockImportResult
+            {
+                Success = false,
+                Message = "Invalid username or password."
+            });
         }
         catch (Exception ex)
         {

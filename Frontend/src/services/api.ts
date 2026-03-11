@@ -1051,13 +1051,13 @@ export const loadStockData = async (itemGroupId: number): Promise<ItemStockEnric
     return response.data;
 };
 
-export const resetItemStock = async (itemGroupId: number): Promise<ItemStockImportResult> => {
-    const response = await api.post('/itemstock/reset-item-stock', null, { params: { itemGroupId } });
+export const resetItemStock = async (itemGroupId: number, username: string, password: string, reason: string): Promise<ItemStockImportResult> => {
+    const response = await api.post('/itemstock/reset-item-stock', { itemGroupId, username, password, reason });
     return response.data;
 };
 
-export const resetFloorStock = async (itemGroupId: number): Promise<ItemStockImportResult> => {
-    const response = await api.post('/itemstock/reset-floor-stock', null, { params: { itemGroupId } });
+export const resetFloorStock = async (itemGroupId: number, username: string, password: string, reason: string): Promise<ItemStockImportResult> => {
+    const response = await api.post('/itemstock/reset-floor-stock', { itemGroupId, username, password, reason });
     return response.data;
 };
 
