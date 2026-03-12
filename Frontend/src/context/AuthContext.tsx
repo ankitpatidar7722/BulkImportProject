@@ -30,22 +30,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Hydrate from localStorage
-        const storedCompanyToken = localStorage.getItem('companyToken');
-        const storedAuthToken = localStorage.getItem('authToken');
-        const storedCompanyName = localStorage.getItem('companyName');
-        const storedUserName = localStorage.getItem('userName');
-        const storedFYear = localStorage.getItem('fYear');
-
-        if (storedAuthToken) {
-            setLoginStep(2);
-            setCompanyName(storedCompanyName || '');
-            setUserName(storedUserName || '');
-            setFYear(storedFYear || '');
-        } else if (storedCompanyToken) {
-            setLoginStep(1);
-            setCompanyName(storedCompanyName || '');
-        }
+        // Always start fresh from CompanyLogin on every page load / refresh
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('companyToken');
+        localStorage.removeItem('companyName');
+        localStorage.removeItem('userName');
+        localStorage.removeItem('fYear');
+        setLoginStep(0);
+        setCompanyName('');
+        setUserName('');
+        setFYear('');
         setIsLoading(false);
 
         // Listen for 401 Unauthorized events from API interceptor

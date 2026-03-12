@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import CompanyLogin from './pages/CompanyLogin';
 import Login from './components/Login';
 
 import Dashboard from './pages/Dashboard';
@@ -46,16 +47,27 @@ const AuthenticatedLayout = () => {
 
 // Gatekeeper Component
 const AuthGate = () => {
-    const { isAuthenticated, isLoading } = useAuth();
+    const { loginStep, isLoading } = useAuth();
 
     if (isLoading) {
-        return <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
+        return (
+            <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+            </div>
+        );
     }
 
-    if (!isAuthenticated) {
+    // Step 0: Company Login
+    if (loginStep === 0) {
+        return <CompanyLogin />;
+    }
+
+    // Step 1: User Login
+    if (loginStep === 1) {
         return <Login />;
     }
 
+    // Step 2: Fully authenticated → show app
     return <AuthenticatedLayout />;
 };
 
@@ -65,7 +77,6 @@ function App() {
             <AuthProvider>
                 <Router>
                     <AuthGate />
-
                 </Router>
             </AuthProvider>
         </ThemeProvider>

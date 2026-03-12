@@ -24,9 +24,8 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> CompanyLogin([FromBody] CompanyLoginRequest request)
     {
         var response = await _authService.CompanyLoginAsync(request);
-        if (!response.Success)
-            return Unauthorized(response);
-            
+        // Always return 200 — frontend checks response.Success
+        // Returning 401 here triggers the global auth interceptor (session expiry handler)
         return Ok(response);
     }
 
@@ -38,13 +37,11 @@ public class AuthController : ControllerBase
         var sessionIdClaim = User.FindFirst("sessionId")?.Value;
         if (string.IsNullOrEmpty(sessionIdClaim) || !Guid.TryParse(sessionIdClaim, out var sessionId))
         {
-            return Unauthorized(new { Message = "Invalid Session ID. Please re-login." });
+            return Ok(new UserLoginResponse { Success = false, Message = "Invalid Session ID. Please re-login." });
         }
 
         var response = await _authService.UserLoginAsync(request, sessionId);
-        if (!response.Success)
-            return Unauthorized(response);
-
+        // Always return 200 — frontend checks response.Success
         return Ok(response);
     }
     

@@ -569,6 +569,89 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         }
     };
 
+    // Rebuild all derived strings (ItemName, ItemSize, Caliper, WtPerPacking, TotalGSM) from current values
+    const rebuildDerivedFields = useCallback((item: any): any => {
+        const groupLower = (itemGroupName || '').toUpperCase();
+
+        if (groupLower === 'PAPER') {
+            // Caliper
+            if (item.gsm && item.gsm > 0) {
+                item.caliper = parseFloat((item.gsm / 1000).toFixed(3));
+            }
+            // ItemSize
+            if (item.sizeW && item.sizeW > 0 && item.sizeL && item.sizeL > 0) {
+                item.itemSize = `${item.sizeW} X ${item.sizeL}`;
+            }
+            // WtPerPacking
+            if (item.sizeW && item.sizeL && item.gsm && item.unitPerPacking) {
+                item.wtPerPacking = parseFloat(((item.sizeW * item.sizeL * item.gsm * item.unitPerPacking) / 1000000000).toFixed(9));
+            }
+            // ItemName
+            const parts: string[] = [];
+            if (item.quality) parts.push(item.quality);
+            if (item.gsm) parts.push(`${item.gsm} GSM`);
+            if (item.manufecturer) parts.push(item.manufecturer);
+            if (item.finish) parts.push(item.finish);
+            if (item.itemSize) parts.push(`${item.itemSize} MM`);
+            item.itemName = parts.join(' ');
+        } else if (groupLower === 'REEL') {
+            // Caliper
+            if (item.gsm && item.gsm > 0) {
+                item.caliper = parseFloat((item.gsm / 1000).toFixed(3));
+            }
+            // ItemName
+            const parts: string[] = [];
+            if (item.bf) parts.push(item.bf);
+            if (item.quality) parts.push(item.quality);
+            if (item.gsm) parts.push(`${item.gsm} GSM`);
+            if (item.manufecturer) parts.push(item.manufecturer);
+            if (item.finish) parts.push(item.finish);
+            if (item.sizeW) parts.push(item.sizeW.toString());
+            if (item.caliper) parts.push(item.caliper.toString());
+            item.itemName = parts.join(' ');
+        } else if (groupLower === 'INK & ADDITIVES') {
+            const parts: string[] = [];
+            if (item.itemType) parts.push(item.itemType);
+            if (item.inkColour) parts.push(item.inkColour);
+            if (item.pantoneCode) parts.push(item.pantoneCode);
+            item.itemName = parts.join(', ');
+        } else if (groupLower === 'VARNISHES & COATINGS') {
+            const parts: string[] = [];
+            if (item.itemType) parts.push(item.itemType);
+            if (item.quality) parts.push(item.quality);
+            item.itemName = parts.join(', ');
+        } else if (groupLower === 'LAMINATION FILM') {
+            const parts: string[] = [];
+            if (item.quality) parts.push(item.quality);
+            if (item.sizeW) parts.push(`${item.sizeW} MM`);
+            if (item.thickness) parts.push(`${item.thickness} MICRON`);
+            if (item.manufecturer) parts.push(item.manufecturer);
+            item.itemName = parts.join(', ');
+        } else if (groupLower === 'FOIL') {
+            const parts: string[] = [];
+            if (item.manufecturerItemCode) parts.push(item.manufecturerItemCode);
+            if (item.quality) parts.push(item.quality);
+            if (item.sizeW) parts.push(`${item.sizeW} mm`);
+            item.itemName = parts.join(', ');
+        } else if (groupLower === 'ROLL') {
+            // TotalGSM
+            item.totalGSM = (item.gsm || 0) + (item.releaseGSM || 0) + (item.adhesiveGSM || 0);
+            // ItemName
+            const parts: string[] = [];
+            if (item.quality) parts.push(item.quality);
+            if (item.gsm) parts.push(`${item.gsm} GSM`);
+            if (item.releaseGSM) parts.push(`${item.releaseGSM} GSM`);
+            if (item.adhesiveGSM) parts.push(`${item.adhesiveGSM} GSM`);
+            if (item.manufecturer) parts.push(item.manufecturer);
+            if (item.sizeW) parts.push(`${item.sizeW} MM`);
+            item.itemName = parts.join(', ');
+        } else if (groupLower === 'OTHER MATERIAL') {
+            item.itemName = item.quality || '';
+        }
+
+        return item;
+    }, [itemGroupName]);
+
     // Reusable: clean item data for API — extracts invalid numeric/bool values into rawValues
     const cleanItemDataForApi = useCallback((data: any[]) => {
         const numericFields = new Set([
@@ -751,8 +834,9 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 });
             }, 800);
 
-            // 3. Bulk Import
+            // 3. Bulk Import — rebuild all derived strings from current validated/corrected values
             const cleanedData = cleanItemDataForApi(itemData);
+            cleanedData.forEach((item: any) => rebuildDerivedFields(item));
 
             // Use try/catch so we can read the response body even on non-2xx status
             let importRes: any = null;
@@ -2118,6 +2202,72 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 if (item.sizeW) parts.push(`${item.sizeW} MM`);
 
                 item.itemName = parts.join(', ');
+            }
+        }
+
+        // INK & ADDITIVES Calculations - Excel-like live updates
+        if (itemGroupName === 'INK & ADDITIVES') {
+            const changedField = params.colDef.field;
+
+            // Recalculate ItemName (ItemType, InkColour, PantoneCode)
+            if (['itemType', 'inkColour', 'pantoneCode'].includes(changedField)) {
+                const parts = [];
+                if (item.itemType) parts.push(item.itemType);
+                if (item.inkColour) parts.push(item.inkColour);
+                if (item.pantoneCode) parts.push(item.pantoneCode);
+                item.itemName = parts.join(', ');
+            }
+        }
+
+        // VARNISHES & COATINGS Calculations - Excel-like live updates
+        if (itemGroupName === 'VARNISHES & COATINGS') {
+            const changedField = params.colDef.field;
+
+            // Recalculate ItemName (ItemType, Quality)
+            if (['itemType', 'quality'].includes(changedField)) {
+                const parts = [];
+                if (item.itemType) parts.push(item.itemType);
+                if (item.quality) parts.push(item.quality);
+                item.itemName = parts.join(', ');
+            }
+        }
+
+        // LAMINATION FILM Calculations - Excel-like live updates
+        if (itemGroupName === 'LAMINATION FILM') {
+            const changedField = params.colDef.field;
+
+            // Recalculate ItemName (Quality, SizeW MM, Thickness MICRON, Manufacturer)
+            if (['quality', 'sizeW', 'thickness', 'manufecturer'].includes(changedField)) {
+                const parts = [];
+                if (item.quality) parts.push(item.quality);
+                if (item.sizeW) parts.push(`${item.sizeW} MM`);
+                if (item.thickness) parts.push(`${item.thickness} MICRON`);
+                if (item.manufecturer) parts.push(item.manufecturer);
+                item.itemName = parts.join(', ');
+            }
+        }
+
+        // FOIL Calculations - Excel-like live updates
+        if (itemGroupName === 'FOIL') {
+            const changedField = params.colDef.field;
+
+            // Recalculate ItemName (ManufacturerItemCode, Quality, SizeW mm)
+            if (['manufecturerItemCode', 'quality', 'sizeW'].includes(changedField)) {
+                const parts = [];
+                if (item.manufecturerItemCode) parts.push(item.manufecturerItemCode);
+                if (item.quality) parts.push(item.quality);
+                if (item.sizeW) parts.push(`${item.sizeW} mm`);
+                item.itemName = parts.join(', ');
+            }
+        }
+
+        // OTHER MATERIAL Calculations - Excel-like live updates
+        if (itemGroupName === 'OTHER MATERIAL') {
+            const changedField = params.colDef.field;
+
+            // Recalculate ItemName (Quality)
+            if (changedField === 'quality') {
+                item.itemName = item.quality || '';
             }
         }
 

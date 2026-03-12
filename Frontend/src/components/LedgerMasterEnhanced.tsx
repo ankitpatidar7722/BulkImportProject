@@ -886,21 +886,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                         creditDays = String(row.CreditDays);
                     }
 
-                    const legalName = row.MailingName;
-
-                    const addressParts = [row.Address1, row.Address2, row.Address3].filter(p => p && p.toString().trim() !== '');
-
-                    const cityPinParts = [];
-                    if (row.City && row.City.toString().trim() !== '') cityPinParts.push(row.City);
-                    if (row.Pincode && row.Pincode.toString().trim() !== '') cityPinParts.push(row.Pincode);
-                    if (cityPinParts.length > 0) addressParts.push(cityPinParts.join('-'));
-
-                    const stateCountryParts = [];
-                    if (state && state.toString().trim() !== '') stateCountryParts.push(state);
-                    if (country && country.toString().trim() !== '') stateCountryParts.push(country);
-                    if (stateCountryParts.length > 0) addressParts.push(stateCountryParts.join(' - '));
-
-                    const mailingAddress = addressParts.join(', ');
+                    // LegalName and MailingAddress are NOT generated here at upload time.
+                    // They will be regenerated at Save Data time using validated/corrected values.
 
                     // Helper to safely convert to string
                     const toStr = (v: any) => (v !== undefined && v !== null && v !== '') ? String(v) : undefined;
@@ -909,8 +896,8 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                         ledgerGroupID: ledgerGroupId,
                         ledgerName: toStr(row.LedgerName),
                         mailingName: toStr(row.MailingName),
-                        legalName: toStr(legalName),
-                        mailingAddress: mailingAddress,
+                        legalName: '', // Will be regenerated at Save Data time
+                        mailingAddress: '', // Will be regenerated at Save Data time
                         address1: toStr(row.Address1),
                         address2: toStr(row.Address2),
                         address3: toStr(row.Address3),
@@ -960,6 +947,24 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         };
         reader.readAsBinaryString(file);
     };
+
+    // Build MailingAddress string from individual address fields (used at Save Data time)
+    const buildMailingAddress = useCallback((item: any): string => {
+        const addressParts = [item.address1, item.address2, item.address3]
+            .filter((p: any) => p && p.toString().trim() !== '');
+
+        const cityPinParts: string[] = [];
+        if (item.city && item.city.toString().trim() !== '') cityPinParts.push(item.city);
+        if (item.pincode && item.pincode.toString().trim() !== '') cityPinParts.push(item.pincode);
+        if (cityPinParts.length > 0) addressParts.push(cityPinParts.join('-'));
+
+        const stateCountryParts: string[] = [];
+        if (item.state && item.state.toString().trim() !== '') stateCountryParts.push(item.state);
+        if (item.country && item.country.toString().trim() !== '') stateCountryParts.push(item.country);
+        if (stateCountryParts.length > 0) addressParts.push(stateCountryParts.join(' - '));
+
+        return addressParts.join(', ');
+    }, []);
 
     // Reusable: clean ledger data for API — extracts invalid numeric/bool values into rawValues
     const cleanLedgerDataForApi = useCallback((data: any[]) => {
@@ -1127,6 +1132,11 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             let importRes: any;
             try {
                 const cleanedForImport = cleanLedgerDataForApi(ledgerData);
+                // Regenerate derived strings at save time using validated/corrected values
+                cleanedForImport.forEach((item: any) => {
+                    item.mailingAddress = buildMailingAddress(item);
+                    item.legalName = item.mailingName || item.ledgerName || '';
+                });
                 importRes = await importLedgers(cleanedForImport, ledgerGroupId);
             } finally {
                 clearInterval(animInterval);

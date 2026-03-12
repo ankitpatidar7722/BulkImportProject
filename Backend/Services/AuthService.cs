@@ -28,21 +28,24 @@ public class AuthService : IAuthService
 
         using var conn = new SqlConnection(indusConnString);
         
-        // Query to match legacy CompanyLogin.aspx logic
-        var appName = _config["AppSettings:ApplicationName"] ?? "estimoprime";
-
+        // Query to match company credentials
+        // ApplicationName filter removed — this tool works with all application types (estimoprime, PrintudeERP, etc.)
         var query = @"
-            SELECT CompanyUserID, Password, Conn_String, CompanyName 
-            FROM Indus_Company_Authentication_For_Web_Modules 
-            WHERE CompanyUserID = @User AND ISNULL(Password, '') = @Pass
-            AND ISNULL(NULLIF(ApplicationName, ''), 'estimoprime') = @AppName";
+            SELECT TOP 1 CompanyUserID, Password, Conn_String, CompanyName
+            FROM Indus_Company_Authentication_For_Web_Modules
+            WHERE CompanyUserID = @User AND ISNULL(Password, '') = @Pass";
 
-        var result = await conn.QueryFirstOrDefaultAsync<dynamic>(query, new { User = request.CompanyUserID, Pass = request.Password, AppName = appName });
+        Console.WriteLine($"[CompanyLogin] User={request.CompanyUserID}, IndusDB={indusConnString}");
+
+        var result = await conn.QueryFirstOrDefaultAsync<dynamic>(query, new { User = request.CompanyUserID, Pass = request.Password });
 
         if (result == null)
         {
+            Console.WriteLine($"[CompanyLogin] FAILED - No matching row for User={request.CompanyUserID}");
             return new CompanyLoginResponse { Success = false, Message = "Invalid Company UserID or Password" };
         }
+
+        Console.WriteLine($"[CompanyLogin] SUCCESS - Matched CompanyUserID={result.CompanyUserID}, CompanyName={result.CompanyName}");
 
         string connString = result.Conn_String;
         string companyName = result.CompanyName;
