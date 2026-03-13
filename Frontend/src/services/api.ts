@@ -41,11 +41,37 @@ export interface ModuleDto {
     moduleHeadName?: string;
     moduleDisplayName?: string;
     description?: string;
-    // New Fields
+    // Display Fields
     moduleHeadDisplayName?: string;
     moduleHeadDisplayOrder?: number;
     moduleDisplayOrder?: number;
     setGroupIndex?: number;
+    // Print Fields
+    printDocumentWebPage?: string;
+    printDocumentName?: string;
+    printDocumentWebPage1?: string;
+    printDocumentName1?: string;
+    // System Fields
+    companyID?: number;
+    userID?: number;
+    fYear?: string;
+}
+
+export interface IndusModuleInfoDto {
+    moduleName: string;
+    moduleDisplayName?: string;
+    moduleHeadName?: string;
+    moduleHeadDisplayName?: string;
+    setGroupIndex?: number;
+    suggestedHeadDisplayOrder?: number;
+}
+
+export interface ModuleSystemDefaultsDto {
+    companyID: number;
+    userID: number;
+    fYear: string;
+    suggestedHeadDisplayOrder: number;
+    suggestedDisplayOrder: number;
 }
 
 export const getAllModules = async (): Promise<ModuleDto[]> => {
@@ -69,6 +95,36 @@ export const deleteModule = async (moduleId: number): Promise<void> => {
 export const getModuleHeads = async (): Promise<string[]> => {
     const response = await api.get('/module/GetHeads');
     return response.data;
+};
+
+export const getIndusModuleNames = async (): Promise<string[]> => {
+    const response = await api.get('/module/IndusModuleNames');
+    return response.data;
+};
+
+export const getIndusModuleInfo = async (moduleName: string): Promise<IndusModuleInfoDto> => {
+    const response = await api.get(`/module/IndusModuleInfo?moduleName=${encodeURIComponent(moduleName)}`);
+    return response.data;
+};
+
+export const getModuleSystemDefaults = async (): Promise<ModuleSystemDefaultsDto> => {
+    const response = await api.get('/module/SystemDefaults');
+    return response.data;
+};
+
+export const getNextDisplayOrder = async (setGroupIndex: number): Promise<number> => {
+    const response = await api.get(`/module/NextDisplayOrder?setGroupIndex=${setGroupIndex}`);
+    return response.data.nextOrder;
+};
+
+export const checkModuleExists = async (moduleName: string): Promise<boolean> => {
+    const response = await api.get(`/module/CheckModuleExists?moduleName=${encodeURIComponent(moduleName)}`);
+    return response.data.exists;
+};
+
+export const checkDisplayOrderExists = async (order: number, setGroupIndex: number): Promise<boolean> => {
+    const response = await api.get(`/module/CheckDisplayOrderExists?order=${order}&setGroupIndex=${setGroupIndex}`);
+    return response.data.exists;
 };
 
 export interface ExcelPreviewDto {
@@ -1166,5 +1222,32 @@ export const getHSNCount = async (companyId: number = 2): Promise<number> => {
     } catch {
         return 0;
     }
+};
+
+// ==========================================
+// MODULE AUTHORITY API
+// ==========================================
+
+export interface ModuleAuthorityRowDto {
+    moduleHeadName: string;
+    moduleDisplayName: string;
+    status: boolean;
+    existsInLoginDb: boolean;
+}
+
+export interface ModuleAuthoritySaveDto {
+    moduleHeadName: string;
+    moduleDisplayName: string;
+    status: boolean;
+}
+
+export const getModuleAuthorityData = async (product: string): Promise<ModuleAuthorityRowDto[]> => {
+    const response = await api.get(`/moduleauthority/GetData?product=${encodeURIComponent(product)}`);
+    return response.data;
+};
+
+export const saveModuleAuthority = async (product: string, modules: ModuleAuthoritySaveDto[]): Promise<{ inserted: number; enabled: number; disabled: number; total: number }> => {
+    const response = await api.post('/moduleauthority/Save', { product, modules });
+    return response.data;
 };
 

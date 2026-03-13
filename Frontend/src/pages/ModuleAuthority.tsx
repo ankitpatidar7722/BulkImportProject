@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import DataGrid, {
     Column,
     Paging,
@@ -18,12 +19,10 @@ import { useMessageModal } from '../components/MessageModal';
 import 'devextreme/dist/css/dx.light.css';
 
 const ModuleAuthority: React.FC = () => {
+    const navigate = useNavigate();
     const { showMessage, ModalRenderer } = useMessageModal();
     const [modules, setModules] = useState<ModuleDto[]>([]);
     const [moduleHeads, setModuleHeads] = useState<string[]>([]);
-    const [isPopupVisible, setIsPopupVisible] = useState(false);
-    const [formData, setFormData] = useState<ModuleDto>({} as ModuleDto);
-    const [isNewRecord, setIsNewRecord] = useState(true);
 
     useEffect(() => {
         loadData();
@@ -47,21 +46,15 @@ const ModuleAuthority: React.FC = () => {
             options: {
                 icon: 'add',
                 text: 'Create Module',
-                onClick: () => {
-                    setFormData({} as ModuleDto);
-                    setIsNewRecord(true);
-                    setIsPopupVisible(true);
-                }
+                type: 'success',
+                onClick: () => navigate('/create-module'),
             }
         });
     };
 
-    // We use the grid's built-in edit button to trigger our custom popup
     const onEditingStart = (e: any) => {
         e.cancel = true; // Cancel internal edit mode
-        setFormData({ ...e.data });
-        setIsNewRecord(false);
-        setIsPopupVisible(true);
+        navigate('/create-module', { state: { moduleData: e.data } });
     };
 
     const onRowRemoving = async (e: any) => {
@@ -76,203 +69,93 @@ const ModuleAuthority: React.FC = () => {
         }
     };
 
-    const handleSave = async () => {
-        try {
-            if (isNewRecord) {
-                await createModule(formData);
-                showMessage('success', 'Module Created', 'The new module has been created successfully.');
-            } else {
-                await updateModule(formData);
-                showMessage('success', 'Module Updated', 'The module has been updated successfully.');
-            }
-            setIsPopupVisible(false);
-            loadData();
-        } catch (error) {
-            console.error(error);
-            showMessage('error', 'Save Failed', 'Failed to save the module. Please check your inputs and try again.');
-        }
-    };
-
-    const handleFieldChange = (field: keyof ModuleDto, value: any) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
-    };
-
     return (
         <div className="p-8 space-y-8 bg-gray-50 dark:bg-[#020617] min-h-screen">
             {ModalRenderer}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Module Authority</h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1">Manage system modules and hierarchy.</p>
+                <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-3xl">Active Modules</h1>
+                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 max-w-2xl">
+                    View, manage, and arrange all system modules. Drag headers to group, or use the toolbar to find specific entries.
+                </p>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm">
+            <div className="bg-white dark:bg-[#0f172a] p-1 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
                 <DataGrid
                     dataSource={modules}
-                    showBorders={true}
+                    keyExpr="moduleId"
+                    showBorders={false}
+                    showRowLines={true}
+                    showColumnLines={false}
                     rowAlternationEnabled={true}
+                    hoverStateEnabled={true}
+                    focusedRowEnabled={true}
+                    columnAutoWidth={false}
+                    wordWrapEnabled={true}
                     onToolbarPreparing={handleToolbarPreparing}
                     onEditingStart={onEditingStart}
                     onRowRemoving={onRowRemoving}
+                    className="custom-datagrid"
                 >
-                    <Paging defaultPageSize={10} />
-                    <Pager showPageSizeSelector={true} allowedPageSizes={[10, 25, 50, 100]} showInfo={true} />
-                    <SearchPanel visible={true} highlightCaseSensitive={true} />
+                    <Paging defaultPageSize={15} />
+                    <Pager 
+                        showPageSizeSelector={true} 
+                        allowedPageSizes={[10, 15, 25, 50, 100]} 
+                        showInfo={true} 
+                        showNavigationButtons={true} 
+                    />
+                    
+                    <SearchPanel visible={true} width={280} placeholder="Search modules..." />
                     <FilterRow visible={true} />
                     <HeaderFilter visible={true} />
-                    <Grouping autoExpandAll={false} />
-                    <GroupPanel visible={true} />
-                    <ColumnChooser enabled={true} />
+                    
+                    <Grouping autoExpandAll={false} contextMenuEnabled={true} expandMode="rowClick" />
+                    <GroupPanel visible={true} emptyPanelText="Drag a column header here to group modules" />
+                    <ColumnChooser enabled={true} mode="select" />
+                    
                     <Editing
                         mode="popup"
                         allowUpdating={true}
                         allowDeleting={true}
-                        allowAdding={false} // We typically use toolbar button for Add
+                        allowAdding={false}
+                        useIcons={true}
                     />
 
-                    <Column dataField="moduleName" caption="Module Name" />
-                    <Column dataField="moduleDisplayName" caption="Display Name" />
-                    <Column dataField="moduleHeadName" caption="Head Name" groupIndex={0} />
-                    <Column dataField="setGroupIndex" caption="Group Index" />
+                    <Column 
+                        dataField="moduleName" 
+                        caption="Module Name" 
+                        minWidth={250}
+                        cellRender={(config) => (
+                            <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                <span className="font-medium text-gray-800 dark:text-gray-200">{config.value}</span>
+                            </div>
+                        )}
+                    />
+                    <Column dataField="moduleDisplayName" caption="Display Name" minWidth={200} />
+                    <Column 
+                        dataField="moduleHeadName" 
+                        caption="Head Name" 
+                        groupIndex={0} 
+                        minWidth={200} 
+                    />
+                    <Column 
+                        dataField="setGroupIndex" 
+                        caption="Group Index" 
+                        alignment="center"
+                        width={120}
+                        cellRender={(config) => (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+                                {config.value ?? '—'}
+                            </span>
+                        )}
+                    />
 
                     {/* Hidden columns available in chooser */}
                     <Column dataField="moduleHeadDisplayName" caption="Head Display Name" visible={false} />
                     <Column dataField="moduleDisplayOrder" caption="Display Order" visible={false} />
+                    <Column dataField="moduleHeadDisplayOrder" caption="Head Display Order" visible={false} />
                 </DataGrid>
             </div>
-
-            <Popup
-                visible={isPopupVisible}
-                onHiding={() => setIsPopupVisible(false)}
-                dragEnabled={true}
-                closeOnOutsideClick={false}
-                showTitle={true}
-                title={isNewRecord ? "Create Module" : "Edit Module"}
-                width={700}
-                height={600}
-            >
-                <div className="p-4 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                        {/* Module Name */}
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium">Module Name</label>
-                            <input
-                                type="text"
-                                className="w-full px-3 py-2 border rounded-lg"
-                                value={formData.moduleName || ''}
-                                onChange={(e) => handleFieldChange('moduleName', e.target.value)}
-                            />
-                        </div>
-
-                        {/* Module Display Name */}
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium">Module Display Name</label>
-                            <input
-                                type="text"
-                                className="w-full px-3 py-2 border rounded-lg"
-                                value={formData.moduleDisplayName || ''}
-                                onChange={(e) => handleFieldChange('moduleDisplayName', e.target.value)}
-                            />
-                        </div>
-
-                        {/* Module Head Name (Dropdown + Custom) */}
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium">Module Head Name</label>
-                            <SelectBox
-                                items={moduleHeads}
-                                value={formData.moduleHeadName}
-                                onValueChanged={(e) => {
-                                    const selectedHeadName = e.value;
-                                    handleFieldChange('moduleHeadName', selectedHeadName);
-
-                                    // Logic to auto-populate and disable SetGroupIndex
-                                    const existingModule = modules.find(m => m.moduleHeadName === selectedHeadName);
-                                    if (existingModule && existingModule.setGroupIndex !== undefined) {
-                                        handleFieldChange('setGroupIndex', existingModule.setGroupIndex);
-                                        // We can't easily lock a single field via state if not tracked separately, 
-                                        // but we can check existence during render or use a new state variable.
-                                        // For simplicity in this `replace_file_content`, I'll assume we add the state logic next/simultaneously 
-                                        // or handle it via a derived property if possible. 
-                                        // ACTUALLY, I should have added the state in `onEditingStart` or `useEffect`.
-                                        // Let's do it properly by updating the `handleFieldChange` to logic inside the component body 
-                                        // but since this is a specific handler, let's keep it here.
-                                    } else {
-                                        // New head name, clear setGroupIndex and allow edit
-                                        handleFieldChange('setGroupIndex', 0); // Or undefined/null
-                                    }
-                                }}
-                                acceptCustomValue={true}
-                                searchEnabled={true}
-                                placeholder="Select or type..."
-                            />
-                        </div>
-
-                        {/* Module Head Display Name (Dropdown + Custom - assuming similar to HeadName) */}
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium">Module Head Display Name</label>
-                            <SelectBox
-                                items={moduleHeads} // Usually correlated, but reusing heads list or plain text
-                                value={formData.moduleHeadDisplayName}
-                                onValueChanged={(e) => handleFieldChange('moduleHeadDisplayName', e.value)}
-                                acceptCustomValue={true}
-                                searchEnabled={true}
-                                placeholder="Select or type..."
-                            />
-                        </div>
-
-                        {/* Module Head Display Order */}
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium">Module Head Display Order</label>
-                            <input
-                                type="number"
-                                className="w-full px-3 py-2 border rounded-lg"
-                                value={formData.moduleHeadDisplayOrder || ''}
-                                onChange={(e) => handleFieldChange('moduleHeadDisplayOrder', parseInt(e.target.value))}
-                            />
-                        </div>
-
-                        {/* Module Display Order */}
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium">Module Display Order</label>
-                            <input
-                                type="number"
-                                className="w-full px-3 py-2 border rounded-lg"
-                                value={formData.moduleDisplayOrder || ''}
-                                onChange={(e) => handleFieldChange('moduleDisplayOrder', parseInt(e.target.value))}
-                            />
-                        </div>
-
-                        {/* Set Group Index */}
-                        <div className="space-y-1">
-                            <label className="text-sm font-medium">Set Group Index</label>
-                            <input
-                                type="number"
-                                className={`w-full px-3 py-2 border rounded-lg ${modules.some(m => m.moduleHeadName === formData.moduleHeadName)
-                                    ? 'bg-gray-100 cursor-not-allowed'
-                                    : ''
-                                    }`}
-                                value={formData.setGroupIndex || ''}
-                                onChange={(e) => handleFieldChange('setGroupIndex', parseInt(e.target.value))}
-                                disabled={modules.some(m => m.moduleHeadName === formData.moduleHeadName)}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
-                        <button
-                            onClick={() => setIsPopupVisible(false)}
-                            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleSave}
-                            className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-                        >
-                            Save
-                        </button>
-                    </div>
-                </div>
-            </Popup>
         </div>
     );
 };

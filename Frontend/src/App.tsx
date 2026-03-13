@@ -14,6 +14,8 @@ import ImportMaster from './pages/ImportMaster';
 import StockUpload from './pages/StockUpload';
 import CompanyMaster from './pages/CompanyMaster';
 import ModuleAuthority from './pages/ModuleAuthority';
+import CreateModule from './pages/CreateModule';
+import DynamicModule from './pages/DynamicModule';
 
 // Authenticated Layout Component
 const AuthenticatedLayout = () => {
@@ -37,6 +39,8 @@ const AuthenticatedLayout = () => {
                         <Route path="/stock-upload" element={<StockUpload />} />
                         <Route path="/company-master" element={<CompanyMaster />} />
                         <Route path="/module-authority" element={<ModuleAuthority />} />
+                        <Route path="/create-module" element={<CreateModule />} />
+                        <Route path="/dynamic-module" element={<DynamicModule />} />
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                 </main>

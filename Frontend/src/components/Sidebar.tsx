@@ -6,6 +6,7 @@ import {
     PackageOpen,
     Building2,
     ShieldCheck,
+    Layers,
     X,
     ChevronsLeft,
     ChevronsRight
@@ -27,7 +28,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
         { name: 'Import Master', path: '/import-master', icon: Upload },
         { name: 'Stock Upload', path: '/stock-upload', icon: PackageOpen },
         { name: 'Company Master', path: '/company-master', icon: Building2 },
-        { name: 'Module Authority', path: '/module-authority', icon: ShieldCheck },
+        { name: 'New Module Addition', path: '/module-authority', icon: ShieldCheck },
+        { name: 'Module Authority', path: '/dynamic-module', icon: Layers },
     ];
 
     return (
