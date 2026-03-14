@@ -265,7 +265,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             // ─── 7. Bulk INSERT SpareTransactionDetail ───────────────────────────
             var detailTable = new System.Data.DataTable();
             detailTable.Columns.Add("TransID", typeof(int));
-            detailTable.Columns.Add("SparePartID", typeof(int));
+            detailTable.Columns.Add("SpareID", typeof(int));
             detailTable.Columns.Add("SpareGroupID", typeof(int));
             detailTable.Columns.Add("ReceiptQuantity", typeof(decimal));
             detailTable.Columns.Add("NewStockQuantity", typeof(decimal));
@@ -547,7 +547,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         var rows = await _connection.QueryAsync<SparePartStockEnrichedRow>(
             @"SELECT
                 sp.SparePartName,
-                d.SparePartID AS SpareID,
+                d.SpareID AS SpareID,
                 d.ReceiptQuantity,
                 d.PurchaseRate,
                 d.BatchNo,
@@ -556,7 +556,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                 wm.BinName,
                 CAST(1 AS BIT) AS IsValid
               FROM SpareTransactionDetail d
-              INNER JOIN SparePartMaster sp ON d.SparePartID = sp.SparePartID
+              INNER JOIN SparePartMaster sp ON d.SpareID = sp.SparePartID
               LEFT JOIN WarehouseMaster wm ON d.WarehouseID = wm.WarehouseID
               INNER JOIN SpareTransactionMain m ON d.TransactionID = m.TransactionID
               WHERE d.CompanyID = 2
