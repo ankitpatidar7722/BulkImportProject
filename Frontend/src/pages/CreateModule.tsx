@@ -877,7 +877,7 @@ const cssStyles = `
     background: #fff;
     border: 1px solid #e5e7eb;
     border-radius: 16px;
-    overflow: hidden;
+    overflow: visible;
     box-shadow: 0 1px 6px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
     transition: box-shadow 0.2s ease;
 }

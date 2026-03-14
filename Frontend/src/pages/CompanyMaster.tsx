@@ -1,7 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Save, Edit2, Loader2 } from 'lucide-react';
+import { Building2, Save, Edit2, Loader2, X } from 'lucide-react';
 import { getCompany, updateCompany, CompanyDto } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
+
+// ─── Reusable Components ────────────────────────────────────────────────────
+
+function Toggle({ name, checked, onChange }: { name: string; checked: boolean; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
+    return (
+        <label className="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" name={name} checked={checked} onChange={onChange} className="sr-only peer" />
+            <div className="w-10 h-5 bg-gray-300 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-400 rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 transition-colors" />
+        </label>
+    );
+}
+
+function StatusBadge({ value }: { value: boolean }) {
+    return (
+        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full ${value ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'}`}>
+            {value ? '✓ Enabled' : '✕ Disabled'}
+        </span>
+    );
+}
+
+// ─── Main Component ─────────────────────────────────────────────────────────
 
 const CompanyMaster: React.FC = () => {
     const { showMessage, ModalRenderer } = useMessageModal();
@@ -12,9 +33,7 @@ const CompanyMaster: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [activeTab, setActiveTab] = useState(0);
 
-    useEffect(() => {
-        fetchCompany();
-    }, []);
+    useEffect(() => { fetchCompany(); }, []);
 
     const fetchCompany = async () => {
         try {
@@ -29,15 +48,8 @@ const CompanyMaster: React.FC = () => {
         }
     };
 
-    const handleEdit = () => {
-        setIsEditing(true);
-        setFormData({ ...company! });
-    };
-
-    const handleCancel = () => {
-        setIsEditing(false);
-        setFormData({ ...company! });
-    };
+    const handleEdit = () => { setIsEditing(true); setFormData({ ...company! }); };
+    const handleCancel = () => { setIsEditing(false); setFormData({ ...company! }); };
 
     const handleSave = async () => {
         if (!formData) return;
@@ -60,179 +72,175 @@ const CompanyMaster: React.FC = () => {
         setFormData(prev => {
             if (!prev) return null;
             let finalValue: any = value;
-
-            if (type === 'checkbox') {
-                finalValue = (e.target as HTMLInputElement).checked;
-            } else if (type === 'number') {
-                finalValue = value === '' ? null : parseFloat(value);
-            }
-
+            if (type === 'checkbox') finalValue = (e.target as HTMLInputElement).checked;
+            else if (type === 'number') finalValue = value === '' ? null : parseFloat(value);
             return { ...prev, [name]: finalValue };
         });
     };
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center h-screen text-gray-500">
-                <Loader2 className="w-8 h-8 animate-spin" />
+            <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-[#020617]">
+                <div className="text-center space-y-3">
+                    <Loader2 className="w-10 h-10 animate-spin text-blue-500 mx-auto" />
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Loading company details...</p>
+                </div>
             </div>
         );
     }
 
     if (!company || !formData) return null;
 
+    // ── Tab Definitions ───────────────────────────────────────────────
     const tabs = [
-        { id: 0, label: 'Basic Info', icon: '🏢', color: 'blue' },
-        { id: 1, label: 'Tax & Statutory', icon: '🧾', color: 'green' },
-        { id: 2, label: 'Bank Details', icon: '🏦', color: 'purple' },
-        { id: 3, label: 'Approvals', icon: '✅', color: 'orange' },
-        { id: 4, label: 'Domain Settings', icon: '⚙️', color: 'indigo' },
-        { id: 5, label: 'Estimation', icon: '🧮', color: 'pink' },
-        { id: 6, label: 'Printing/RDLC', icon: '🖨️', color: 'cyan' },
-        { id: 7, label: 'Production', icon: '🏭', color: 'red' },
-        { id: 8, label: 'API/Integration', icon: '🌐', color: 'teal' },
-        { id: 9, label: 'Time Settings', icon: '🕒', color: 'amber' },
-        { id: 10, label: 'Security/OTP', icon: '🔐', color: 'violet' },
-        { id: 11, label: 'References', icon: '🏷️', color: 'lime' },
-        { id: 12, label: 'Currency', icon: '💱', color: 'emerald' },
-        { id: 13, label: 'Miscellaneous', icon: '📝', color: 'slate' },
+        { id: 0,  label: 'Company Info',        icon: '🏢' },
+        { id: 1,  label: 'Production Unit',     icon: '🏭' },
+        { id: 2,  label: 'Tax Config',          icon: '🧾' },
+        { id: 3,  label: 'Estimation',          icon: '🧮' },
+        { id: 4,  label: 'Domain Features',     icon: '⚙️'  },
+        { id: 5,  label: 'Approvals',           icon: '✅' },
+        { id: 6,  label: 'Production Settings', icon: '🔩' },
+        { id: 7,  label: 'System Config',       icon: '🌐' },
+        { id: 8,  label: 'Workflow',            icon: '🔄' },
+        { id: 9,  label: 'Communication',       icon: '💬' },
+        { id: 10, label: 'Client Comm.',        icon: '📢' },
+        { id: 11, label: 'Printing & Docs',     icon: '🖨️' },
+        { id: 12, label: 'Prefixes',            icon: '🏷️' },
     ];
 
-    const renderField = (label: string, name: keyof CompanyDto, type: 'text' | 'email' | 'number' | 'date' | 'checkbox' | 'textarea' = 'text') => {
-        const value = formData[name];
-        const displayValue = company[name];
-
-        if (type === 'checkbox') {
-            return (
-                <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-[#1e293b] border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-700 transition-all">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">{label}</label>
-                    {isEditing ? (
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                                type="checkbox"
-                                name={name}
-                                checked={!!value}
-                                onChange={handleChange}
-                                className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                        </label>
-                    ) : (
-                        <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${value ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'}`}>
-                            {value ? '✓ Enabled' : '✗ Disabled'}
-                        </div>
-                    )}
-                </div>
-            );
-        }
-
+    // ── Render Helpers ────────────────────────────────────────────────
+    const F = (label: string, name: keyof CompanyDto, type: 'text' | 'email' | 'number' | 'textarea' | 'password' = 'text', required = false) => {
+        const val = formData[name];
+        const dispVal = company[name];
         return (
             <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">{label}</label>
+                <label className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    {label}
+                    {required && <span className="text-red-500">*</span>}
+                </label>
                 {isEditing ? (
                     type === 'textarea' ? (
                         <textarea
                             name={name}
-                            value={value as string || ''}
+                            value={val as string || ''}
                             onChange={handleChange}
-                            rows={2}
+                            rows={3}
                             placeholder={`Enter ${label.toLowerCase()}`}
-                            className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all"
+                            className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all resize-none"
                         />
                     ) : (
                         <input
                             type={type}
                             name={name}
-                            value={value as string || ''}
+                            value={val as string || ''}
                             onChange={handleChange}
                             placeholder={`Enter ${label.toLowerCase()}`}
                             className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all"
                         />
                     )
                 ) : (
-                    <p className="text-sm font-medium text-gray-900 dark:text-white bg-gray-50 dark:bg-[#1e293b] px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 min-h-[38px] flex items-center">
-                        {displayValue ? String(displayValue) : <span className="text-gray-400 italic">Not set</span>}
+                    <p className="text-sm font-medium text-gray-900 dark:text-white bg-gray-50 dark:bg-[#1e293b] px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800 min-h-[38px] flex items-center">
+                        {dispVal ? String(dispVal) : <span className="text-gray-400 italic text-xs">Not set</span>}
                     </p>
                 )}
             </div>
         );
     };
 
-    const renderSection = (title: string, children: React.ReactNode, icon?: string) => {
+    const T = (label: string, name: keyof CompanyDto) => {
+        const val = formData[name];
+        const dispVal = company[name];
         return (
-            <div className="bg-white dark:bg-[#0f172a] rounded-xl border border-gray-200 dark:border-gray-800 p-5 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200 dark:border-gray-800">
-                    {icon && <span className="text-xl">{icon}</span>}
-                    <h4 className="text-base font-bold text-gray-800 dark:text-white">{title}</h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {children}
-                </div>
+            <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-[#1e293b] border border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-200 dark:hover:border-blue-800 transition-all group">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">{label}</span>
+                {isEditing
+                    ? <Toggle name={name} checked={!!val} onChange={handleChange} />
+                    : <StatusBadge value={!!dispVal} />
+                }
             </div>
         );
     };
 
+    const Section = ({ title, icon, children, cols = 2 }: { title: string; icon: string; children: React.ReactNode; cols?: 1 | 2 | 3 }) => (
+        <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+            <div className="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border-b border-gray-100 dark:border-gray-800">
+                <span className="text-lg">{icon}</span>
+                <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-tight">{title}</h4>
+            </div>
+            <div className={`p-5 grid grid-cols-1 ${cols === 2 ? 'md:grid-cols-2' : cols === 3 ? 'md:grid-cols-3' : ''} gap-4`}>
+                {children}
+            </div>
+        </div>
+    );
+
+    const ToggleGrid = ({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) => (
+        <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+            <div className="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border-b border-gray-100 dark:border-gray-800">
+                <span className="text-lg">{icon}</span>
+                <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-tight">{title}</h4>
+            </div>
+            <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                {children}
+            </div>
+        </div>
+    );
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-[#020617] dark:to-[#0f172a]">
+        <div className="min-h-screen bg-gray-50 dark:bg-[#020617]">
             {ModalRenderer}
-            {/* Fixed Header */}
-            <div className="sticky top-0 z-20 bg-white dark:bg-[#0f172a] border-b border-gray-200 dark:border-gray-800 shadow-sm">
-                <div className="px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="p-2.5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
-                                <Building2 className="w-6 h-6 text-white" />
-                            </div>
-                            <div>
-                                <h1 className="text-xl font-bold text-gray-900 dark:text-white">Company Configuration</h1>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{company.companyName}</p>
-                            </div>
+
+            {/* ── Sticky Header ─────────────────────────────────────── */}
+            <div className="sticky top-0 z-30 bg-white dark:bg-[#0f172a] border-b border-gray-200 dark:border-gray-800 shadow-sm">
+                <div className="px-6 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-md">
+                            <Building2 className="w-5 h-5 text-white" />
                         </div>
-                        <div className="flex items-center gap-3">
-                            {!isEditing ? (
-                                <button
-                                    onClick={handleEdit}
-                                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg shadow-md hover:shadow-lg transition-all transform hover:scale-105"
-                                >
-                                    <Edit2 className="w-4 h-4" />
-                                    Edit Details
+                        <div>
+                            <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">Company Configuration</h1>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{company.companyName}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {isEditing && (
+                            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 rounded-full animate-pulse">
+                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full" />
+                                Editing Mode
+                            </span>
+                        )}
+                        {!isEditing ? (
+                            <button onClick={handleEdit} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm hover:shadow-md transition-all">
+                                <Edit2 className="w-4 h-4" />
+                                Edit Details
+                            </button>
+                        ) : (
+                            <div className="flex gap-2">
+                                <button onClick={handleCancel} disabled={isSaving} className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-all">
+                                    <X className="w-4 h-4" /> Cancel
                                 </button>
-                            ) : (
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={handleCancel}
-                                        disabled={isSaving}
-                                        className="px-5 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-all"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={handleSave}
-                                        disabled={isSaving}
-                                        className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 transform hover:scale-105"
-                                    >
-                                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                        Save Changes
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm hover:shadow-md transition-all disabled:opacity-50">
+                                    {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                    {isSaving ? 'Saving…' : 'Save Changes'}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="px-6 overflow-x-auto scrollbar-thin" style={{ scrollbarWidth: 'thin' }}>
-                    <div className="flex gap-2 min-w-max pb-2">
+                {/* Tabs Row */}
+                <div className="px-6 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
+                    <div className="flex gap-1 min-w-max pb-0">
                         {tabs.map(tab => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium whitespace-nowrap rounded-t-lg transition-all ${activeTab === tab.id
-                                    ? 'bg-blue-600 text-white shadow-md'
-                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-                                    }`}
+                                className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-all ${activeTab === tab.id
+                                    ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                                }`}
                             >
-                                <span className="text-base">{tab.icon}</span>
+                                <span>{tab.icon}</span>
                                 <span>{tab.label}</span>
                             </button>
                         ))}
@@ -240,307 +248,204 @@ const CompanyMaster: React.FC = () => {
                 </div>
             </div>
 
-            {/* Content Area */}
-            <div className="px-6 pb-6">
-                <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
-                    {/* Tab 0: Basic Info */}
+            {/* ── Tab Content ───────────────────────────────────────── */}
+            <div className="px-6 py-6 max-w-7xl mx-auto">
+                <div className="space-y-5">
+
+                    {/* Tab 0: Company Information */}
                     {activeTab === 0 && (
-                        <div className="space-y-5">
-                            {renderSection('Company Information', <>
-                                {renderField('Company Name', 'companyName')}
-                                {renderField('Tally Company Name', 'tallyCompanyName')}
-                                {renderField('Production Unit Name', 'productionUnitName')}
-                                {renderField('Concerning Person', 'concerningPerson')}
-                                {renderField('Company Start Date', 'companyStartDate', 'date')}
-                                {renderField('Last Invoice Date', 'lastInvoiceDate', 'date')}
-                            </>, '🏢')}
-
-                            {renderSection('Contact Information', <>
-                                {renderField('Email', 'email', 'email')}
-                                {renderField('Contact Number', 'contactNO')}
-                                {renderField('Mobile Number', 'mobileNO')}
-                                {renderField('Phone', 'phone')}
-                                {renderField('Website', 'website')}
-                                {renderField('FAX', 'fax')}
-                            </>, '📞')}
-
-                            {renderSection('Address Details', <>
-                                {renderField('Address', 'address', 'textarea')}
-                                {renderField('Address Line 1', 'address1')}
-                                {renderField('Address Line 2', 'address2')}
-                                {renderField('Address Line 3', 'address3')}
-                                {renderField('City', 'city')}
-                                {renderField('State', 'state')}
-                                {renderField('Country', 'country')}
-                                {renderField('Pincode', 'pincode')}
-                                {renderField('Production Unit Address', 'productionUnitAddress', 'textarea')}
-                            </>, '📍')}
-
-                            {renderSection('Status', <>
-                                {renderField('Is Active', 'isActive', 'checkbox')}
-                            </>, '⚡')}
-                        </div>
+                        <>
+                            <Section title="Identity" icon="🏢" cols={3}>
+                                {F('Company Name', 'companyName', 'text', true)}
+                                {F('Production Unit Name', 'productionUnitName')}
+                                {F('Tally Company Name', 'tallyCompanyName')}
+                            </Section>
+                            <Section title="Address" icon="📍" cols={2}>
+                                {F('Address Line 1', 'address1')}
+                                {F('Address Line 2', 'address2')}
+                                {F('Address Line 3', 'address3')}
+                                {F('City', 'city')}
+                                {F('State', 'state')}
+                                {F('Country', 'country')}
+                                {F('Pincode', 'pincode')}
+                            </Section>
+                            <Section title="Contact" icon="📞" cols={2}>
+                                {F('Mobile Number', 'mobileNO')}
+                                {F('Email', 'email', 'email')}
+                            </Section>
+                            <Section title="Statutory Numbers" icon="🧾" cols={2}>
+                                {F('PAN', 'pan')}
+                                {F('CIN Number', 'cinNo')}
+                                {F('GSTIN', 'gstin')}
+                                {F('State TIN No', 'stateTinNo')}
+                            </Section>
+                            <ToggleGrid title="Status" icon="⚡">
+                                {T('Is Active', 'isActive')}
+                            </ToggleGrid>
+                        </>
                     )}
 
-                    {/* Tab 1: Tax & Statutory */}
+                    {/* Tab 1: Production Unit */}
                     {activeTab === 1 && (
-                        <div className="space-y-5">
-                            {renderSection('Tax Registration', <>
-                                {renderField('GSTIN', 'gstin')}
-                                {renderField('PAN', 'pan')}
-                                {renderField('CIN Number', 'cinNo')}
-                                {renderField('IEC Number', 'iecNo')}
-                                {renderField('Import Export Code', 'importExportCode')}
-                                {renderField('State TIN Number', 'stateTinNo')}
-                                {renderField('MSME Number', 'msmeno')}
-                                {renderField('Default Tax Ledger Type', 'defaultTaxLedgerTypeName')}
-                            </>, '🧾')}
-
-                            {renderSection('Tax Settings', <>
-                                {renderField('Sales Tax', 'isSalesTax', 'checkbox')}
-                                {renderField('GST Applicable', 'isGstApplicable', 'checkbox')}
-                                {renderField('VAT Applicable', 'isVatApplicable', 'checkbox')}
-                                {renderField('E-Invoice Applicable', 'isEinvoiceApplicable', 'checkbox')}
-                                {renderField('Tax Applicable Branch Wise', 'taxApplicableBranchWise', 'checkbox')}
-                            </>, '⚙️')}
-                        </div>
+                        <>
+                            <Section title="Production Unit Details" icon="🏭" cols={2}>
+                                {F('Production Unit Address', 'productionUnitAddress', 'textarea')}
+                                {F('Production Entry Back Day', 'productionEntryBackDay', 'text')}
+                            </Section>
+                            <ToggleGrid title="Production Unit Settings" icon="⚙️">
+                                {T('Manual Production Entry Time', 'manualProductionEntryTime')}
+                                {T('Job Schedule Release Required', 'jobScheduleReleaseRequired')}
+                                {T('Generate Voucher No By Production Unit', 'generateVoucherNoByProductionUnit')}
+                                {T('Bypass Inventory For Production', 'byPassInventoryForProduction')}
+                                {T('Is Production Slip Generated', 'isProductionSlipGenerated')}
+                            </ToggleGrid>
+                        </>
                     )}
 
-                    {/* Tab 2: Bank Details */}
+                    {/* Tab 2: Tax Configuration */}
                     {activeTab === 2 && (
-                        <div className="space-y-5">
-                            {renderSection('Banking Information', <>
-                                {renderField('Bank Details', 'bankDetails', 'textarea')}
-                                {renderField('Cash Against Documents Bank Details', 'cashAgainstDocumentsBankDetails', 'textarea')}
-                            </>, '🏦')}
-                        </div>
+                        <>
+                            <Section title="Purchase Tolerance" icon="🎯" cols={2}>
+                                {F('Purchase Tolerance (%)', 'purchaseTolerance', 'number')}
+                            </Section>
+                            <ToggleGrid title="Tax Settings" icon="🧾">
+                                {T('Sales Tax', 'isSalesTax')}
+                                {T('GST Applicable', 'isGstApplicable')}
+                                {T('VAT Applicable', 'isVatApplicable')}
+                                {T('E-Invoice Applicable', 'isEinvoiceApplicable')}
+                                {T('Tax Applicable Branch Wise', 'taxApplicableBranchWise')}
+                            </ToggleGrid>
+                        </>
                     )}
 
-                    {/* Tab 3: Approvals */}
+                    {/* Tab 3: Estimation & Calculation */}
                     {activeTab === 3 && (
-                        <div className="space-y-5">
-                            {renderSection('Approval Workflows', <>
-                                {renderField('Requisition Approval', 'isRequisitionApproval', 'checkbox')}
-                                {renderField('PO Approval Required', 'isPOApprovalRequired', 'checkbox')}
-                                {renderField('Invoice Approval Required', 'isInvoiceApprovalRequired', 'checkbox')}
-                                {renderField('GRN Approval Required', 'isGRNApprovalRequired', 'checkbox')}
-                                {renderField('Sales Order Approval Required', 'isSalesOrderApprovalRequired', 'checkbox')}
-                                {renderField('Internal Approval Required', 'isInternalApprovalRequired', 'checkbox')}
-                            </>, '✅')}
-
-                            {renderSection('Job & Production Approvals', <>
-                                {renderField('Job Release Feature Required', 'isJobReleaseFeatureRequired', 'checkbox')}
-                                {renderField('Job Released Checklist Feature', 'jobReleasedChecklistFeature', 'checkbox')}
-                                {renderField('Job Schedule Release Required', 'jobScheduleReleaseRequired', 'checkbox')}
-                            </>, '🏭')}
-
-                            {renderSection('Bypass Settings', <>
-                                {renderField('Bypass Cost Approval', 'byPassCostApproval', 'checkbox')}
-                                {renderField('Bypass Inventory For Production', 'byPassInventoryForProduction', 'checkbox')}
-                            </>, '⚡')}
-                        </div>
+                        <>
+                            <Section title="Decimal Place Settings" icon="🔢" cols={3}>
+                                {F('Estimation RoundOff Decimal Place', 'estimationRoundOffDecimalPlace', 'number')}
+                                {F('Purchase RoundOff Decimal Place', 'purchaseRoundOffDecimalPlace', 'number')}
+                                {F('Invoice RoundOff Decimal Place', 'invoiceRoundOffDecimalPlace', 'number')}
+                                {F('Estimation Per Unit Cost Decimal Place', 'estimationPerUnitCostDecimalPlace', 'number')}
+                                {F('RoundOff Impression Value', 'roundOffImpressionValue', 'number')}
+                                {F('Wt. Calculate On Estimation', 'wtCalculateOnEstimation', 'text')}
+                            </Section>
+                            <ToggleGrid title="Calculation Flags" icon="⚙️">
+                                {T('Auto RoundOff Not Applicable', 'autoRoundOffNotApplicable')}
+                            </ToggleGrid>
+                        </>
                     )}
 
-                    {/* Tab 4: Domain Settings */}
+                    {/* Tab 4: Domain Features */}
                     {activeTab === 4 && (
-                        <div className="space-y-5">
-                            {renderSection('Domain Modules', <>
-                                {renderField('Flexo Domain Enable', 'flexoDomainEnable', 'checkbox')}
-                                {renderField('Offset Domain Enable', 'offsetDomainEnable', 'checkbox')}
-                                {renderField('Corrugation Domain Enable', 'corrugationDomainEnable', 'checkbox')}
-                                {renderField('Roto Domain Enable', 'rotoDomainEnable', 'checkbox')}
-                            </>, '⚙️')}
-
-                            {renderSection('Planning Features', <>
-                                {renderField('Book Planning Feature Enable', 'bookPlanningFeatureEnable', 'checkbox')}
-                                {renderField('Rigid Box Planning Feature Enable', 'rigidBoxPlanningFeatureEnable', 'checkbox')}
-                                {renderField('Shipper Planning Feature Enable', 'shipperPlanningFeatureEnable', 'checkbox')}
-                            </>, '📋')}
-
-                            {renderSection('Other Settings', <>
-                                {renderField('Product Catalog Created', 'isProductCatalogCreated', 'checkbox')}
-                                {renderField('Supplier Item Allocation Required', 'isSupplierItemAllocationRequired', 'checkbox')}
-                            </>, '🔧')}
-                        </div>
+                        <>
+                            <ToggleGrid title="Domain Modules" icon="🏗️">
+                                {T('Flexo Domain Enable', 'flexoDomainEnable')}
+                                {T('Offset Domain Enable', 'offsetDomainEnable')}
+                                {T('Corrugation Domain Enable', 'corrugationDomainEnable')}
+                                {T('Roto Domain Enable', 'rotoDomainEnable')}
+                            </ToggleGrid>
+                            <ToggleGrid title="Planning Features" icon="📋">
+                                {T('Book Planning Feature Enable', 'bookPlanningFeatureEnable')}
+                                {T('Rigid Box Planning Feature Enable', 'rigidBoxPlanningFeatureEnable')}
+                                {T('Shipper Planning Feature Enable', 'shipperPlanningFeatureEnable')}
+                            </ToggleGrid>
+                        </>
                     )}
 
-                    {/* Tab 5: Estimation */}
+                    {/* Tab 5: Approval Settings */}
                     {activeTab === 5 && (
-                        <div className="space-y-5">
-                            {renderSection('Estimation Configuration', <>
-                                {renderField('Cost Estimation Method Type', 'costEstimationMethodType')}
-                                {renderField('Estimation RoundOff Decimal Place', 'estimationRoundOffDecimalPlace', 'number')}
-                                {renderField('Purchase RoundOff Decimal Place', 'purchaseRoundOffDecimalPlace', 'number')}
-                                {renderField('Invoice RoundOff Decimal Place', 'invoiceRoundOffDecimalPlace', 'number')}
-                                {renderField('Estimation Per Unit Cost Decimal Place', 'estimationPerUnitCostDecimalPlace', 'number')}
-                                {renderField('RoundOff Impression Value', 'roundOffImpressionValue', 'number')}
-                            </>, '🧮')}
-
-                            {renderSection('Calculation Settings', <>
-                                {renderField('Auto RoundOff Not Applicable', 'autoRoundOffNotApplicable', 'checkbox')}
-                                {renderField('Weight Calculate On Estimation', 'wtCalculateOnEstimation', 'checkbox')}
-                                {renderField('Show Plan Upto Wastage Percentage', 'showPlanUptoWastagePerc', 'checkbox')}
-                                {renderField('Wastage Add In Printing Rate', 'isWastageAddInPrintingRate', 'checkbox')}
-                                {renderField('Book Half Form Wastage', 'is_Book_Half_Form_Wastage', 'checkbox')}
-                            </>, '⚙️')}
-                        </div>
+                        <ToggleGrid title="Approval Workflows" icon="✅">
+                            {T('Internal Approval Required', 'isInternalApprovalRequired')}
+                            {T('Requisition Approval', 'isRequisitionApproval')}
+                            {T('PO Approval Required', 'isPOApprovalRequired')}
+                            {T('Invoice Approval Required', 'isInvoiceApprovalRequired')}
+                            {T('Sales Order Approval Required', 'isSalesOrderApprovalRequired')}
+                            {T('Job Release Feature Required', 'isJobReleaseFeatureRequired')}
+                        </ToggleGrid>
                     )}
 
-                    {/* Tab 6: Printing/RDLC */}
+                    {/* Tab 6: Production Settings */}
                     {activeTab === 6 && (
-                        <div className="space-y-5">
-                            {renderSection('Print Templates', <>
-                                {renderField('Invoice Print RDLC', 'invoicePrintRDLC')}
-                                {renderField('Packing Slip Print RDLC', 'packingSlipPrintRDLC')}
-                                {renderField('Challan Print RDLC', 'challanPrintRDLC')}
-                                {renderField('PWO Print RDLC', 'pwoPrintRDLC')}
-                                {renderField('Sales Return Print RDLC', 'salesReturnPrintRDLC')}
-                                {renderField('COA Print RDLC', 'coaPrintRDLC')}
-                                {renderField('OutSource Challan RDLC', 'outSourceChallanRDLC')}
-                                {renderField('PWO Flexo Print RDLC', 'pwoFlexoPrintRDLC')}
-                                {renderField('PWO Gang Print RDLC', 'pwoGangPrintRDLC')}
-                                {renderField('QC And Packing Slip', 'qcAndPackingSlip')}
-                                {renderField('Item Sales Order Booking Print', 'itemSalesOrderBookingPrint')}
-                            </>, '🖨️')}
-
-                            {renderSection('Print Settings', <>
-                                {renderField('Unitwise Printout Setting', 'unitwisePrintoutSetting', 'checkbox')}
-                                {renderField('Fast Invoice Print', 'fastInvoicePrint', 'checkbox')}
-                                {renderField('Fast E-Invoice Print', 'fastEInvoicePrint', 'checkbox')}
-                            </>, '⚙️')}
-                        </div>
+                        <>
+                            <Section title="Production Values" icon="📊" cols={2}>
+                                {F('Show Plan Upto Wastage %', 'showPlanUptoWastagePerc', 'number')}
+                            </Section>
+                            <ToggleGrid title="Production Settings" icon="🔩">
+                                {T('Wastage Add In Printing Rate', 'isWastageAddInPrintingRate')}
+                                {T('Material Consumption Details Flag', 'materialConsumptionDetailsFlage')}
+                                {T('Production Process Wise Tolerance Required', 'productionProcessWiseToleranceRequired')}
+                            </ToggleGrid>
+                        </>
                     )}
 
-                    {/* Tab 7: Production */}
+                    {/* Tab 7: System Configuration */}
                     {activeTab === 7 && (
-                        <div className="space-y-5">
-                            {renderSection('Production Configuration', <>
-                                {renderField('Manual Production Entry Time', 'manualProductionEntryTime')}
-                                {renderField('Production Entry Back Days', 'productionEntryBackDay', 'number')}
-                                {renderField('Production Unit ID', 'productionUnitID', 'number')}
-                            </>, '🏭')}
-
-                            {renderSection('Buffer Settings', <>
-                                {renderField('Buffer GSM Minus', 'bufferGSMMinus', 'number')}
-                                {renderField('Buffer GSM Plus', 'bufferGSMPlus', 'number')}
-                                {renderField('Buffer Size Minus', 'bufferSizeMinus', 'number')}
-                                {renderField('Buffer Size Plus', 'bufferSizePlus', 'number')}
-                            </>, '📊')}
-
-                            {renderSection('Production Features', <>
-                                {renderField('Generate Voucher No By Production Unit', 'generateVoucherNoByProductionUnit', 'checkbox')}
-                                {renderField('Material Consumption Details Flag', 'materialConsumptionDetailsFlage', 'checkbox')}
-                            </>, '⚙️')}
-                        </div>
+                        <>
+                            <Section title="Application Config" icon="🖥️" cols={2}>
+                                {F('Application Configuration', 'applicationConfiguration', 'textarea')}
+                                {F('API Basic Auth Username', 'apiBasicAuthUserName')}
+                                {F('API Basic Auth Password', 'apiBasicAuthPassword', 'password')}
+                                {F('OTP Verification Excluded Devices', 'otpVerificationExcludedDevices', 'textarea')}
+                            </Section>
+                            <ToggleGrid title="System Flags" icon="🔧">
+                                {T('OTP Verification Feature Enabled', 'otpVerificationFeatureEnabled')}
+                                {T('Multiple FYear Not Required', 'multipleFYearNotRequired')}
+                                {T('Is Product Catalog Created', 'isProductCatalogCreated')}
+                            </ToggleGrid>
+                        </>
                     )}
 
-                    {/* Tab 8: API/Integration */}
+                    {/* Tab 8: Workflow Automation */}
                     {activeTab === 8 && (
-                        <div className="space-y-5">
-                            {renderSection('API Configuration', <>
-                                {renderField('API Base URL', 'apiBaseURL')}
-                                {renderField('API Authentication URL', 'apiAuthenticationURL')}
-                                {renderField('API Client ID', 'apiClientID')}
-                                {renderField('API Client Secret ID', 'apiClientSecretID')}
-                                {renderField('API Basic Auth Username', 'apiBasicAuthUserName')}
-                                {renderField('API Basic Auth Password', 'apiBasicAuthPassword')}
-                            </>, '🌐')}
-
-                            {renderSection('Indus Integration', <>
-                                {renderField('Indus API Base URL', 'indusAPIBaseUrl')}
-                                {renderField('Indus API Auth Token', 'indusAPIAuthToken')}
-                                {renderField('Indus Token Auth API', 'indusTokenAuthAPI')}
-                                {renderField('Indus Mail API Base URL', 'indusMailAPIBaseUrl')}
-                            </>, '🔗')}
-
-                            {renderSection('Client Integration', <>
-                                {renderField('Client API Base URL', 'clientAPIBaseUrl')}
-                                {renderField('Client API Auth Token', 'clientAPIAuthToken')}
-                                {renderField('Client Token Auth API', 'clientTokenAuthAPI')}
-                            </>, '🔗')}
-
-                            {renderSection('Other Settings', <>
-                                {renderField('Integration Type', 'integrationType')}
-                                {renderField('Logout Page', 'logoutPage')}
-                                {renderField('Desktop Connection String', 'desktopConnString', 'textarea')}
-                                {renderField('Application Configuration', 'applicationConfiguration', 'textarea')}
-                                {renderField('Company Static IP', 'companyStaticIP')}
-                                {renderField('API Integration Required', 'apiIntegrationRequired', 'checkbox')}
-                            </>, '⚙️')}
-                        </div>
+                        <>
+                            <Section title="Automation Data" icon="📊" cols={2}>
+                                {F('Auto Requisition Creation', 'isAutoRequisitionCreation', 'number')}
+                            </Section>
+                            <ToggleGrid title="Workflow Automation" icon="🔄">
+                                {T('Auto Indent Feature Required', 'autoIndentFeatureRequired')}
+                                {T('Picklist Feature Required', 'isPicklistFeatureRequired')}
+                                {T('Supplier Item Allocation Required', 'isSupplierItemAllocationRequired')}
+                                {T('Bypass Cost Approval', 'byPassCostApproval')}
+                            </ToggleGrid>
+                        </>
                     )}
 
-                    {/* Tab 9: Time Settings */}
+                    {/* Tab 9: Communication & CRM */}
                     {activeTab === 9 && (
-                        <div className="space-y-5">
-                            {renderSection('Time Configuration', <>
-                                {renderField('Time Zone', 'timeZone')}
-                                {renderField('Duration', 'duration')}
-                                {renderField('End Time', 'end_time')}
-                                {renderField('Last Shown Time', 'lastShownTime')}
-                                {renderField('Time', 'time')}
-                            </>, '🕒')}
-
-                            {renderSection('Message Settings', <>
-                                {renderField('Message Show', 'messageShow', 'checkbox')}
-                            </>, '💬')}
-                        </div>
+                        <ToggleGrid title="Communication & CRM" icon="💬">
+                            {T('CRM Activated', 'isCrmActivated')}
+                            {T('WhatsApp Activated', 'isWhatsAppActivated')}
+                            {T('Email Activated', 'isEmailActivated')}
+                            {T('Notification Enabled', 'isNotificationEnabled')}
+                        </ToggleGrid>
                     )}
 
-                    {/* Tab 10: Security/OTP */}
+                    {/* Tab 10: Client Communication */}
                     {activeTab === 10 && (
-                        <div className="space-y-5">
-                            {renderSection('Security Configuration', <>
-                                {renderField('OTP Verification Excluded Devices', 'otpVerificationExcludedDevices', 'textarea')}
-                            </>, '🔐')}
-
-                            {renderSection('Security Features', <>
-                                {renderField('OTP Verification Feature Enabled', 'otpVerificationFeatureEnabled', 'checkbox')}
-                                {renderField('Multiple FYear Not Required', 'multipleFYearNotRequired', 'checkbox')}
-                            </>, '⚙️')}
-                        </div>
+                        <ToggleGrid title="Client Notifications" icon="📢">
+                            {T('Job Scheduled → Send To Client', 'isJobScheduled_SendToClient')}
+                            {T('Order Ready (QC & Packing) → Send To Client', 'isOrderReady_QcAndPacking_SendToClient')}
+                            {T('Invoice Ready → Send To Client', 'isInvoice_Ready_SendToClient')}
+                            {T('Sales Order Approve → By Client', 'isSales_Order_Approve_ByClient')}
+                        </ToggleGrid>
                     )}
 
-                    {/* Tab 11: References */}
+                    {/* Tab 11: Printing & Documents */}
                     {activeTab === 11 && (
-                        <div className="space-y-5">
-                            {renderSection('Reference Codes', <>
-                                {renderField('Reference Company Code', 'refCompanyCode')}
-                                {renderField('Reference Sales Office Code', 'refSalesOfficeCode')}
-                            </>, '🏷️')}
-
-                            {renderSection('Reference Settings', <>
-                                {renderField('ISOTP Required', 'isotpRequired', 'checkbox')}
-                            </>, '⚙️')}
-                        </div>
+                        <ToggleGrid title="Printing & Document Settings" icon="🖨️">
+                            {T('Invoice Print Product Wise', 'isInvoicePrintProductWise')}
+                            {T('Invoice Block Feature Required', 'isInvoiceBlockFeatureRequired')}
+                            {T('Quotation Visible After SO', 'isQuotationVisibleAfterSO')}
+                            {T('Unitwise Printout Setting', 'unitwisePrintoutSetting')}
+                        </ToggleGrid>
                     )}
 
-                    {/* Tab 12: Currency */}
+                    {/* Tab 12: Prefix Settings */}
                     {activeTab === 12 && (
-                        <div className="space-y-5">
-                            {renderSection('Currency Configuration', <>
-                                {renderField('Currency Head Name', 'currencyHeadName')}
-                                {renderField('Currency Child Name', 'currencyChildName')}
-                                {renderField('Currency Code', 'currencyCode')}
-                                {renderField('Currency Symbolic Reference', 'currencySymboliconRef')}
-                            </>, '💱')}
-                        </div>
-                    )}
-
-                    {/* Tab 13: Miscellaneous */}
-                    {activeTab === 13 && (
-                        <div className="space-y-5">
-                            {renderSection('Miscellaneous Settings', <>
-                                {renderField('Backup Path', 'backupPath')}
-                                {renderField('Description', 'description', 'textarea')}
-                                {renderField('Purchase Tolerance', 'purchaseTolerance', 'number')}
-                            </>, '📝')}
-
-                            {renderSection('Invoice Settings', <>
-                                {renderField('Invoice Print Product Wise', 'isInvoicePrintProductWise', 'checkbox')}
-                                {renderField('Invoice Block Feature Required', 'isInvoiceBlockFeatureRequired', 'checkbox')}
-                            </>, '🧾')}
-                        </div>
+                        <Section title="Document Prefixes" icon="🏷️" cols={2}>
+                            {F('Product Catalog Prefix', 'productCatlogPrefix')}
+                            {F('Job Card Prefix', 'jobCardPrefix')}
+                        </Section>
                     )}
                 </div>
             </div>

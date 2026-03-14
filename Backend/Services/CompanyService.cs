@@ -18,7 +18,7 @@ public class CompanyService : ICompanyService
         var query = @"
             SELECT TOP 1 
                 CompanyID, CompanyName, Address1, Address2, Address3, City, State, Country, 
-                Pincode, ContactNO, ConcerningPerson, MobileNO, Email, Website, 
+                Pincode, ContactNO, ConcerningPerson, MobileNO, Email,
                 CompanyStartDate, IsActive, StateTinNo, IsSalesTax, LastInvoiceDate, 
                 CINNo, TallyCompanyName, ProductionUnitAddress, CashAgainstDocumentsBankDetails, 
                 Address, GSTIN, ProductionUnitName, PAN, IsDeletedTransaction, FAX, 
@@ -81,7 +81,6 @@ public class CompanyService : ICompanyService
                 ContactNO = @ContactNO,
                 MobileNO = @MobileNO,
                 Email = @Email,
-                Website = @Website,
                 ConcerningPerson = @ConcerningPerson,
                 CompanyStartDate = @CompanyStartDate,
                 IsActive = @IsActive,

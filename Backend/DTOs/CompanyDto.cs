@@ -204,10 +204,10 @@ public class CompanyDto
     public bool? AutoRoundOffNotApplicable { get; set; }
     
     [JsonPropertyName("wtCalculateOnEstimation")]
-    public bool? WtCalculateOnEstimation { get; set; }
+    public string? WtCalculateOnEstimation { get; set; }
     
     [JsonPropertyName("showPlanUptoWastagePerc")]
-    public bool ShowPlanUptoWastagePerc { get; set; }
+    public decimal? ShowPlanUptoWastagePerc { get; set; }
     
     [JsonPropertyName("isWastageAddInPrintingRate")]
     public bool? IsWastageAddInPrintingRate { get; set; }
@@ -260,10 +260,10 @@ public class CompanyDto
     
     // 🏭 8. Production Configuration
     [JsonPropertyName("manualProductionEntryTime")]
-    public string? ManualProductionEntryTime { get; set; }
+    public bool? ManualProductionEntryTime { get; set; }
     
     [JsonPropertyName("productionEntryBackDay")]
-    public int? ProductionEntryBackDay { get; set; }
+    public string? ProductionEntryBackDay { get; set; }
     
     [JsonPropertyName("productionUnitID")]
     public int? ProductionUnitID { get; set; }
@@ -358,7 +358,7 @@ public class CompanyDto
     public string? LastShownTime { get; set; }
     
     [JsonPropertyName("messageShow")]
-    public bool? MessageShow { get; set; }
+    public string? MessageShow { get; set; }
     
     [JsonPropertyName("time")]
     public string? Time { get; set; }
@@ -417,4 +417,58 @@ public class CompanyDto
     
     [JsonPropertyName("isDeletedTransaction")]
     public bool IsDeletedTransaction { get; set; }
+
+    // 🏭 Production Extras
+    [JsonPropertyName("isProductionSlipGenerated")]
+    public bool? IsProductionSlipGenerated { get; set; }
+
+    [JsonPropertyName("productionProcessWiseToleranceRequired")]
+    public bool? ProductionProcessWiseToleranceRequired { get; set; }
+
+    // 💬 Communication & CRM
+    [JsonPropertyName("isCrmActivated")]
+    public bool? IsCrmActivated { get; set; }
+
+    [JsonPropertyName("isWhatsAppActivated")]
+    public bool? IsWhatsAppActivated { get; set; }
+
+    [JsonPropertyName("isEmailActivated")]
+    public bool? IsEmailActivated { get; set; }
+
+    [JsonPropertyName("isNotificationEnabled")]
+    public bool? IsNotificationEnabled { get; set; }
+
+    // 📢 Client Communication
+    [JsonPropertyName("isJobScheduled_SendToClient")]
+    public bool? IsJobScheduled_SendToClient { get; set; }
+
+    [JsonPropertyName("isOrderReady_QcAndPacking_SendToClient")]
+    public bool? IsOrderReady_QcAndPacking_SendToClient { get; set; }
+
+    [JsonPropertyName("isInvoice_Ready_SendToClient")]
+    public bool? IsInvoice_Ready_SendToClient { get; set; }
+
+    [JsonPropertyName("isSales_Order_Approve_ByClient")]
+    public bool? IsSales_Order_Approve_ByClient { get; set; }
+
+    // 🔄 Workflow Automation
+    [JsonPropertyName("isAutoRequisitionCreation")]
+    public long? IsAutoRequisitionCreation { get; set; }
+
+    [JsonPropertyName("autoIndentFeatureRequired")]
+    public bool? AutoIndentFeatureRequired { get; set; }
+
+    [JsonPropertyName("isPicklistFeatureRequired")]
+    public bool? IsPicklistFeatureRequired { get; set; }
+
+    // 📄 Document Extras
+    [JsonPropertyName("isQuotationVisibleAfterSO")]
+    public bool? IsQuotationVisibleAfterSO { get; set; }
+
+    // 🏷️ Prefix Settings
+    [JsonPropertyName("productCatlogPrefix")]
+    public string? ProductCatlogPrefix { get; set; }
+
+    [JsonPropertyName("jobCardPrefix")]
+    public string? JobCardPrefix { get; set; }
 }

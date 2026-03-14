@@ -97,6 +97,7 @@ builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<IToolService, ToolService>();
 builder.Services.AddScoped<IItemStockService, ItemStockService>();
 builder.Services.AddScoped<IModuleAuthorityService, ModuleAuthorityService>();
+builder.Services.AddScoped<ISparePartMasterStockService, SparePartMasterStockService>();
 
 // Configure EPPlus license
 OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;

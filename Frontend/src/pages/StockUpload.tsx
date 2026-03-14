@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { getItemGroups, getToolGroups, ItemGroupDto, ToolGroupDto } from '../services/api';
 import ItemStockUpload from '../components/ItemStockUpload';
+import SparePartMasterStockUpload from '../components/SparePartMasterStockUpload';
 
 const StockUpload: React.FC = () => {
     const [selectedModule, setSelectedModule] = useState<string>('');
@@ -266,6 +267,14 @@ const StockUpload: React.FC = () => {
                     key={selectedSubModule}
                     itemGroupId={Number(selectedSubModule)}
                     itemGroupName={getSelectedItemGroupName()}
+                    onHasDataChange={onChildHasDataChange}
+                />
+            )}
+
+            {/* Spare Part Master Stock Upload Component */}
+            {selectedModule === 'SparePartMaster' && selectedSubModule === 'SparePartMaster' && (
+                <SparePartMasterStockUpload
+                    key="SparePartMaster"
                     onHasDataChange={onChildHasDataChange}
                 />
             )}

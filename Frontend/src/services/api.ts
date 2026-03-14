@@ -505,8 +505,8 @@ export interface CompanyDto {
     estimationPerUnitCostDecimalPlace?: number;
     roundOffImpressionValue?: number;
     autoRoundOffNotApplicable?: boolean;
-    wtCalculateOnEstimation?: boolean;
-    showPlanUptoWastagePerc: boolean;
+    wtCalculateOnEstimation?: string;
+    showPlanUptoWastagePerc: number;
     isWastageAddInPrintingRate?: boolean;
     is_Book_Half_Form_Wastage?: boolean;
 
@@ -527,8 +527,8 @@ export interface CompanyDto {
     fastEInvoicePrint?: boolean;
 
     // 🏭 8. Production Configuration
-    manualProductionEntryTime?: string;
-    productionEntryBackDay?: number;
+    manualProductionEntryTime?: boolean;
+    productionEntryBackDay?: string;
     productionUnitID?: number;
     generateVoucherNoByProductionUnit?: boolean;
     materialConsumptionDetailsFlage?: boolean;
@@ -563,7 +563,7 @@ export interface CompanyDto {
     duration?: string;
     end_time?: string;
     lastShownTime?: string;
-    messageShow?: boolean;
+    messageShow?: string;
     time?: string;
 
     // 🔐 12. Security & OTP Settings
@@ -590,6 +590,34 @@ export interface CompanyDto {
     isInvoiceBlockFeatureRequired?: boolean;
     purchaseTolerance?: number;
     isDeletedTransaction: boolean;
+
+    // 🏭 Production extras
+    isProductionSlipGenerated?: boolean;
+    productionProcessWiseToleranceRequired?: boolean;
+
+    // 💬 Communication & CRM
+    isCrmActivated?: boolean;
+    isWhatsAppActivated?: boolean;
+    isEmailActivated?: boolean;
+    isNotificationEnabled?: boolean;
+
+    // 📢 Client Communication
+    isJobScheduled_SendToClient?: boolean;
+    isOrderReady_QcAndPacking_SendToClient?: boolean;
+    isInvoice_Ready_SendToClient?: boolean;
+    isSales_Order_Approve_ByClient?: boolean;
+
+    // 🔄 Workflow Automation
+    isAutoRequisitionCreation?: number;
+    autoIndentFeatureRequired?: boolean;
+    isPicklistFeatureRequired?: boolean;
+
+    // 📄 Document extras
+    isQuotationVisibleAfterSO?: boolean;
+
+    // 🏷️ Prefix Settings
+    productCatlogPrefix?: string;
+    jobCardPrefix?: string;
 }
 
 export const getCompany = async (): Promise<CompanyDto> => {
@@ -1248,6 +1276,105 @@ export const getModuleAuthorityData = async (product: string): Promise<ModuleAut
 
 export const saveModuleAuthority = async (product: string, modules: ModuleAuthoritySaveDto[]): Promise<{ inserted: number; enabled: number; disabled: number; total: number }> => {
     const response = await api.post('/moduleauthority/Save', { product, modules });
+    return response.data;
+};
+
+// ==================== SPARE PART MASTER STOCK API ====================
+
+export interface SparePartStockRowDto {
+    rowIndex?: number;
+    sparePartName?: string;
+    receiptQuantity: number;
+    purchaseRate: number;
+    stockUnit?: string;
+    batchNo?: string;
+    warehouseName?: string;
+    binName?: string;
+    warehouseID?: number;
+}
+
+export interface SparePartStockImportResult {
+    success: boolean;
+    totalRows: number;
+    importedRows: number;
+    failedRows: number;
+    message: string;
+    errorMessages: string[];
+}
+
+export interface SparePartStockEnrichedRow {
+    sparePartName?: string;
+    spareID: number;
+    receiptQuantity: number;
+    purchaseRate: number;
+    batchNo?: string;
+    stockUnit?: string;
+    warehouseName?: string;
+    binName?: string;
+    isValid: boolean;
+    error?: string;
+}
+
+export interface SparePartStockEnrichResult {
+    rows: SparePartStockEnrichedRow[];
+    invalidSparePartNames: string[];
+}
+
+export interface SparePartStockCellValidation {
+    columnName: string;
+    status: string;
+    validationMessage: string;
+}
+
+export interface SparePartStockRowValidation {
+    rowIndex: number;
+    rowStatus: string;
+    errorMessage?: string;
+    cellValidations: SparePartStockCellValidation[];
+}
+
+export interface SparePartStockValidationSummary {
+    totalRows: number;
+    validRows: number;
+    duplicateCount: number;
+    missingDataCount: number;
+    mismatchCount: number;
+    invalidContentCount: number;
+}
+
+export interface SparePartStockValidationResult {
+    isValid: boolean;
+    summary: SparePartStockValidationSummary;
+    rows: SparePartStockRowValidation[];
+}
+
+export const getSparePartStockWarehouses = async (): Promise<WarehouseDto[]> => {
+    const response = await api.get('/sparepartmasterstock/warehouses');
+    return response.data;
+};
+
+export const getSparePartStockBins = async (warehouseName: string): Promise<WarehouseDto[]> => {
+    const response = await api.get('/sparepartmasterstock/bins', { params: { warehouseName } });
+    return response.data;
+};
+
+export const enrichSparePartStock = async (rows: { sparePartName?: string; receiptQuantity: number; purchaseRate: number; stockUnit?: string; warehouseName?: string; binName?: string }[]): Promise<SparePartStockEnrichResult> => {
+    const response = await api.post('/sparepartmasterstock/enrich', { rows });
+    return response.data;
+};
+
+export const importSparePartStock = async (rows: SparePartStockRowDto[]): Promise<SparePartStockImportResult> => {
+    const response = await api.post('/sparepartmasterstock/import', { rows });
+    return response.data;
+};
+
+export const validateSparePartStock = async (rows: SparePartStockEnrichedRow[]): Promise<SparePartStockValidationResult> => {
+    const response = await api.post('/sparepartmasterstock/validate', { rows });
+    return response.data;
+};
+
+export const loadSparePartStockData = async (): Promise<SparePartStockEnrichedRow[]> => {
+    const response = await api.get('/sparepartmasterstock/load');
     return response.data;
 };
 
