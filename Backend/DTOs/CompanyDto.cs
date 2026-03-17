@@ -253,10 +253,10 @@ public class CompanyDto
     public bool? UnitwisePrintoutSetting { get; set; }
     
     [JsonPropertyName("fastInvoicePrint")]
-    public bool? FastInvoicePrint { get; set; }
-    
+    public string? FastInvoicePrint { get; set; }
+
     [JsonPropertyName("fastEInvoicePrint")]
-    public bool? FastEInvoicePrint { get; set; }
+    public string? FastEInvoicePrint { get; set; }
     
     // 🏭 8. Production Configuration
     [JsonPropertyName("manualProductionEntryTime")]

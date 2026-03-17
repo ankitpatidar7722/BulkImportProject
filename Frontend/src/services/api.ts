@@ -1378,3 +1378,105 @@ export const loadSparePartStockData = async (): Promise<SparePartStockEnrichedRo
     return response.data;
 };
 
+// ==================== TOOL STOCK API ====================
+
+export interface ToolStockRowDto {
+    rowIndex?: number;
+    toolGroupName?: string;
+    toolName?: string;
+    receiptQuantity: number;
+    purchaseRate: number;
+    stockUnit?: string;
+    batchNo?: string;
+    warehouseName?: string;
+    binName?: string;
+}
+
+export interface ToolStockImportResult {
+    success: boolean;
+    totalRows: number;
+    importedRows: number;
+    failedRows: number;
+    message: string;
+    errorMessages: string[];
+}
+
+export interface ToolStockEnrichedRow {
+    toolGroupName?: string;
+    toolName?: string;
+    toolID: number;
+    toolGroupID: number;
+    receiptQuantity: number;
+    purchaseRate: number;
+    batchNo?: string;
+    stockUnit?: string;
+    warehouseName?: string;
+    binName?: string;
+    isValid: boolean;
+    error?: string;
+}
+
+export interface ToolStockEnrichResult {
+    rows: ToolStockEnrichedRow[];
+    invalidToolNames: string[];
+    invalidToolGroupNames: string[];
+}
+
+export interface ToolStockCellValidation {
+    columnName: string;
+    status: string;
+    validationMessage: string;
+}
+
+export interface ToolStockRowValidation {
+    rowIndex: number;
+    rowStatus: string;
+    errorMessage?: string;
+    cellValidations: ToolStockCellValidation[];
+}
+
+export interface ToolStockValidationSummary {
+    totalRows: number;
+    validRows: number;
+    duplicateCount: number;
+    missingDataCount: number;
+    mismatchCount: number;
+    invalidContentCount: number;
+}
+
+export interface ToolStockValidationResult {
+    isValid: boolean;
+    summary: ToolStockValidationSummary;
+    rows: ToolStockRowValidation[];
+}
+
+export const getToolStockWarehouses = async (): Promise<WarehouseDto[]> => {
+    const response = await api.get('/toolstock/warehouses');
+    return response.data;
+};
+
+export const getToolStockBins = async (warehouseName: string): Promise<WarehouseDto[]> => {
+    const response = await api.get(`/toolstock/bins?warehouseName=${encodeURIComponent(warehouseName)}`);
+    return response.data;
+};
+
+export const enrichToolStock = async (rows: { toolGroupName?: string; toolName?: string; receiptQuantity: number; purchaseRate: number; stockUnit?: string; warehouseName?: string; binName?: string }[]): Promise<ToolStockEnrichResult> => {
+    const response = await api.post('/toolstock/enrich', { rows });
+    return response.data;
+};
+
+export const importToolStock = async (rows: ToolStockRowDto[]): Promise<ToolStockImportResult> => {
+    const response = await api.post('/toolstock/import', { rows });
+    return response.data;
+};
+
+export const validateToolStock = async (rows: ToolStockEnrichedRow[]): Promise<ToolStockValidationResult> => {
+    const response = await api.post('/toolstock/validate', { rows });
+    return response.data;
+};
+
+export const loadToolStockData = async (toolGroupId: number): Promise<ToolStockEnrichedRow[]> => {
+    const response = await api.get('/toolstock/load', { params: { toolGroupId } });
+    return response.data;
+};
+

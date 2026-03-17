@@ -3,6 +3,7 @@ import { RefreshCw, AlertCircle } from 'lucide-react';
 import { getItemGroups, getToolGroups, ItemGroupDto, ToolGroupDto } from '../services/api';
 import ItemStockUpload from '../components/ItemStockUpload';
 import SparePartMasterStockUpload from '../components/SparePartMasterStockUpload';
+import ToolStockUpload from '../components/ToolStockUpload';
 
 const StockUpload: React.FC = () => {
     const [selectedModule, setSelectedModule] = useState<string>('');
@@ -135,6 +136,13 @@ const StockUpload: React.FC = () => {
         if (selectedModule !== 'ItemMasters' || !selectedSubModule) return '';
         const group = itemGroups.find(g => g.itemGroupID === Number(selectedSubModule));
         return group?.itemGroupName || '';
+    };
+
+    // Get selected tool group name for display
+    const getSelectedToolGroupName = (): string => {
+        if (selectedModule !== 'ToolMaster' || !selectedSubModule) return '';
+        const group = toolGroups.find(g => g.toolGroupID === Number(selectedSubModule));
+        return group?.toolGroupName || '';
     };
 
     const renderSubModuleDropdown = () => {
@@ -275,6 +283,16 @@ const StockUpload: React.FC = () => {
             {selectedModule === 'SparePartMaster' && selectedSubModule === 'SparePartMaster' && (
                 <SparePartMasterStockUpload
                     key="SparePartMaster"
+                    onHasDataChange={onChildHasDataChange}
+                />
+            )}
+
+            {/* Tool Master Stock Upload Component */}
+            {selectedModule === 'ToolMaster' && selectedSubModule && (
+                <ToolStockUpload
+                    key={selectedSubModule}
+                    toolGroupId={Number(selectedSubModule)}
+                    toolGroupName={getSelectedToolGroupName()}
                     onHasDataChange={onChildHasDataChange}
                 />
             )}
