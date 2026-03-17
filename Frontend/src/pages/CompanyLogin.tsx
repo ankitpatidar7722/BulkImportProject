@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import '../components/Login.css';
 import { useAuth } from '../context/AuthContext';
-import { Building2, ArrowRight, Loader2, Lock } from 'lucide-react';
+import { Building2, ArrowRight, Loader2, Lock, User } from 'lucide-react';
 import { useMessageModal } from '../components/MessageModal';
 
 // ─── Typewriter Animation ─────────────────────────────────────────────────────
@@ -46,20 +46,35 @@ const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[]; spee
 
 // ─── CompanyLogin Page ────────────────────────────────────────────────────────
 const CompanyLogin: React.FC = () => {
-    const { companyLogin, isLoading } = useAuth();
+    const { companyLogin, indusLogin, isLoading } = useAuth();
     const { showMessage, ModalRenderer } = useMessageModal();
 
+    const [loginMode, setLoginMode] = useState<'customer' | 'indus'>('customer');
     const [companyUser, setCompanyUser] = useState('');
     const [companyPass, setCompanyPass] = useState('');
+    const [indusUser, setIndusUser] = useState('');
+    const [indusPass, setIndusPass] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleCompanySubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
         try {
             await companyLogin({ companyUserID: companyUser, password: companyPass });
         } catch (error: any) {
             showMessage('error', 'Login Failed', error.message || 'Invalid company credentials. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleIndusSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+            await indusLogin({ webUserName: indusUser, password: indusPass });
+        } catch (error: any) {
+            showMessage('error', 'Login Failed', error.message || 'Invalid Indus credentials. Please try again.');
         } finally {
             setIsSubmitting(false);
         }
@@ -95,77 +110,174 @@ const CompanyLogin: React.FC = () => {
 
                 {/* ── LEFT PANEL: FORM ──────────────────────────────────────── */}
                 <div className="w-full lg:w-[45%] p-8 sm:p-12 flex flex-col justify-center relative z-20 bg-white/40 border-r border-white/50">
-                    <div className="mt-10 mb-8">
+                    <div className="mt-10 mb-6">
                         <h2 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">
-                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-red-600">
+                            <span className={`text-transparent bg-clip-text bg-gradient-to-r ${loginMode === 'customer' ? 'from-orange-500 to-red-600' : 'from-indigo-500 to-purple-600'}`}>
                                 Sign In
                             </span>
                         </h2>
                         <p className="text-gray-500 text-base font-medium">
-                            Enter your company credentials to access the portal
+                            {loginMode === 'customer'
+                                ? 'Enter your company credentials to access the portal'
+                                : 'Enter your Indus credentials to access the portal'}
                         </p>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-7">
-                        {/* Company ID */}
-                        <div className="space-y-2 group">
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
-                                Company ID
-                            </label>
-                            <div className="relative">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
-                                    <Building2 className="w-5 h-5 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
-                                </div>
-                                <input
-                                    type="text"
-                                    value={companyUser}
-                                    onChange={(e) => setCompanyUser(e.target.value)}
-                                    className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
-                                    placeholder="Ex: COMP001"
-                                    required
-                                    autoFocus
-                                />
-                            </div>
-                        </div>
-
-                        {/* Password */}
-                        <div className="space-y-2 group">
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
-                                Password
-                            </label>
-                            <div className="relative">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
-                                    <Lock className="w-5 h-5 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
-                                </div>
-                                <input
-                                    type="password"
-                                    value={companyPass}
-                                    onChange={(e) => setCompanyPass(e.target.value)}
-                                    className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
-                                    placeholder="••••••••"
-                                    required
-                                />
-                            </div>
-                        </div>
-
-                        {/* Submit */}
-                        <button
-                            type="submit"
-                            disabled={isSubmitting}
-                            className="w-full mt-10 bg-gradient-to-r from-orange-600 to-red-600 text-white text-lg font-bold py-5 rounded-2xl shadow-[0_10px_30px_-10px_rgba(234,88,12,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(234,88,12,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
-                        >
-                            <span className="relative z-10 flex items-center tracking-wide">
-                                {isSubmitting ? (
-                                    <Loader2 className="animate-spin w-6 h-6" />
-                                ) : (
-                                    <>
-                                        Continue Securely
-                                        <ArrowRight className="w-6 h-6 ml-2 group-hover:translate-x-1 transition-transform" />
-                                    </>
-                                )}
+                    {/* Login Type Radio Buttons */}
+                    <div className="flex items-center gap-6 mb-6">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="radio"
+                                name="loginMode"
+                                value="customer"
+                                checked={loginMode === 'customer'}
+                                onChange={() => setLoginMode('customer')}
+                                className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
+                            />
+                            <span className={`text-sm font-semibold ${loginMode === 'customer' ? 'text-orange-600' : 'text-gray-500'}`}>
+                                Customer Login
                             </span>
-                        </button>
-                    </form>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="radio"
+                                name="loginMode"
+                                value="indus"
+                                checked={loginMode === 'indus'}
+                                onChange={() => setLoginMode('indus')}
+                                className="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
+                            />
+                            <span className={`text-sm font-semibold ${loginMode === 'indus' ? 'text-indigo-600' : 'text-gray-500'}`}>
+                                Indus Login
+                            </span>
+                        </label>
+                    </div>
+
+                    {loginMode === 'customer' ? (
+                        /* ── Customer Login Form ──────────────────────────────── */
+                        <form onSubmit={handleCompanySubmit} className="space-y-7">
+                            {/* Company ID */}
+                            <div className="space-y-2 group">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
+                                    Company ID
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
+                                        <Building2 className="w-5 h-5 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={companyUser}
+                                        onChange={(e) => setCompanyUser(e.target.value)}
+                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        placeholder="Ex: COMP001"
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Password */}
+                            <div className="space-y-2 group">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
+                                    Password
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
+                                        <Lock className="w-5 h-5 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
+                                    </div>
+                                    <input
+                                        type="password"
+                                        value={companyPass}
+                                        onChange={(e) => setCompanyPass(e.target.value)}
+                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        placeholder="••••••••"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Submit */}
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="w-full mt-10 bg-gradient-to-r from-orange-600 to-red-600 text-white text-lg font-bold py-5 rounded-2xl shadow-[0_10px_30px_-10px_rgba(234,88,12,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(234,88,12,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
+                            >
+                                <span className="relative z-10 flex items-center tracking-wide">
+                                    {isSubmitting ? (
+                                        <Loader2 className="animate-spin w-6 h-6" />
+                                    ) : (
+                                        <>
+                                            Continue Securely
+                                            <ArrowRight className="w-6 h-6 ml-2 group-hover:translate-x-1 transition-transform" />
+                                        </>
+                                    )}
+                                </span>
+                            </button>
+                        </form>
+                    ) : (
+                        /* ── Indus Login Form ─────────────────────────────────── */
+                        <form onSubmit={handleIndusSubmit} className="space-y-7">
+                            {/* Username */}
+                            <div className="space-y-2 group">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
+                                    Username
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
+                                        <User className="w-5 h-5 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={indusUser}
+                                        onChange={(e) => setIndusUser(e.target.value)}
+                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        placeholder="Enter username"
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Password */}
+                            <div className="space-y-2 group">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
+                                    Password
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
+                                        <Lock className="w-5 h-5 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
+                                    </div>
+                                    <input
+                                        type="password"
+                                        value={indusPass}
+                                        onChange={(e) => setIndusPass(e.target.value)}
+                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        placeholder="••••••••"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Submit */}
+                            <button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="w-full mt-10 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-lg font-bold py-5 rounded-2xl shadow-[0_10px_30px_-10px_rgba(79,70,229,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(79,70,229,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
+                            >
+                                <span className="relative z-10 flex items-center tracking-wide">
+                                    {isSubmitting ? (
+                                        <Loader2 className="animate-spin w-6 h-6" />
+                                    ) : (
+                                        <>
+                                            Sign In
+                                            <ArrowRight className="w-6 h-6 ml-2 group-hover:translate-x-1 transition-transform" />
+                                        </>
+                                    )}
+                                </span>
+                            </button>
+                        </form>
+                    )}
                 </div>
 
                 {/* ── RIGHT PANEL: VISUALS ──────────────────────────────────── */}

@@ -2,20 +2,25 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
     companyLogin as companyLoginApi,
     userLogin as userLoginApi,
+    indusLogin as indusLoginApi,
     logout as logoutApi,
     CompanyLoginRequest,
-    UserLoginRequest
+    UserLoginRequest,
+    IndusLoginRequest
 } from '../services/api';
 
+export type LoginType = 'customer' | 'indus';
 
 interface AuthContextType {
-    loginStep: 0 | 1 | 2; // 0: None, 1: Company, 2: User
+    loginStep: 0 | 1 | 2;
+    loginType: LoginType;
     companyName: string;
     userName: string;
     fYear: string;
     isAuthenticated: boolean;
     companyLogin: (data: CompanyLoginRequest) => Promise<void>;
     userLogin: (data: UserLoginRequest) => Promise<void>;
+    indusLogin: (data: IndusLoginRequest) => Promise<void>;
     logout: () => void;
     isLoading: boolean;
 }
@@ -24,6 +29,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [loginStep, setLoginStep] = useState<0 | 1 | 2>(0);
+    const [loginType, setLoginType] = useState<LoginType>('customer');
     const [companyName, setCompanyName] = useState('');
     const [userName, setUserName] = useState('');
     const [fYear, setFYear] = useState('');
@@ -36,7 +42,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('companyName');
         localStorage.removeItem('userName');
         localStorage.removeItem('fYear');
+        localStorage.removeItem('loginType');
         setLoginStep(0);
+        setLoginType('customer');
         setCompanyName('');
         setUserName('');
         setFYear('');
@@ -44,8 +52,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Listen for 401 Unauthorized events from API interceptor
         const handleUnauthorized = () => {
-            // Clear state and redirect to login
             setLoginStep(0);
+            setLoginType('customer');
             setCompanyName('');
             setUserName('');
             setFYear('');
@@ -85,25 +93,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const indusLogin = async (data: IndusLoginRequest) => {
+        const response = await indusLoginApi(data);
+        if (response.token) {
+            localStorage.setItem('authToken', response.token);
+            localStorage.setItem('userName', response.webUserName);
+            localStorage.setItem('loginType', 'indus');
+            localStorage.setItem('companyName', 'Indus');
+
+            setUserName(response.webUserName);
+            setCompanyName('Indus');
+            setLoginType('indus');
+            setLoginStep(2);
+        } else {
+            throw new Error(response.message || 'Indus login failed. Please check your credentials.');
+        }
+    };
+
     const logout = () => {
-        logoutApi(); // Fire and forget
+        logoutApi();
         localStorage.clear();
         setLoginStep(0);
+        setLoginType('customer');
         setCompanyName('');
         setUserName('');
         setFYear('');
-        window.location.href = '/'; // Redirect to login
+        window.location.href = '/';
     };
 
     return (
         <AuthContext.Provider value={{
             loginStep,
+            loginType,
             companyName,
             userName,
             fYear,
             isAuthenticated: loginStep === 2,
             companyLogin,
             userLogin,
+            indusLogin,
             logout,
             isLoading
         }}>

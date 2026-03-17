@@ -7,10 +7,12 @@ import {
     Building2,
     ShieldCheck,
     Layers,
+    CreditCard,
     X,
     ChevronsLeft,
     ChevronsRight
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 
 interface SidebarProps {
@@ -22,8 +24,9 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggleCollapse }) => {
     const location = useLocation();
+    const { loginType } = useAuth();
 
-    const menuItems = [
+    const customerMenuItems = [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
         { name: 'Import Master', path: '/import-master', icon: Upload },
         { name: 'Stock Upload', path: '/stock-upload', icon: PackageOpen },
@@ -31,6 +34,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
         { name: 'New Module Addition', path: '/module-authority', icon: ShieldCheck },
         { name: 'Module Authority', path: '/dynamic-module', icon: Layers },
     ];
+
+    const indusMenuItems = [
+        { name: 'Company Subscription', path: '/company-subscription', icon: CreditCard },
+    ];
+
+    const menuItems = loginType === 'indus' ? indusMenuItems : customerMenuItems;
 
     return (
         <>

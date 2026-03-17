@@ -29,6 +29,14 @@ public class AuthController : ControllerBase
         return Ok(response);
     }
 
+    [HttpPost("indus-login")]
+    [AllowAnonymous]
+    public async Task<IActionResult> IndusLogin([FromBody] IndusLoginRequest request)
+    {
+        var response = await _authService.IndusLoginAsync(request);
+        return Ok(response);
+    }
+
     [HttpPost("user-login")]
     [Authorize]
     public async Task<IActionResult> UserLogin([FromBody] UserLoginRequest request)

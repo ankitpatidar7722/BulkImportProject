@@ -45,3 +45,17 @@ public class UserInfoResponse
     public bool IsAdmin { get; set; }
     public string CompanyName { get; set; } = string.Empty;
 }
+
+public class IndusLoginRequest
+{
+    public string WebUserName { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+}
+
+public class IndusLoginResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string Token { get; set; } = string.Empty;
+    public string WebUserName { get; set; } = string.Empty;
+}

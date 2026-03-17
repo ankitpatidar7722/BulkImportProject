@@ -142,7 +142,92 @@ public class AuthService : IAuthService
         }
     }
 
-    private string GenerateJwtToken(Guid sessionId, int step, string userName, string companyName, 
+    public async Task<IndusLoginResponse> IndusLoginAsync(IndusLoginRequest request)
+    {
+        try
+        {
+            var indusConnString = _config.GetConnectionString("IndusConnection");
+            if (string.IsNullOrEmpty(indusConnString))
+                return new IndusLoginResponse { Success = false, Message = "Indus Connection String not configured." };
+
+            using var conn = new SqlConnection(indusConnString);
+
+            var query = @"
+                SELECT TOP 1 WebUserName
+                FROM CompanyWebUser
+                WHERE WebUserName = @User AND ISNULL(WebUserPassword, '') = @Pass";
+
+            Console.WriteLine($"[IndusLogin] User={request.WebUserName}");
+
+            var result = await conn.QueryFirstOrDefaultAsync<dynamic>(query,
+                new { User = request.WebUserName, Pass = request.Password });
+
+            if (result == null)
+            {
+                Console.WriteLine($"[IndusLogin] FAILED - No matching row for WebUserName={request.WebUserName}");
+                return new IndusLoginResponse { Success = false, Message = "Invalid Username or Password" };
+            }
+
+            Console.WriteLine($"[IndusLogin] SUCCESS - Matched WebUserName={result.WebUserName}");
+
+            string webUserName = result.WebUserName;
+
+            var sessionId = _sessionStore.CreateSession(webUserName, indusConnString, "Indus");
+
+            if (_sessionStore.TryGetSession(sessionId, out var session) && session != null)
+            {
+                session.LoginStep = 2;
+                _sessionStore.UpdateSession(sessionId, session);
+            }
+
+            var token = GenerateIndusJwtToken(sessionId, webUserName);
+
+            return new IndusLoginResponse
+            {
+                Success = true,
+                Token = token,
+                WebUserName = webUserName,
+                Message = "Indus Login Successful"
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"IndusLogin Error: {ex}");
+            return new IndusLoginResponse { Success = false, Message = $"Login Error: {ex.Message}" };
+        }
+    }
+
+    private string GenerateIndusJwtToken(Guid sessionId, string webUserName)
+    {
+        var keyStr = _config["Jwt:Key"] ?? "ThisIsSamplesecretKey12345678901234567890";
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(keyStr));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var claims = new List<Claim>
+        {
+            new Claim("sessionId", sessionId.ToString()),
+            new Claim("loginStep", "2"),
+            new Claim(ClaimTypes.Name, webUserName),
+            new Claim("companyName", "Indus"),
+            new Claim("loginType", "indus")
+        };
+
+        var issuer = _config["Jwt:Issuer"] ?? "estimoprime";
+        var audience = _config["Jwt:Audience"] ?? "estimoprime";
+        var expirationHours = double.Parse(_config["Jwt:ExpirationHours"] ?? "240");
+
+        var token = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: claims,
+            expires: DateTime.Now.AddHours(expirationHours),
+            signingCredentials: creds
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private string GenerateJwtToken(Guid sessionId, int step, string userName, string companyName,
                                     int userId = 0, int companyId = 0, int branchId = 0, bool isAdmin = false)
     {
         var keyStr = _config["Jwt:Key"] ?? "ThisIsSamplesecretKey12345678901234567890";

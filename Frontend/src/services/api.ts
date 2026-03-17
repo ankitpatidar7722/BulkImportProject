@@ -1196,6 +1196,136 @@ export const logout = async (): Promise<void> => {
     }
 };
 
+// ==================== INDUS LOGIN ====================
+
+export interface IndusLoginRequest {
+    webUserName: string;
+    password: string;
+}
+
+export interface IndusLoginResponse {
+    success: boolean;
+    message: string;
+    token: string;
+    webUserName: string;
+}
+
+export const indusLogin = async (data: IndusLoginRequest): Promise<IndusLoginResponse> => {
+    const response = await api.post('/auth/indus-login', data);
+    return response.data;
+};
+
+// ==================== COMPANY SUBSCRIPTION ====================
+
+export interface CompanySubscriptionDto {
+    companyUserID: string;
+    password: string;
+    conn_String?: string;
+    companyName: string;
+    apiCompanyUserName?: string;
+    apiCompanyPassword?: string;
+    applicationName?: string;
+    applicationVersion?: string;
+    dataBaseLocation?: string;
+    lastLoginDateTime?: string;
+    isActive?: boolean;
+    country?: string;
+    state?: string;
+    city?: string;
+    applicationBaseURL?: string;
+    companyCode?: string;
+    companyUniqueCode?: string;
+    maxCompanyUniqueCode?: number;
+    fromDate?: string;
+    toDate?: string;
+    fYear?: string;
+    paymentDueDate?: string;
+    subscriptionStatus?: string;
+    statusDescription?: string;
+    subscriptionStatusMessage?: string;
+    loginAllowed?: number;
+    gstin?: string;
+    latestVersion?: string;
+    loginAllowedOldVersion?: number;
+    oldVersion?: string;
+    email?: string;
+    mobile?: string;
+    address?: string;
+}
+
+export interface CompanySubscriptionSaveRequest extends CompanySubscriptionDto {
+    originalCompanyUserID?: string;
+}
+
+export interface CompanySubscriptionListResponse {
+    success: boolean;
+    message: string;
+    data: CompanySubscriptionDto[];
+}
+
+export interface CompanySubscriptionResponse {
+    success: boolean;
+    message: string;
+    data?: CompanySubscriptionDto;
+}
+
+export const getCompanySubscriptions = async (): Promise<CompanySubscriptionListResponse> => {
+    const response = await api.get('/companysubscription');
+    return response.data;
+};
+
+export const getCompanySubscriptionByKey = async (companyUserID: string): Promise<CompanySubscriptionResponse> => {
+    const response = await api.get(`/companysubscription/${encodeURIComponent(companyUserID)}`);
+    return response.data;
+};
+
+export const createCompanySubscription = async (data: CompanySubscriptionDto): Promise<CompanySubscriptionResponse> => {
+    const response = await api.post('/companysubscription', data);
+    return response.data;
+};
+
+export const updateCompanySubscription = async (data: CompanySubscriptionSaveRequest): Promise<CompanySubscriptionResponse> => {
+    const response = await api.put('/companysubscription', data);
+    return response.data;
+};
+
+export const deleteCompanySubscription = async (companyUserID: string): Promise<CompanySubscriptionResponse> => {
+    const response = await api.delete(`/companysubscription/${encodeURIComponent(companyUserID)}`);
+    return response.data;
+};
+
+export interface SetupDatabaseRequest {
+    server: string;
+    applicationName: string;
+    clientName: string;
+    databaseName: string;
+}
+
+export interface SetupDatabaseResponse {
+    success: boolean;
+    message: string;
+    connectionString: string;
+    databaseName: string;
+    server: string;
+    applicationName: string;
+    clientName: string;
+}
+
+export interface ServerListResponse {
+    success: boolean;
+    servers: string[];
+}
+
+export const getServers = async (): Promise<ServerListResponse> => {
+    const response = await api.get('/companysubscription/servers');
+    return response.data;
+};
+
+export const setupDatabase = async (data: SetupDatabaseRequest): Promise<SetupDatabaseResponse> => {
+    const response = await api.post('/companysubscription/setup-database', data);
+    return response.data;
+};
+
 // ==========================================
 // RECORD COUNT CHECK HELPERS
 // Used by "Clear All Data" to decide whether to show "No Data found" popup

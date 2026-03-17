@@ -16,11 +16,15 @@ import CompanyMaster from './pages/CompanyMaster';
 import ModuleAuthority from './pages/ModuleAuthority';
 import CreateModule from './pages/CreateModule';
 import DynamicModule from './pages/DynamicModule';
+import CompanySubscription from './pages/CompanySubscription';
 
 // Authenticated Layout Component
 const AuthenticatedLayout = () => {
+    const { loginType } = useAuth();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+    const defaultPath = loginType === 'indus' ? '/company-subscription' : '/';
 
     return (
         <div className="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
@@ -34,14 +38,15 @@ const AuthenticatedLayout = () => {
                 <Header onMenuClick={() => setIsSidebarOpen(true)} isSidebarCollapsed={isSidebarCollapsed} />
                 <main className="flex-1 overflow-y-auto mt-16 custom-scrollbar p-4 md:p-6">
                     <Routes>
-                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/" element={loginType === 'indus' ? <Navigate to="/company-subscription" replace /> : <Dashboard />} />
                         <Route path="/import-master" element={<ImportMaster />} />
                         <Route path="/stock-upload" element={<StockUpload />} />
                         <Route path="/company-master" element={<CompanyMaster />} />
                         <Route path="/module-authority" element={<ModuleAuthority />} />
                         <Route path="/create-module" element={<CreateModule />} />
                         <Route path="/dynamic-module" element={<DynamicModule />} />
-                        <Route path="*" element={<Navigate to="/" replace />} />
+                        <Route path="/company-subscription" element={<CompanySubscription />} />
+                        <Route path="*" element={<Navigate to={defaultPath} replace />} />
                     </Routes>
                 </main>
             </div>
