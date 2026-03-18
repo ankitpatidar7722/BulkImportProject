@@ -263,6 +263,7 @@ public class ClientDropdownItem
 {
     public string CompanyName { get; set; } = string.Empty;
     public string CompanyUserID { get; set; } = string.Empty;
+    public string ApplicationName { get; set; } = string.Empty;
 }
 
 public class ClientDropdownResponse

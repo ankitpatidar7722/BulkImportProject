@@ -1491,6 +1491,7 @@ export const saveModuleSettings = async (data: SaveModuleSettingsRequest): Promi
 export interface ClientDropdownItem {
     companyName: string;
     companyUserID: string;
+    applicationName: string;
 }
 
 export interface ClientDropdownResponse {

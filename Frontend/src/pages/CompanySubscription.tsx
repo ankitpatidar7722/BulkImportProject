@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-    CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw, Search,
+    CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw,
     Database, Server, ChevronRight, ArrowLeft, CheckCircle2, Building2,
-    GitBranch, Factory, PartyPopper, Settings, Copy
+    GitBranch, Factory, PartyPopper, Settings, Copy, Search
 } from 'lucide-react';
 import {
     getCompanySubscriptions,
@@ -33,12 +33,19 @@ import {
 } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
 
-import { AgGridReact } from 'ag-grid-react';
-import { AllCommunityModule, ModuleRegistry, ColDef, GridApi } from 'ag-grid-community';
-import "ag-grid-community/styles/ag-grid.css";
-import "ag-grid-community/styles/ag-theme-quartz.css";
-
-ModuleRegistry.registerModules([AllCommunityModule]);
+import DataGrid, {
+    Column,
+    Paging,
+    Pager,
+    SearchPanel,
+    FilterRow,
+    HeaderFilter,
+    Grouping,
+    GroupPanel,
+    Sorting,
+    ColumnChooser,
+} from 'devextreme-react/data-grid';
+import 'devextreme/dist/css/dx.light.css';
 
 const EMPTY_FORM: CompanySubscriptionDto = {
     companyUserID: '', password: '', companyName: '', companyCode: '', companyUniqueCode: '',
@@ -88,7 +95,6 @@ const CompanySubscription: React.FC = () => {
     const [formData, setFormData] = useState<CompanySubscriptionDto>({ ...EMPTY_FORM });
     const [originalCompanyUserID, setOriginalCompanyUserID] = useState('');
     const [isSaving, setIsSaving] = useState(false);
-    const [searchText, setSearchText] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [editTab, setEditTab] = useState<1 | 2>(1);
 
@@ -97,8 +103,6 @@ const CompanySubscription: React.FC = () => {
     const [moduleOriginal, setModuleOriginal] = useState<ModuleSettingsRow[]>([]);
     const [isModuleLoading, setIsModuleLoading] = useState(false);
     const [isModuleSaving, setIsModuleSaving] = useState(false);
-    const [moduleSearch, setModuleSearch] = useState('');
-    const moduleGridRef = useRef<AgGridReact>(null);
 
     // ─── Copy As State ───
     const [showCopyModal, setShowCopyModal] = useState(false);
@@ -146,8 +150,6 @@ const CompanySubscription: React.FC = () => {
     // Final success
     const [setupComplete, setSetupComplete] = useState<CompleteSetupResponse | null>(null);
 
-    const gridApiRef = useRef<GridApi | null>(null);
-
     // ─── Fetch Data ───
     const fetchData = useCallback(async () => {
         setIsLoading(true);
@@ -171,40 +173,6 @@ const CompanySubscription: React.FC = () => {
             setWizardDbName(generateDatabaseName(wizardAppName, wizardClientName));
         }
     }, [wizardAppName, wizardClientName, wizardDbNameEdited]);
-
-    // ─── AG Grid ───
-    const columnDefs = useMemo<ColDef[]>(() => [
-        { headerName: '#', valueGetter: 'node.rowIndex + 1', width: 60, sortable: false, filter: false, resizable: false },
-        { headerName: 'Client Code', field: 'companyUniqueCode', width: 130, filter: 'agTextColumnFilter' },
-        {
-            headerName: 'Status', field: 'subscriptionStatus', width: 110, filter: 'agTextColumnFilter',
-            cellRenderer: (params: any) => {
-                const val = params.value;
-                if (val === 'Active') return React.createElement('span', { className: 'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700' }, 'Active');
-                if (val === 'Expired') return React.createElement('span', { className: 'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700' }, 'Expired');
-                return val || '';
-            }
-        },
-        { headerName: 'Client Name', field: 'companyName', width: 200, filter: 'agTextColumnFilter' },
-        { headerName: 'Application', field: 'applicationName', width: 130, filter: 'agTextColumnFilter' },
-        { headerName: 'Client Address', field: 'address', width: 200, filter: 'agTextColumnFilter' },
-        { headerName: 'City', field: 'city', width: 120, filter: 'agTextColumnFilter' },
-        { headerName: 'State', field: 'state', width: 130, filter: 'agTextColumnFilter' },
-        { headerName: 'Country', field: 'country', width: 110, filter: 'agTextColumnFilter' },
-        { headerName: 'Company Code', field: 'companyCode', width: 130, filter: 'agTextColumnFilter' },
-        { headerName: 'User ID', field: 'companyUserID', width: 120, filter: 'agTextColumnFilter' },
-        { headerName: 'From Date', field: 'fromDate', width: 130, filter: 'agDateColumnFilter', valueFormatter: (p: any) => p.value ? new Date(p.value).toLocaleDateString('en-IN') : '' },
-        { headerName: 'To Date', field: 'toDate', width: 130, filter: 'agDateColumnFilter', valueFormatter: (p: any) => p.value ? new Date(p.value).toLocaleDateString('en-IN') : '' },
-        { headerName: 'Payment Due', field: 'paymentDueDate', width: 130, filter: 'agDateColumnFilter', valueFormatter: (p: any) => p.value ? new Date(p.value).toLocaleDateString('en-IN') : '' },
-        { headerName: 'Login Allowed', field: 'loginAllowed', width: 120, filter: 'agNumberColumnFilter' },
-        { headerName: 'GSTIN', field: 'gstin', width: 170, filter: 'agTextColumnFilter' },
-        { headerName: 'Email', field: 'email', width: 200, filter: 'agTextColumnFilter' },
-        { headerName: 'Mobile', field: 'mobile', width: 130, filter: 'agTextColumnFilter' },
-        { headerName: 'Status Description', field: 'statusDescription', width: 180, filter: 'agTextColumnFilter' },
-        { headerName: 'ERP Message', field: 'subscriptionStatusMessage', width: 180, filter: 'agTextColumnFilter' },
-    ], []);
-
-    const defaultColDef = useMemo(() => ({ sortable: true, resizable: true }), []);
 
     // ─── Wizard Handlers ───
 
@@ -246,12 +214,14 @@ const CompanySubscription: React.FC = () => {
             const result = await setupDatabase(req);
             if (result.success) {
                 setSetupResult(result);
-                setFormData({
+                setFormData(prev => ({
                     ...EMPTY_FORM,
+                    companyUniqueCode: prev.companyUniqueCode,
+                    maxCompanyUniqueCode: prev.maxCompanyUniqueCode,
                     conn_String: result.connectionString,
                     applicationName: result.applicationName,
                     companyName: result.clientName,
-                });
+                }));
                 setWizardStep(2);
                 showMessage('success', 'Database Created', result.message);
             } else {
@@ -266,13 +236,22 @@ const CompanySubscription: React.FC = () => {
 
     // Step 2: Save Subscription
     const handleStep2Save = async () => {
+        if (!formData.companyName.trim()) { showMessage('error', 'Validation', 'Client Name is required.'); return; }
+        if (!formData.applicationName?.trim()) { showMessage('error', 'Validation', 'Application Name is required.'); return; }
+        if (!formData.gstin?.trim()) { showMessage('error', 'Validation', 'GSTIN is required.'); return; }
+        if (!formData.address?.trim()) { showMessage('error', 'Validation', 'Address is required.'); return; }
+        if (!formData.city?.trim()) { showMessage('error', 'Validation', 'City is required.'); return; }
+        if (!formData.state?.trim()) { showMessage('error', 'Validation', 'State is required.'); return; }
+        if (!formData.country?.trim()) { showMessage('error', 'Validation', 'Country is required.'); return; }
+        if (!formData.email?.trim()) { showMessage('error', 'Validation', 'Email is required.'); return; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) { showMessage('error', 'Validation', 'Please enter a valid email.'); return; }
+        if (!formData.mobile?.trim()) { showMessage('error', 'Validation', 'Mobile is required.'); return; }
+        if (!/^\d+$/.test(formData.mobile)) { showMessage('error', 'Validation', 'Mobile must be numeric.'); return; }
+        if (!formData.subscriptionStatus?.trim()) { showMessage('error', 'Validation', 'Status is required.'); return; }
         if (!formData.companyUserID.trim()) { showMessage('error', 'Validation', 'User ID is required.'); return; }
         if (/\s/.test(formData.companyUserID)) { showMessage('error', 'Validation', 'User ID must not contain spaces.'); return; }
         if (!formData.password.trim()) { showMessage('error', 'Validation', 'Password is required.'); return; }
         if (/\s/.test(formData.password)) { showMessage('error', 'Validation', 'Password must not contain spaces.'); return; }
-        if (!formData.companyName.trim()) { showMessage('error', 'Validation', 'Client Name is required.'); return; }
-        if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) { showMessage('error', 'Validation', 'Please enter a valid email.'); return; }
-        if (formData.mobile && !/^\d+$/.test(formData.mobile)) { showMessage('error', 'Validation', 'Mobile must be numeric.'); return; }
 
         setIsSaving(true);
         try {
@@ -534,51 +513,18 @@ const CompanySubscription: React.FC = () => {
         }
     }, [showForm, editTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const filteredModuleData = useMemo(() => {
-        if (!moduleSearch.trim()) return moduleData;
-        const q = moduleSearch.toLowerCase();
-        return moduleData.filter(r =>
-            r.moduleHeadName.toLowerCase().includes(q) ||
-            r.moduleDisplayName.toLowerCase().includes(q) ||
-            r.moduleName.toLowerCase().includes(q)
-        );
-    }, [moduleData, moduleSearch]);
-
-    const StatusCellRenderer = useCallback((params: any) => {
-        const row = params.data as ModuleSettingsRow;
+    // ─── DevExtreme cell renderers for Module Settings ───
+    const moduleStatusCellRender = useCallback((cellData: any) => {
+        const row = cellData.data as ModuleSettingsRow;
         if (!row) return null;
         return (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <div className="flex items-center justify-center">
                 <input type="checkbox" checked={row.status} readOnly
                     onClick={() => handleModuleStatusToggle(row.moduleName)}
-                    style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#f59e0b' }} />
+                    className="w-5 h-5 cursor-pointer" style={{ accentColor: '#f59e0b' }} />
             </div>
         );
     }, [handleModuleStatusToggle]);
-
-    const moduleColDefs = useMemo<ColDef[]>(() => [
-        {
-            headerName: 'Module Head Name',
-            field: 'moduleHeadName',
-            flex: 1,
-            filter: true,
-            sortable: true,
-        },
-        {
-            headerName: 'Module Display Name',
-            field: 'moduleDisplayName',
-            flex: 1,
-            filter: true,
-            sortable: true,
-        },
-        {
-            headerName: 'Status',
-            field: 'status',
-            width: 110,
-            sortable: true,
-            cellRenderer: StatusCellRenderer,
-        },
-    ], [StatusCellRenderer]);
 
     // ─── Edit Handlers ───
     const handleEdit = () => {
@@ -607,8 +553,6 @@ const CompanySubscription: React.FC = () => {
         setEditTab(1);
         setShowForm(true);
     };
-
-    const handleRowClick = (event: any) => setSelectedRow(event.data);
 
     const handleDelete = () => {
         if (!selectedRow) { showMessage('info', 'No Selection', 'Please select a row to delete.'); return; }
@@ -661,9 +605,6 @@ const CompanySubscription: React.FC = () => {
         finally { setIsSaving(false); }
     };
 
-    const onGridReady = (params: any) => { gridApiRef.current = params.api; };
-    useEffect(() => { if (gridApiRef.current) gridApiRef.current.setGridOption('quickFilterText', searchText); }, [searchText]);
-
     // ─── Generic updater for step forms ───
     const updateCompanyMaster = (field: string, value: string) => setCompanyMaster(prev => ({ ...prev, [field]: value }));
     const updateBranchMaster = (field: string, value: string) => setBranchMaster(prev => ({ ...prev, [field]: value }));
@@ -684,69 +625,113 @@ const CompanySubscription: React.FC = () => {
 
     // ─── RENDER ───
     return (
-        <div className="space-y-4">
+        <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden gap-3 p-1 w-full max-w-full">
             {ModalRenderer}
 
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            {/* Page Header - Fixed */}
+            <div className="flex-shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-gray-900/60 rounded-xl border border-gray-100 dark:border-gray-800 px-5 py-3 shadow-sm">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg flex items-center justify-center">
-                        <CreditCard className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/20">
+                        <CreditCard className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Company Subscription</h1>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Manage company subscriptions and licensing ({data.length} records)</p>
+                        <h1 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Company Subscription</h1>
+                        <p className="text-[11px] text-gray-400 dark:text-gray-500 font-medium">{data.length} records</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={fetchData} disabled={isLoading} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
-                        <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
+                    <button onClick={fetchData} disabled={isLoading}
+                        className="flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150 disabled:opacity-50">
+                        <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
                     </button>
-                    <button onClick={handleCreate} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
-                        <Plus className="w-4 h-4" /> Create
+                    <button onClick={handleCreate}
+                        className="flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all duration-150 shadow-sm hover:shadow-md shadow-indigo-600/20">
+                        <Plus className="w-3.5 h-3.5" /> Create
                     </button>
-                    <button onClick={handleEdit} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors">
-                        <Edit2 className="w-4 h-4" /> Edit
+                    <button onClick={handleEdit}
+                        className="flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-semibold text-white bg-amber-500 rounded-lg hover:bg-amber-600 transition-all duration-150 shadow-sm hover:shadow-md shadow-amber-500/20">
+                        <Edit2 className="w-3.5 h-3.5" /> Edit
                     </button>
-                    <button onClick={handleDelete} className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
-                        <Trash2 className="w-4 h-4" /> Delete
+                    <button onClick={handleDelete}
+                        className="flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-all duration-150 shadow-sm hover:shadow-md shadow-red-500/20">
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
                     </button>
                 </div>
             </div>
 
-            {/* Search */}
-            <div className="relative max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="text" placeholder="Search across all columns..." value={searchText} onChange={e => setSearchText(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
+            {/* Main DataGrid - fills remaining space, scroll stays inside */}
+            <div className="flex-1 min-h-0 min-w-0 bg-white dark:bg-gray-900/60 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+                <DataGrid
+                    dataSource={data}
+                    keyExpr="companyUserID"
+                    showBorders={true}
+                    showRowLines={true}
+                    showColumnLines={true}
+                    rowAlternationEnabled={true}
+                    hoverStateEnabled={true}
+                    columnAutoWidth={true}
+                    wordWrapEnabled={false}
+                    allowColumnResizing={true}
+                    columnResizingMode="widget"
+                    onRowClick={(e: any) => { if (e.data) setSelectedRow(e.data); }}
+                    onRowDblClick={(e: any) => { if (e.data) handleRowDoubleClick(e); }}
+                    height="100%"
+                    focusedRowEnabled={true}
+                >
+                    <Sorting mode="multiple" />
+                    <Paging defaultPageSize={50} />
+                    <Pager showPageSizeSelector={true} allowedPageSizes={[25, 50, 100, 200]} showInfo={true} showNavigationButtons={true} displayMode="full" />
+                    <SearchPanel visible={true} width={280} placeholder="Search..." highlightSearchText={true} />
+                    <FilterRow visible={true} />
+                    <HeaderFilter visible={true} />
+                    <Grouping autoExpandAll={false} contextMenuEnabled={true} expandMode="rowClick" />
+                    <GroupPanel visible={true} emptyPanelText="Drag a column header here to group" />
+                    <ColumnChooser enabled={true} mode="select" />
 
-            {/* AG Grid */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div className="ag-theme-quartz" style={{ height: 'calc(100vh - 320px)', width: '100%', ['--ag-grid-size' as any]: '6px' }}>
-                    <AgGridReact rowData={data} columnDefs={columnDefs} defaultColDef={defaultColDef}
-                        onGridReady={onGridReady} rowSelection="single" onRowClicked={handleRowClick}
-                        onRowDoubleClicked={handleRowDoubleClick} pagination={true} paginationPageSize={50}
-                        paginationPageSizeSelector={[25, 50, 100, 200]} animateRows={true}
-                        getRowId={(params) => params.data.companyUserID} loading={isLoading}
-                        overlayNoRowsTemplate="<span class='text-gray-500 text-sm'>No subscription records found</span>" />
-                </div>
+                    <Column caption="#" width={50} alignment="center" allowFiltering={false} allowSorting={false} allowGrouping={false} allowResizing={false}
+                        cellRender={(cellData: any) => <span className="text-gray-400 font-mono text-xs">{cellData.rowIndex + 1}</span>} />
+                    <Column dataField="companyUniqueCode" caption="Client Code" />
+                    <Column dataField="subscriptionStatus" caption="Status"
+                        cellRender={(cellData: any) => {
+                            const val = cellData.value;
+                            if (val === 'Active') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Active</span>;
+                            if (val === 'Expired') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">Expired</span>;
+                            return <span>{val || ''}</span>;
+                        }} />
+                    <Column dataField="companyName" caption="Client Name" />
+                    <Column dataField="applicationName" caption="Application" />
+                    <Column dataField="address" caption="Client Address" />
+                    <Column dataField="city" caption="City" />
+                    <Column dataField="state" caption="State" />
+                    <Column dataField="country" caption="Country" />
+                    <Column dataField="companyCode" caption="Company Code" />
+                    <Column dataField="companyUserID" caption="User ID" />
+                    <Column dataField="fromDate" caption="From Date" dataType="date" format="dd/MM/yyyy" />
+                    <Column dataField="toDate" caption="To Date" dataType="date" format="dd/MM/yyyy" />
+                    <Column dataField="paymentDueDate" caption="Payment Due" dataType="date" format="dd/MM/yyyy" />
+                    <Column dataField="loginAllowed" caption="Login Allowed" dataType="number" />
+                    <Column dataField="gstin" caption="GSTIN" />
+                    <Column dataField="email" caption="Email" />
+                    <Column dataField="mobile" caption="Mobile" />
+                    <Column dataField="statusDescription" caption="Status Description" />
+                    <Column dataField="subscriptionStatusMessage" caption="ERP Message" />
+                </DataGrid>
             </div>
 
             {/* ═══════════════ FULL SETUP WIZARD ═══════════════ */}
             {showWizard && (
-                <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 overflow-y-auto py-6">
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl mx-4 border border-gray-200 dark:border-gray-700">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl mx-4 max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800">
                         {/* Wizard Header */}
-                        <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-                                    {wizardStep === 6 ? <PartyPopper className="w-5 h-5 text-white" /> :
-                                        React.createElement(WIZARD_STEPS[(wizardStep as number) - 1]?.icon || Database, { className: 'w-5 h-5 text-white' })}
+                        <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 rounded-t-2xl">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 bg-white/15 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                                    {wizardStep === 6 ? <PartyPopper className="w-3.5 h-3.5 text-white" /> :
+                                        React.createElement(WIZARD_STEPS[(wizardStep as number) - 1]?.icon || Database, { className: 'w-3.5 h-3.5 text-white' })}
                                 </div>
                                 <div>
-                                    <h2 className="text-lg font-bold text-white">Complete Company Setup</h2>
-                                    <p className="text-sm text-indigo-100">{getStepSubtitle(wizardStep)}</p>
+                                    <h2 className="text-sm font-bold text-white tracking-tight">Complete Company Setup</h2>
+                                    <p className="text-[10px] text-indigo-200/80 font-medium">{getStepSubtitle(wizardStep)}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
@@ -754,18 +739,18 @@ const CompanySubscription: React.FC = () => {
                                 <div className="hidden md:flex items-center gap-1">
                                     {WIZARD_STEPS.map((s, i) => (
                                         <React.Fragment key={s.num}>
-                                            {i > 0 && <div className={`w-4 h-0.5 ${wizardStep > s.num ? 'bg-white/80' : 'bg-white/20'}`} />}
-                                            <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold transition-all ${
-                                                wizardStep === s.num ? 'bg-white text-indigo-600 scale-110' :
-                                                wizardStep > s.num ? 'bg-white/80 text-indigo-600' : 'bg-white/20 text-white'
+                                            {i > 0 && <div className={`w-5 h-0.5 rounded-full transition-all duration-300 ${wizardStep > s.num ? 'bg-white/70' : 'bg-white/15'}`} />}
+                                            <div className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all duration-300 ${
+                                                wizardStep === s.num ? 'bg-white text-indigo-600 scale-110 shadow-lg shadow-white/20' :
+                                                wizardStep > s.num ? 'bg-white/80 text-indigo-600' : 'bg-white/15 text-white/70'
                                             }`}>
-                                                {wizardStep > s.num ? <CheckCircle2 className="w-4 h-4" /> : s.num}
+                                                {wizardStep > s.num ? <CheckCircle2 className="w-3.5 h-3.5" /> : s.num}
                                             </div>
                                         </React.Fragment>
                                     ))}
                                 </div>
-                                <button onClick={() => setShowWizard(false)} className="p-2 rounded-lg hover:bg-white/20 transition-colors">
-                                    <X className="w-5 h-5 text-white" />
+                                <button onClick={() => setShowWizard(false)} className="p-1.5 rounded-lg hover:bg-white/15 transition-all duration-150">
+                                    <X className="w-4 h-4 text-white" />
                                 </button>
                             </div>
                         </div>
@@ -773,48 +758,53 @@ const CompanySubscription: React.FC = () => {
                         {/* ═══ STEP 1: Database Setup ═══ */}
                         {wizardStep === 1 && (
                             <>
-                                <div className="p-5 space-y-5 max-h-[calc(100vh-220px)] overflow-y-auto">
-                                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
-                                        <div className="flex items-start gap-3">
-                                            <Server className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+                                    <div className="bg-indigo-50/60 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/40 rounded-lg px-3 py-2.5">
+                                        <div className="flex items-start gap-2.5">
+                                            <div className="w-7 h-7 bg-indigo-100 dark:bg-indigo-800/40 rounded-lg flex items-center justify-center flex-shrink-0">
+                                                <Server className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                            </div>
                                             <div>
-                                                <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300">Database Setup</h3>
-                                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Select a server, application type, and client name. A new database will be created and restored from the application template.</p>
+                                                <h3 className="text-[12px] font-semibold text-indigo-800 dark:text-indigo-300">Database Setup</h3>
+                                                <p className="text-[11px] text-indigo-600/80 dark:text-indigo-400/70 mt-0.5 leading-relaxed">Select a server, application type, and client name. A new database will be created from the template.</p>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-                                        <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-4">Database Configuration</h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Server *</label>
+                                    <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-2.5">
+                                        <div className="flex items-center gap-1.5 mb-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                            <h3 className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Database Configuration</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-2">
+                                            <div className="space-y-1">
+                                                <label className={labelCls}>Server *</label>
                                                 <input type="text" list="server-list" value={wizardServer} onChange={e => setWizardServer(e.target.value)}
                                                     placeholder="Enter or select server (e.g. 13.200.122.70,1433)"
-                                                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors" />
+                                                    className={inputCls} />
                                                 <datalist id="server-list">{serverList.map(s => <option key={s} value={s} />)}</datalist>
                                             </div>
-                                            <div>
-                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Application Name *</label>
+                                            <div className="space-y-1">
+                                                <label className={labelCls}>Application Name *</label>
                                                 <select value={wizardAppName} onChange={e => { setWizardAppName(e.target.value); setWizardDbNameEdited(false); }}
-                                                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+                                                    className={`${inputCls} cursor-pointer`}>
                                                     {APPLICATION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                                                 </select>
                                             </div>
-                                            <div>
-                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Client Name *</label>
+                                            <div className="space-y-1">
+                                                <label className={labelCls}>Client Name *</label>
                                                 <input type="text" value={wizardClientName} onChange={e => { setWizardClientName(e.target.value); if (wizardDbNameEdited) setWizardDbNameEdited(false); }}
-                                                    placeholder="Enter client name" className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors" />
+                                                    placeholder="Enter client name" className={inputCls} />
                                             </div>
-                                            <div>
-                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Database Name * <span className="ml-1 text-xs text-gray-400 font-normal">(auto-generated)</span></label>
+                                            <div className="space-y-1">
+                                                <label className={labelCls}>Database Name * <span className="ml-1 text-[10px] text-gray-400 font-normal normal-case">(auto-generated)</span></label>
                                                 <input type="text" value={wizardDbName} onChange={e => { setWizardDbName(e.target.value); setWizardDbNameEdited(true); }}
-                                                    placeholder="Database name" className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors" />
+                                                    placeholder="Database name" className={inputCls} />
                                             </div>
                                         </div>
                                         {wizardDbName && (
-                                            <div className="mt-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
-                                                <p className="text-xs text-indigo-700 dark:text-indigo-300">
-                                                    <strong>Preview:</strong> Database <code className="bg-indigo-100 dark:bg-indigo-800 px-1 rounded">{wizardDbName}</code> on <code className="bg-indigo-100 dark:bg-indigo-800 px-1 rounded">{wizardServer || '(select server)'}</code> using <code className="bg-indigo-100 dark:bg-indigo-800 px-1 rounded">{wizardAppName}</code> template.
+                                            <div className="mt-2.5 px-2.5 py-2 bg-indigo-50/60 dark:bg-indigo-900/10 rounded-lg border border-indigo-100 dark:border-indigo-800/40">
+                                                <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
+                                                    <strong>Preview:</strong> Database <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardDbName}</code> on <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardServer || '(select server)'}</code> using <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardAppName}</code> template.
                                                 </p>
                                             </div>
                                         )}
@@ -828,49 +818,75 @@ const CompanySubscription: React.FC = () => {
                         {/* ═══ STEP 2: Subscription Details ═══ */}
                         {wizardStep === 2 && (
                             <>
-                                <div className="p-5 space-y-5 max-h-[calc(100vh-220px)] overflow-y-auto">
+                                <div className="p-4 space-y-3">
+                                    {/* DB Created Banner */}
                                     {setupResult && (
-                                        <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-4">
-                                            <div className="flex items-start gap-3">
-                                                <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
-                                                <div>
-                                                    <h3 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Database Created</h3>
-                                                    <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1"><strong>{setupResult.databaseName}</strong> on <strong>{setupResult.server}</strong></p>
-                                                </div>
-                                            </div>
+                                        <div className="flex items-center gap-2 bg-emerald-50/60 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/40 rounded-lg px-3 py-1.5">
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                                            <span className="text-[11px] text-emerald-700 dark:text-emerald-300">DB: <strong>{setupResult.databaseName}</strong> on <strong>{setupResult.server}</strong></span>
                                         </div>
                                     )}
-                                    <CardSection title="Client Information" color="indigo">
-                                        <FormField label="Client Code" name="companyUniqueCode" value={formData.companyUniqueCode || ''} onChange={handleFormChange} readOnly />
-                                        <FormField label="Client Name *" name="companyName" value={formData.companyName} onChange={handleFormChange} />
-                                        <FormField label="Company Code" name="companyCode" value={formData.companyCode || ''} onChange={handleFormChange} />
-                                        <FormSelect label="Application Name" name="applicationName" value={formData.applicationName || ''} onChange={handleFormChange} options={APPLICATION_OPTIONS} />
-                                        <FormField label="GSTIN" name="gstin" value={formData.gstin || ''} onChange={handleFormChange} />
-                                    </CardSection>
-                                    <CardSection title="Address" color="emerald">
-                                        <div className="md:col-span-3"><FormField label="Address" name="address" value={formData.address || ''} onChange={handleFormChange} /></div>
-                                        <FormField label="City" name="city" value={formData.city || ''} onChange={handleFormChange} />
-                                        <FormField label="State" name="state" value={formData.state || ''} onChange={handleFormChange} />
-                                        <FormField label="Country" name="country" value={formData.country || ''} onChange={handleFormChange} />
-                                    </CardSection>
-                                    <CardSection title="Contact Details" color="amber">
-                                        <FormField label="Email" name="email" value={formData.email || ''} onChange={handleFormChange} type="email" />
-                                        <FormField label="Mobile" name="mobile" value={formData.mobile || ''} onChange={handleFormChange} />
-                                    </CardSection>
-                                    <CardSection title="Subscription" color="purple">
-                                        <FormSelect label="Status" name="subscriptionStatus" value={formData.subscriptionStatus || ''} onChange={handleFormChange} options={SUBSCRIPTION_STATUS_OPTIONS} />
-                                        <FormField label="From Date" name="fromDate" value={formatDateForInput(formData.fromDate)} onChange={handleFormChange} type="date" />
-                                        <FormField label="To Date" name="toDate" value={formatDateForInput(formData.toDate)} onChange={handleFormChange} type="date" />
-                                        <FormField label="Payment Due Date" name="paymentDueDate" value={formatDateForInput(formData.paymentDueDate)} onChange={handleFormChange} type="date" />
-                                        <FormField label="Status Description" name="statusDescription" value={formData.statusDescription || ''} onChange={handleFormChange} />
-                                        <FormField label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} />
-                                    </CardSection>
-                                    <CardSection title="Login & Access" color="red">
-                                        <FormField label="User ID *" name="companyUserID" value={formData.companyUserID} onChange={handleFormChange} />
-                                        <FormField label="Password *" name="password" value={formData.password} onChange={handleFormChange} />
-                                        <FormField label="Connection String" name="conn_String" value={formData.conn_String || ''} onChange={handleFormChange} />
-                                        <FormField label="Login Allowed" name="loginAllowed" value={String(formData.loginAllowed ?? '')} onChange={handleFormChange} type="number" />
-                                    </CardSection>
+
+                                    {/* ── Row 1: Client Info (4 cols) ── */}
+                                    <div>
+                                        <div className="flex items-center gap-1.5 mb-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                            <h3 className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Client Information</h3>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
+                                            <FormField label="Client Code" name="companyUniqueCode" value={formData.companyUniqueCode || ''} onChange={handleFormChange} readOnly />
+                                            <FormField label="Client Name *" name="companyName" value={formData.companyName} onChange={handleFormChange} />
+                                            <FormField label="Company Code" name="companyCode" value={formData.companyCode || ''} onChange={handleFormChange} />
+                                            <FormSelect label="Application Name *" name="applicationName" value={formData.applicationName || ''} onChange={handleFormChange} options={APPLICATION_OPTIONS} />
+                                        </div>
+                                    </div>
+
+                                    {/* ── Row 2: Address + Contact (4 cols) ── */}
+                                    <div>
+                                        <div className="flex items-center gap-1.5 mb-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                            <h3 className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Address & Contact</h3>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
+                                            <FormField label="GSTIN *" name="gstin" value={formData.gstin || ''} onChange={handleFormChange} />
+                                            <div className="col-span-3"><FormField label="Address *" name="address" value={formData.address || ''} onChange={handleFormChange} /></div>
+                                            <FormField label="City *" name="city" value={formData.city || ''} onChange={handleFormChange} />
+                                            <FormField label="State *" name="state" value={formData.state || ''} onChange={handleFormChange} />
+                                            <FormField label="Country *" name="country" value={formData.country || ''} onChange={handleFormChange} />
+                                            <FormField label="Email *" name="email" value={formData.email || ''} onChange={handleFormChange} type="email" />
+                                            <FormField label="Mobile *" name="mobile" value={formData.mobile || ''} onChange={handleFormChange} />
+                                        </div>
+                                    </div>
+
+                                    {/* ── Row 3: Subscription (4 cols) ── */}
+                                    <div>
+                                        <div className="flex items-center gap-1.5 mb-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                            <h3 className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Subscription</h3>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
+                                            <FormSelect label="Status *" name="subscriptionStatus" value={formData.subscriptionStatus || ''} onChange={handleFormChange} options={SUBSCRIPTION_STATUS_OPTIONS} />
+                                            <FormField label="From Date" name="fromDate" value={formatDateForInput(formData.fromDate)} onChange={handleFormChange} type="date" />
+                                            <FormField label="To Date" name="toDate" value={formatDateForInput(formData.toDate)} onChange={handleFormChange} type="date" />
+                                            <FormField label="Payment Due Date" name="paymentDueDate" value={formatDateForInput(formData.paymentDueDate)} onChange={handleFormChange} type="date" />
+                                            <FormField label="Status Description" name="statusDescription" value={formData.statusDescription || ''} onChange={handleFormChange} />
+                                            <FormField label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} />
+                                        </div>
+                                    </div>
+
+                                    {/* ── Row 4: Login & Access (4 cols) ── */}
+                                    <div>
+                                        <div className="flex items-center gap-1.5 mb-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                            <h3 className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Login & Access</h3>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
+                                            <FormField label="User ID *" name="companyUserID" value={formData.companyUserID} onChange={handleFormChange} />
+                                            <FormField label="Password *" name="password" value={formData.password} onChange={handleFormChange} />
+                                            <FormField label="Connection String" name="conn_String" value={formData.conn_String || ''} onChange={handleFormChange} readOnly />
+                                            <FormField label="Login Allowed" name="loginAllowed" value={String(formData.loginAllowed ?? '')} onChange={handleFormChange} type="number" />
+                                        </div>
+                                    </div>
                                 </div>
                                 <WizardFooter onBack={() => setWizardStep(1)} onCancel={() => setShowWizard(false)} onNext={handleStep2Save}
                                     isSaving={isSaving} nextLabel={isSaving ? 'Saving...' : 'Save & Continue'} />
@@ -880,7 +896,7 @@ const CompanySubscription: React.FC = () => {
                         {/* ═══ STEP 3: Company Master ═══ */}
                         {wizardStep === 3 && (
                             <>
-                                <div className="p-5 space-y-5 max-h-[calc(100vh-220px)] overflow-y-auto">
+                                <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
                                     <CardSection title="Company Details" color="indigo">
                                         <StepField label="Company ID" value={String(companyMaster.companyID)} onChange={v => setCompanyMaster(prev => ({ ...prev, companyID: parseInt(v) || 2 }))} type="number" />
                                         <StepField label="Company Name *" value={companyMaster.companyName} onChange={v => updateCompanyMaster('companyName', v)} />
@@ -917,7 +933,7 @@ const CompanySubscription: React.FC = () => {
                         {/* ═══ STEP 4: Branch Master ═══ */}
                         {wizardStep === 4 && (
                             <>
-                                <div className="p-5 space-y-5 max-h-[calc(100vh-220px)] overflow-y-auto">
+                                <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
                                     <CardSection title="Branch Details" color="indigo">
                                         <StepField label="Branch ID" value={String(branchMaster.branchID)} onChange={v => setBranchMaster(prev => ({ ...prev, branchID: parseInt(v) || 1 }))} type="number" />
                                         <div className="md:col-span-2"><StepField label="Branch Name *" value={branchMaster.branchName} onChange={v => updateBranchMaster('branchName', v)} /></div>
@@ -945,7 +961,7 @@ const CompanySubscription: React.FC = () => {
                         {/* ═══ STEP 5: Production Unit ═══ */}
                         {wizardStep === 5 && (
                             <>
-                                <div className="p-5 space-y-5 max-h-[calc(100vh-220px)] overflow-y-auto">
+                                <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
                                     <CardSection title="Production Unit Details" color="indigo">
                                         <div className="md:col-span-2"><StepField label="Production Unit Name *" value={productionUnit.productionUnitName} onChange={v => updateProductionUnit('productionUnitName', v)} /></div>
                                         <div className="md:col-span-3"><StepField label="Address" value={productionUnit.address || ''} onChange={v => updateProductionUnit('address', v)} /></div>
@@ -967,28 +983,29 @@ const CompanySubscription: React.FC = () => {
 
                         {/* ═══ STEP 6: Success Screen ═══ */}
                         {wizardStep === 6 && setupComplete && (
-                            <div className="p-8 text-center">
-                                <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                                    <PartyPopper className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+                            <div className="flex-1 min-h-0 p-8 text-center">
+                                <div className="w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/20">
+                                    <PartyPopper className="w-7 h-7 text-white" />
                                 </div>
-                                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Congratulations!</h2>
-                                <p className="text-gray-600 dark:text-gray-400 mb-6">You have successfully setup the database. The client can now login with the credentials below.</p>
+                                <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1 tracking-tight">Congratulations!</h2>
+                                <p className="text-[12px] text-gray-500 dark:text-gray-400 mb-5 max-w-md mx-auto">Setup complete. The client can now login with the credentials below.</p>
 
-                                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 max-w-md mx-auto mb-8">
-                                    <div className="space-y-3">
+                                <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/50 p-4 max-w-sm mx-auto mb-5">
+                                    <div className="space-y-2.5">
                                         <div className="flex items-center justify-between">
-                                            <span className="text-sm text-gray-500 dark:text-gray-400">User ID</span>
-                                            <span className="text-sm font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg">{setupComplete.companyUserID}</span>
+                                            <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">User ID</span>
+                                            <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg">{setupComplete.companyUserID}</span>
                                         </div>
+                                        <div className="h-px bg-gray-200 dark:bg-gray-700" />
                                         <div className="flex items-center justify-between">
-                                            <span className="text-sm text-gray-500 dark:text-gray-400">Password</span>
-                                            <span className="text-sm font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg">{setupComplete.password}</span>
+                                            <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Password</span>
+                                            <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg">{setupComplete.password}</span>
                                         </div>
                                     </div>
                                 </div>
 
                                 <button onClick={() => { setShowWizard(false); }}
-                                    className="px-8 py-3 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+                                    className="h-9 px-8 text-[13px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all duration-150 shadow-sm hover:shadow-md">
                                     Done
                                 </button>
                             </div>
@@ -1000,58 +1017,59 @@ const CompanySubscription: React.FC = () => {
             {/* ═══ EDIT FORM (Centered Wide Modal) ═══ */}
             {showForm && (
                 <>
-                    <style>{`@keyframes editModalIn { from { opacity: 0; transform: scale(0.96) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
+                    <style>{`@keyframes editModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
                          onClick={() => setShowForm(false)}>
-                        <div className="w-full max-w-[1400px] mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700"
+                        <div className="w-full max-w-6xl mx-4 max-h-[92vh] flex flex-col bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
                              onClick={e => e.stopPropagation()}
                              style={{ animation: 'editModalIn 0.2s ease-out' }}>
 
                             {/* Header */}
-                            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-amber-500 to-orange-500 rounded-t-2xl">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
-                                        <Edit2 className="w-4 h-4 text-white" />
+                            <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-gradient-to-r from-amber-500 via-amber-500 to-orange-500 rounded-t-2xl">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 bg-white/15 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                                        <Edit2 className="w-3.5 h-3.5 text-white" />
                                     </div>
                                     <div>
-                                        <h2 className="text-base font-bold text-white">Edit Subscription</h2>
-                                        <p className="text-xs text-amber-100/80">{formData.companyName} {formData.companyUniqueCode ? `(${formData.companyUniqueCode})` : ''}</p>
+                                        <h2 className="text-sm font-bold text-white tracking-tight">Edit Subscription</h2>
+                                        <p className="text-[10px] text-amber-100/70 font-medium">{formData.companyName} {formData.companyUniqueCode ? `(${formData.companyUniqueCode})` : ''}</p>
                                     </div>
                                 </div>
-                                <button onClick={() => setShowForm(false)} className="p-2 rounded-lg hover:bg-white/20 transition-colors" title="Close">
-                                    <X className="w-5 h-5 text-white" />
+                                <button onClick={() => setShowForm(false)} className="p-1.5 rounded-lg hover:bg-white/15 transition-all duration-150" title="Close">
+                                    <X className="w-4 h-4 text-white" />
                                 </button>
                             </div>
 
                             {/* Tab Bar */}
-                            <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-2">
+                            <div className="flex-shrink-0 flex border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/30 px-3">
                                 {([
                                     { id: 1 as const, label: 'Company Detail', icon: <CreditCard className="w-3.5 h-3.5" /> },
                                     { id: 2 as const, label: 'Module Settings', icon: <Settings className="w-3.5 h-3.5" /> },
                                 ]).map(tab => (
                                     <button key={tab.id} onClick={() => setEditTab(tab.id)}
-                                        className={`flex items-center gap-2 px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-all rounded-t-lg ${
+                                        className={`flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-all duration-150 ${
                                             editTab === tab.id
                                                 ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-white dark:bg-gray-900'
-                                                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                                                : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-white/50 dark:hover:bg-gray-800/50'
                                         }`}>
                                         {tab.icon} {tab.label}
                                     </button>
                                 ))}
                             </div>
 
-                            {/* Tab Content */}
-                            <div className="p-6">
+                            {/* Tab Content — scrollable */}
+                            <div className="flex-1 min-h-0 overflow-y-auto p-4">
 
                                 {/* Tab 1: Company Detail — All fields in one view */}
                                 {editTab === 1 && (
-                                    <div className="space-y-5">
+                                    <div className="space-y-3">
                                         {/* Row 1: Client & Login */}
-                                        <div>
-                                            <h3 className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                                <CreditCard className="w-3.5 h-3.5" /> Client & Login
-                                            </h3>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div className="rounded-lg border border-indigo-100 dark:border-indigo-800/30 bg-white dark:bg-gray-900/30 px-3 py-2.5">
+                                            <div className="flex items-center gap-1.5 mb-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                                <h3 className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">Client & Login</h3>
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
                                                 <FormField label="Client Code" name="companyUniqueCode" value={formData.companyUniqueCode || ''} onChange={handleFormChange} />
                                                 <FormField label="Client Name *" name="companyName" value={formData.companyName} onChange={handleFormChange} />
                                                 <FormField label="User ID *" name="companyUserID" value={formData.companyUserID} onChange={handleFormChange} />
@@ -1064,11 +1082,12 @@ const CompanySubscription: React.FC = () => {
                                         </div>
 
                                         {/* Row 2: Address & Contact */}
-                                        <div>
-                                            <h3 className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                                <Building2 className="w-3.5 h-3.5" /> Address & Contact
-                                            </h3>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div className="rounded-lg border border-emerald-100 dark:border-emerald-800/30 bg-white dark:bg-gray-900/30 px-3 py-2.5">
+                                            <div className="flex items-center gap-1.5 mb-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                <h3 className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Address & Contact</h3>
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
                                                 <div className="md:col-span-2">
                                                     <FormField label="Address" name="address" value={formData.address || ''} onChange={handleFormChange} />
                                                 </div>
@@ -1081,20 +1100,21 @@ const CompanySubscription: React.FC = () => {
                                         </div>
 
                                         {/* Row 3: Subscription */}
-                                        <div>
-                                            <h3 className="text-xs font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                                <CheckCircle2 className="w-3.5 h-3.5" /> Subscription
-                                            </h3>
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div className="rounded-lg border border-purple-100 dark:border-purple-800/30 bg-white dark:bg-gray-900/30 px-3 py-2.5">
+                                            <div className="flex items-center gap-1.5 mb-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                                <h3 className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">Subscription</h3>
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
                                                 <FormSelect label="Status" name="subscriptionStatus" value={formData.subscriptionStatus || ''} onChange={handleFormChange} options={SUBSCRIPTION_STATUS_OPTIONS} />
                                                 <FormField label="From Date" name="fromDate" value={formatDateForInput(formData.fromDate)} onChange={handleFormChange} type="date" />
                                                 <FormField label="To Date" name="toDate" value={formatDateForInput(formData.toDate)} onChange={handleFormChange} type="date" />
                                                 <FormField label="Payment Due" name="paymentDueDate" value={formatDateForInput(formData.paymentDueDate)} onChange={handleFormChange} type="date" />
                                                 <div className="md:col-span-2">
-                                                    <FormTextArea label="Status Description" name="statusDescription" value={formData.statusDescription || ''} onChange={handleFormChange} />
+                                                    <FormTextArea label="Status Description" name="statusDescription" value={formData.statusDescription || ''} onChange={handleFormChange} rows={2} />
                                                 </div>
                                                 <div className="md:col-span-2">
-                                                    <FormTextArea label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} />
+                                                    <FormTextArea label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} rows={2} />
                                                 </div>
                                             </div>
                                         </div>
@@ -1104,36 +1124,18 @@ const CompanySubscription: React.FC = () => {
                                 {/* Tab 2: Module Settings */}
                                 {editTab === 2 && (
                                     <div className="flex flex-col" style={{ minHeight: '520px' }}>
-                                        {/* Custom grid header styles */}
-                                        <style>{`
-                                            .module-grid .ag-header { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 8px 8px 0 0; }
-                                            .module-grid .ag-header-cell-label { color: #fff; font-weight: 700; font-size: 13px; letter-spacing: 0.3px; }
-                                            .module-grid .ag-header-cell { border-right: 1px solid rgba(255,255,255,0.15); }
-                                            .module-grid .ag-icon { color: #fff !important; }
-                                            .module-grid .ag-row { font-size: 13px; }
-                                            .module-grid .ag-row-even { background: #fffbeb; }
-                                            .module-grid .ag-row:hover { background: #fef3c7 !important; }
-                                            .module-grid .ag-paging-panel { font-size: 12px; font-weight: 500; }
-                                        `}</style>
-
-                                        {/* Search Bar + Copy As */}
-                                        <div className="flex items-center gap-3 mb-3">
-                                            <div className="relative flex-1 max-w-sm">
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                                <input type="text" placeholder="Search modules..."
-                                                    value={moduleSearch} onChange={e => setModuleSearch(e.target.value)}
-                                                    className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 shadow-sm" />
-                                            </div>
-                                            <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
-                                                <CheckCircle2 className="w-4 h-4 text-amber-600" />
-                                                <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-                                                    {moduleData.filter(r => r.status).length} <span className="font-normal text-gray-500 dark:text-gray-400">/ {moduleData.length} active</span>
+                                        {/* Stats Bar + Copy As */}
+                                        <div className="flex items-center gap-2.5 mb-3">
+                                            <div className="flex items-center gap-1.5 px-3 h-9 bg-amber-50/80 dark:bg-amber-900/15 border border-amber-200/80 dark:border-amber-700/40 rounded-lg">
+                                                <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
+                                                <span className="text-[13px] font-semibold text-amber-700 dark:text-amber-400">
+                                                    {moduleData.filter(r => r.status).length}<span className="font-normal text-gray-400 dark:text-gray-500">/{moduleData.length}</span>
                                                 </span>
                                             </div>
                                             <div className="ml-auto">
                                                 <button onClick={handleOpenCopyModal}
-                                                    className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
-                                                    <Copy className="w-4 h-4" /> Copy As
+                                                    className="flex items-center gap-1.5 h-9 px-4 text-[13px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all duration-150 shadow-sm hover:shadow-md shadow-indigo-600/20">
+                                                    <Copy className="w-3.5 h-3.5" /> Copy As
                                                 </button>
                                             </div>
                                         </div>
@@ -1141,28 +1143,38 @@ const CompanySubscription: React.FC = () => {
                                         {/* Grid or Loader */}
                                         {isModuleLoading ? (
                                             <div className="flex-1 flex items-center justify-center">
-                                                <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
-                                                <span className="ml-3 text-sm text-gray-500">Loading modules...</span>
+                                                <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+                                                <span className="ml-2.5 text-[13px] text-gray-400">Loading modules...</span>
                                             </div>
                                         ) : !formData.conn_String ? (
                                             <div className="flex-1 flex flex-col items-center justify-center text-center">
-                                                <Settings className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
-                                                <p className="text-sm text-gray-500 dark:text-gray-400">No connection string available for this subscription.</p>
+                                                <Settings className="w-10 h-10 text-gray-200 dark:text-gray-700 mb-3" />
+                                                <p className="text-[13px] text-gray-400 dark:text-gray-500">No connection string available for this subscription.</p>
                                             </div>
                                         ) : (
-                                            <div className="ag-theme-quartz module-grid rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm" style={{ height: 460, width: '100%' }}>
-                                                <AgGridReact
-                                                    ref={moduleGridRef}
-                                                    rowData={filteredModuleData}
-                                                    columnDefs={moduleColDefs}
-                                                    defaultColDef={{ resizable: true }}
-                                                    pagination={true}
-                                                    paginationPageSize={500}
-                                                    paginationPageSizeSelector={[500, 1000, 2000]}
-                                                    animateRows={true}
-                                                    getRowId={(params) => params.data.moduleName}
-                                                />
-                                            </div>
+                                            <DataGrid
+                                                dataSource={moduleData}
+                                                keyExpr="moduleName"
+                                                showBorders={false}
+                                                showRowLines={true}
+                                                showColumnLines={false}
+                                                rowAlternationEnabled={true}
+                                                hoverStateEnabled={true}
+                                                columnAutoWidth={true}
+                                                height={460}
+                                            >
+                                                <Sorting mode="multiple" />
+                                                <Paging defaultPageSize={500} />
+                                                <Pager showPageSizeSelector={true} allowedPageSizes={[500, 1000, 2000]} showInfo={true} showNavigationButtons={true} displayMode="full" />
+                                                <SearchPanel visible={true} width={250} placeholder="Search modules..." highlightSearchText={true} />
+                                                <FilterRow visible={true} />
+                                                <HeaderFilter visible={true} />
+
+                                                <Column dataField="moduleHeadName" caption="Module Head Name" minWidth={250} />
+                                                <Column dataField="moduleDisplayName" caption="Module Display Name" minWidth={250} />
+                                                <Column caption="Status" width={120} alignment="center" allowFiltering={false} allowSorting={false}
+                                                    cellRender={moduleStatusCellRender} />
+                                            </DataGrid>
                                         )}
                                     </div>
                                 )}
@@ -1170,22 +1182,22 @@ const CompanySubscription: React.FC = () => {
                             </div>
 
                             {/* Footer - Dynamic buttons based on tab */}
-                            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+                            <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/30 rounded-b-2xl">
                                 <button onClick={() => setShowForm(false)}
-                                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                                    <X className="w-4 h-4" /> Close
+                                    className="flex items-center gap-1.5 h-9 px-4 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150">
+                                    <X className="w-3.5 h-3.5" /> Close
                                 </button>
                                 {editTab === 1 && (
                                     <button onClick={handleFormSubmit} disabled={isSaving}
-                                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 shadow-sm">
-                                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                        className="flex items-center gap-1.5 h-9 px-5 text-[13px] font-semibold text-white bg-amber-500 rounded-lg hover:bg-amber-600 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-amber-500/20">
+                                        {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                         {isSaving ? 'Saving...' : 'Save Changes'}
                                     </button>
                                 )}
                                 {editTab === 2 && formData.conn_String && (
                                     <button onClick={handleSaveModuleSettings} disabled={isModuleSaving}
-                                        className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-50 shadow-sm">
-                                        {isModuleSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                        className="flex items-center gap-1.5 h-9 px-5 text-[13px] font-semibold text-white bg-amber-500 rounded-lg hover:bg-amber-600 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-amber-500/20">
+                                        {isModuleSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                         {isModuleSaving ? 'Saving...' : 'Save Module'}
                                     </button>
                                 )}
@@ -1198,76 +1210,79 @@ const CompanySubscription: React.FC = () => {
             {/* ═══ Copy As Modal ═══ */}
             {showCopyModal && (
                 <>
-                    <style>{`@keyframes copyModalIn { from { opacity: 0; transform: scale(0.95) translateY(12px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                    <style>{`@keyframes copyModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm"
                          onClick={() => setShowCopyModal(false)}>
-                        <div className="w-full max-w-[560px] mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700"
+                        <div className="w-full max-w-[520px] mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
                              onClick={e => e.stopPropagation()}
                              style={{ animation: 'copyModalIn 0.2s ease-out' }}>
 
                             {/* Header */}
-                            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl">
+                            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 rounded-t-2xl">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-9 h-9 bg-white/20 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                                    <div className="w-9 h-9 bg-white/15 rounded-lg flex items-center justify-center backdrop-blur-sm">
                                         <Copy className="w-4 h-4 text-white" />
                                     </div>
                                     <div>
-                                        <h2 className="text-base font-bold text-white">Copy Modules To Another Client</h2>
-                                        <p className="text-xs text-indigo-200/80">Source: {formData.companyName}</p>
+                                        <h2 className="text-base font-bold text-white tracking-tight">Copy Modules</h2>
+                                        <p className="text-[11px] text-indigo-200/70 font-medium">Source: {formData.companyName}</p>
                                     </div>
                                 </div>
-                                <button onClick={() => setShowCopyModal(false)} className="p-2 rounded-lg hover:bg-white/20 transition-colors" title="Close">
-                                    <X className="w-5 h-5 text-white" />
+                                <button onClick={() => setShowCopyModal(false)} className="p-1.5 rounded-lg hover:bg-white/15 transition-all duration-150" title="Close">
+                                    <X className="w-4 h-4 text-white" />
                                 </button>
                             </div>
 
                             {/* Body */}
-                            <div className="p-6">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Target Client Name *</label>
+                            <div className="p-5">
+                                <label className={labelCls}>Target Client *</label>
 
                                 {isClientListLoading ? (
                                     <div className="flex items-center justify-center py-8">
-                                        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-                                        <span className="ml-2 text-sm text-gray-500">Loading clients...</span>
+                                        <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
+                                        <span className="ml-2 text-[13px] text-gray-400">Loading clients...</span>
                                     </div>
                                 ) : (
                                     <>
                                         {/* Searchable input */}
-                                        <div className="relative mb-3">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                        <div className="relative mb-3 mt-2">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                                             <input type="text" placeholder="Search clients..."
                                                 value={copyClientSearch} onChange={e => setCopyClientSearch(e.target.value)}
-                                                className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+                                                className="w-full h-9 pl-9 pr-3 text-[13px] border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition-all duration-150" />
                                         </div>
 
                                         {/* Client list */}
-                                        <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden" style={{ maxHeight: 280 }}>
-                                            <div className="overflow-y-auto" style={{ maxHeight: 280 }}>
+                                        <div className="border border-gray-100 dark:border-gray-800 rounded-xl overflow-hidden" style={{ maxHeight: 260 }}>
+                                            <div className="overflow-y-auto" style={{ maxHeight: 260 }}>
                                                 {filteredClientList.length === 0 ? (
-                                                    <div className="py-8 text-center text-sm text-gray-400">No clients found</div>
-                                                ) : filteredClientList.map(client => (
+                                                    <div className="py-8 text-center text-[13px] text-gray-400">No clients found</div>
+                                                ) : filteredClientList.map(client => {
+                                                    const isSelected = copyTargetUserID === client.companyUserID;
+                                                    return (
                                                     <div key={client.companyUserID}
                                                         onClick={() => setCopyTargetUserID(client.companyUserID)}
-                                                        className={`flex items-center justify-between px-4 py-2.5 cursor-pointer border-b border-gray-100 dark:border-gray-800 last:border-b-0 transition-colors ${
-                                                            copyTargetUserID === client.companyUserID
-                                                                ? 'bg-indigo-50 dark:bg-indigo-900/30 border-l-4 border-l-indigo-500'
-                                                                : 'hover:bg-gray-50 dark:hover:bg-gray-800/50 border-l-4 border-l-transparent'
+                                                        className={`flex items-center justify-between px-4 py-2.5 cursor-pointer border-b last:border-b-0 transition-all duration-150 ${
+                                                            isSelected
+                                                                ? 'bg-indigo-600 text-white border-b-indigo-700'
+                                                                : 'border-b-gray-100 dark:border-b-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/40'
                                                         }`}>
                                                         <div>
-                                                            <span className="text-sm font-medium text-gray-900 dark:text-white">{client.companyName}</span>
-                                                            <span className="ml-2 text-xs text-gray-400">({client.companyUserID})</span>
+                                                            <span className={`text-[13px] font-medium ${isSelected ? 'text-white' : 'text-gray-800 dark:text-gray-100'}`}>{client.companyName}</span>
+                                                            <span className={`ml-2 text-[11px] ${isSelected ? 'text-indigo-200' : 'text-gray-400'}`}>({client.companyUserID})</span>
                                                         </div>
-                                                        {copyTargetUserID === client.companyUserID && (
-                                                            <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                                        {isSelected && (
+                                                            <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
                                                         )}
                                                     </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
 
                                         {copyTargetUserID && (
-                                            <div className="mt-3 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg">
-                                                <p className="text-xs text-indigo-700 dark:text-indigo-300">
+                                            <div className="mt-3 px-3 py-2 bg-indigo-50/60 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/40 rounded-lg">
+                                                <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
                                                     <strong>Selected:</strong> {clientList.find(c => c.companyUserID === copyTargetUserID)?.companyName} ({copyTargetUserID})
                                                 </p>
                                             </div>
@@ -1277,14 +1292,14 @@ const CompanySubscription: React.FC = () => {
                             </div>
 
                             {/* Footer */}
-                            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+                            <div className="flex items-center justify-end gap-2.5 px-5 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/30 rounded-b-2xl">
                                 <button onClick={() => setShowCopyModal(false)}
-                                    className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                                    <X className="w-4 h-4" /> Close
+                                    className="flex items-center gap-1.5 h-9 px-4 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150">
+                                    <X className="w-3.5 h-3.5" /> Close
                                 </button>
                                 <button onClick={handleCopyModules} disabled={isCopying || !copyTargetUserID}
-                                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-sm">
-                                    {isCopying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                    className="flex items-center gap-1.5 h-9 px-5 text-[13px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-indigo-600/20">
+                                    {isCopying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                     {isCopying ? 'Copying...' : 'Save'}
                                 </button>
                             </div>
@@ -1295,28 +1310,43 @@ const CompanySubscription: React.FC = () => {
 
             {/* Delete Confirmation */}
             {showDeleteConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md mx-4 border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center"><Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" /></div>
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Confirm Delete</h3>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">Are you sure you want to delete the subscription for <strong>{selectedRow?.companyName}</strong>? This action cannot be undone.</p>
-                        <div className="flex items-center justify-end gap-3">
-                            <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">Cancel</button>
-                            <button onClick={confirmDelete} className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">Delete</button>
+                <>
+                    <style>{`@keyframes deleteModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-sm mx-4 border border-gray-100 dark:border-gray-800 overflow-hidden"
+                             style={{ animation: 'deleteModalIn 0.2s ease-out' }}>
+                            <div className="p-6 text-center">
+                                <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center justify-center mx-auto mb-4">
+                                    <Trash2 className="w-5 h-5 text-red-500" />
+                                </div>
+                                <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1.5 tracking-tight">Delete Subscription</h3>
+                                <p className="text-[13px] text-gray-500 dark:text-gray-400 leading-relaxed">Are you sure you want to delete <strong className="text-gray-700 dark:text-gray-200">{selectedRow?.companyName}</strong>? This action cannot be undone.</p>
+                            </div>
+                            <div className="flex items-center gap-2.5 px-5 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-800/30">
+                                <button onClick={() => setShowDeleteConfirm(false)}
+                                    className="flex-1 h-9 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150">
+                                    Cancel
+                                </button>
+                                <button onClick={confirmDelete}
+                                    className="flex-1 h-9 text-[13px] font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-all duration-150 shadow-sm hover:shadow-md shadow-red-500/20">
+                                    Delete
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </>
             )}
         </div>
     );
 };
 
-// ─── Reusable Components ───────────────────────────────────────────────
+// ─── Design System ────────────────────────────────────────────────────
+// Unified design tokens for consistency across all components
 
-const inputCls = "w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors";
-const labelCls = "block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1";
+const inputCls = "w-full h-9 px-3 text-[13px] border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 transition-all duration-150";
+const labelCls = "block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5";
+
+// ─── Reusable Components ──────────────────────────────────────────────
 
 interface FormFieldProps {
     label: string; name: string; value: string;
@@ -1324,26 +1354,26 @@ interface FormFieldProps {
     type?: string; placeholder?: string; readOnly?: boolean;
 }
 const FormField: React.FC<FormFieldProps> = ({ label, name, value, onChange, type = 'text', placeholder, readOnly }) => (
-    <div>
+    <div className="space-y-1">
         <label className={labelCls}>{label}</label>
         <input type={type} name={name} value={value} onChange={onChange} placeholder={placeholder || label.replace(' *', '')}
             readOnly={readOnly}
-            className={`${inputCls}${readOnly ? ' bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed' : ''}`} />
+            className={`${inputCls}${readOnly ? ' !bg-gray-50 dark:!bg-gray-800/60 !text-gray-400 dark:!text-gray-500 cursor-not-allowed !border-dashed' : ''}`} />
     </div>
 );
 
 interface FormTextAreaProps {
     label: string; name: string; value: string;
     onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-    placeholder?: string;
+    placeholder?: string; rows?: number;
 }
-const FormTextArea: React.FC<FormTextAreaProps> = ({ label, name, value, onChange, placeholder }) => (
-    <div>
+const FormTextArea: React.FC<FormTextAreaProps> = ({ label, name, value, onChange, placeholder, rows = 2 }) => (
+    <div className="space-y-1">
         <label className={labelCls}>{label}</label>
         <textarea name={name} value={value} onChange={onChange} placeholder={placeholder || label}
-            rows={3}
-            className={`${inputCls} resize-none`}
-            style={{ minHeight: '80px', maxHeight: '120px' }} />
+            rows={rows}
+            className={`${inputCls} !h-auto resize-none`}
+            style={{ minHeight: '56px', maxHeight: '90px' }} />
     </div>
 );
 
@@ -1352,10 +1382,10 @@ interface FormSelectProps {
     onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void; options: string[];
 }
 const FormSelect: React.FC<FormSelectProps> = ({ label, name, value, onChange, options }) => (
-    <div>
+    <div className="space-y-1">
         <label className={labelCls}>{label}</label>
-        <select name={name} value={value} onChange={onChange} className={inputCls}>
-            <option value="">-- Select --</option>
+        <select name={name} value={value} onChange={onChange} className={`${inputCls} cursor-pointer`}>
+            <option value="">Select...</option>
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
     </div>
@@ -1366,26 +1396,32 @@ interface StepFieldProps {
     label: string; value: string; onChange: (v: string) => void; type?: string;
 }
 const StepField: React.FC<StepFieldProps> = ({ label, value, onChange, type = 'text' }) => (
-    <div>
+    <div className="space-y-1">
         <label className={labelCls}>{label}</label>
         <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={label.replace(' *', '')} className={inputCls} />
     </div>
 );
 
 // Card Section wrapper
-const colorMap: Record<string, string> = {
-    indigo: 'text-indigo-600 dark:text-indigo-400',
-    emerald: 'text-emerald-600 dark:text-emerald-400',
-    amber: 'text-amber-600 dark:text-amber-400',
-    purple: 'text-purple-600 dark:text-purple-400',
-    red: 'text-red-600 dark:text-red-400',
+const sectionColorMap: Record<string, { text: string; border: string; dot: string }> = {
+    indigo: { text: 'text-indigo-600 dark:text-indigo-400', border: 'border-indigo-200 dark:border-indigo-800', dot: 'bg-indigo-500' },
+    emerald: { text: 'text-emerald-600 dark:text-emerald-400', border: 'border-emerald-200 dark:border-emerald-800', dot: 'bg-emerald-500' },
+    amber: { text: 'text-amber-600 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-800', dot: 'bg-amber-500' },
+    purple: { text: 'text-purple-600 dark:text-purple-400', border: 'border-purple-200 dark:border-purple-800', dot: 'bg-purple-500' },
+    red: { text: 'text-red-600 dark:text-red-400', border: 'border-red-200 dark:border-red-800', dot: 'bg-red-500' },
 };
-const CardSection: React.FC<{ title: string; color: string; children: React.ReactNode }> = ({ title, color, children }) => (
-    <div className="bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-        <h3 className={`text-sm font-semibold uppercase tracking-wider mb-4 ${colorMap[color] || colorMap.indigo}`}>{title}</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{children}</div>
-    </div>
-);
+const CardSection: React.FC<{ title: string; color: string; children: React.ReactNode }> = ({ title, color, children }) => {
+    const c = sectionColorMap[color] || sectionColorMap.indigo;
+    return (
+        <div className={`rounded-lg border ${c.border} bg-white dark:bg-gray-900/50 px-3 py-2.5`}>
+            <div className="flex items-center gap-1.5 mb-2">
+                <div className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                <h3 className={`text-[10px] font-bold uppercase tracking-wider ${c.text}`}>{title}</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-3 gap-y-2">{children}</div>
+        </div>
+    );
+};
 
 // Wizard Footer
 interface WizardFooterProps {
@@ -1394,21 +1430,21 @@ interface WizardFooterProps {
     nextColor?: string;
 }
 const WizardFooter: React.FC<WizardFooterProps> = ({ onBack, onCancel, onNext, isSaving, nextLabel, nextIcon, nextColor }) => (
-    <div className="flex items-center justify-between gap-3 p-5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+    <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50 rounded-b-2xl">
         <div>
             {onBack && (
-                <button onClick={onBack} className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                    <ArrowLeft className="w-4 h-4" /> Back
+                <button onClick={onBack} className="flex items-center gap-2 h-9 px-4 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back
                 </button>
             )}
         </div>
-        <div className="flex items-center gap-3">
-            <button onClick={onCancel} className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                <X className="w-4 h-4" /> Cancel
+        <div className="flex items-center gap-2.5">
+            <button onClick={onCancel} className="flex items-center gap-2 h-9 px-4 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150">
+                <X className="w-3.5 h-3.5" /> Cancel
             </button>
             <button onClick={onNext} disabled={isSaving}
-                className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50 ${nextColor || 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : (nextIcon || <ChevronRight className="w-4 h-4" />)}
+                className={`flex items-center gap-2 h-9 px-5 text-[13px] font-semibold text-white rounded-lg transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md ${nextColor || 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (nextIcon || <ChevronRight className="w-3.5 h-3.5" />)}
                 {nextLabel}
             </button>
         </div>

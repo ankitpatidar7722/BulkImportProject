@@ -106,17 +106,17 @@ const CompanyLogin: React.FC = () => {
             <div className="absolute top-[30%] left-[40%] w-[30vw] h-[30vw] bg-blue-200/20 rounded-full blur-[100px] animate-blob" />
 
             {/* Main Card */}
-            <div className="relative w-full max-w-7xl min-h-[800px] bg-white/70 backdrop-blur-2xl border border-white/50 rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] flex flex-col lg:flex-row overflow-hidden group hover:shadow-[0_30px_70px_-10px_rgba(0,0,0,0.1)] transition-shadow duration-700">
+            <div className="relative w-full max-w-5xl bg-white/70 backdrop-blur-2xl border border-white/50 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] flex flex-col lg:flex-row overflow-hidden group hover:shadow-[0_30px_70px_-10px_rgba(0,0,0,0.1)] transition-shadow duration-700">
 
                 {/* ── LEFT PANEL: FORM ──────────────────────────────────────── */}
-                <div className="w-full lg:w-[45%] p-8 sm:p-12 flex flex-col justify-center relative z-20 bg-white/40 border-r border-white/50">
-                    <div className="mt-10 mb-6">
-                        <h2 className="text-4xl font-extrabold text-gray-900 mb-3 tracking-tight">
+                <div className="w-full lg:w-[45%] p-6 sm:p-8 flex flex-col justify-center relative z-20 bg-white/40 border-r border-white/50">
+                    <div className="mb-5">
+                        <h2 className="text-2xl font-extrabold text-gray-900 mb-1.5 tracking-tight">
                             <span className={`text-transparent bg-clip-text bg-gradient-to-r ${loginMode === 'customer' ? 'from-orange-500 to-red-600' : 'from-indigo-500 to-purple-600'}`}>
                                 Sign In
                             </span>
                         </h2>
-                        <p className="text-gray-500 text-base font-medium">
+                        <p className="text-gray-500 text-sm font-medium">
                             {loginMode === 'customer'
                                 ? 'Enter your company credentials to access the portal'
                                 : 'Enter your Indus credentials to access the portal'}
@@ -124,7 +124,7 @@ const CompanyLogin: React.FC = () => {
                     </div>
 
                     {/* Login Type Radio Buttons */}
-                    <div className="flex items-center gap-6 mb-6">
+                    <div className="flex items-center gap-5 mb-5">
                         <label className="flex items-center gap-2 cursor-pointer">
                             <input
                                 type="radio"
@@ -134,7 +134,7 @@ const CompanyLogin: React.FC = () => {
                                 onChange={() => setLoginMode('customer')}
                                 className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
                             />
-                            <span className={`text-sm font-semibold ${loginMode === 'customer' ? 'text-orange-600' : 'text-gray-500'}`}>
+                            <span className={`text-[13px] font-semibold ${loginMode === 'customer' ? 'text-orange-600' : 'text-gray-500'}`}>
                                 Customer Login
                             </span>
                         </label>
@@ -147,7 +147,7 @@ const CompanyLogin: React.FC = () => {
                                 onChange={() => setLoginMode('indus')}
                                 className="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
                             />
-                            <span className={`text-sm font-semibold ${loginMode === 'indus' ? 'text-indigo-600' : 'text-gray-500'}`}>
+                            <span className={`text-[13px] font-semibold ${loginMode === 'indus' ? 'text-indigo-600' : 'text-gray-500'}`}>
                                 Indus Login
                             </span>
                         </label>
@@ -155,21 +155,21 @@ const CompanyLogin: React.FC = () => {
 
                     {loginMode === 'customer' ? (
                         /* ── Customer Login Form ──────────────────────────────── */
-                        <form onSubmit={handleCompanySubmit} className="space-y-7">
+                        <form onSubmit={handleCompanySubmit} className="space-y-5">
                             {/* Company ID */}
-                            <div className="space-y-2 group">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
+                            <div className="space-y-1.5 group">
+                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
                                     Company ID
                                 </label>
                                 <div className="relative">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
-                                        <Building2 className="w-5 h-5 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
+                                        <Building2 className="w-4 h-4 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
                                     </div>
                                     <input
                                         type="text"
                                         value={companyUser}
                                         onChange={(e) => setCompanyUser(e.target.value)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
                                         placeholder="Ex: COMP001"
                                         required
                                         autoFocus
@@ -178,19 +178,19 @@ const CompanyLogin: React.FC = () => {
                             </div>
 
                             {/* Password */}
-                            <div className="space-y-2 group">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
+                            <div className="space-y-1.5 group">
+                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
                                     Password
                                 </label>
                                 <div className="relative">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
-                                        <Lock className="w-5 h-5 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
+                                        <Lock className="w-4 h-4 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
                                     </div>
                                     <input
                                         type="password"
                                         value={companyPass}
                                         onChange={(e) => setCompanyPass(e.target.value)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
                                         placeholder="••••••••"
                                         required
                                     />
@@ -201,15 +201,15 @@ const CompanyLogin: React.FC = () => {
                             <button
                                 type="submit"
                                 disabled={isSubmitting}
-                                className="w-full mt-10 bg-gradient-to-r from-orange-600 to-red-600 text-white text-lg font-bold py-5 rounded-2xl shadow-[0_10px_30px_-10px_rgba(234,88,12,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(234,88,12,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
+                                className="w-full mt-6 bg-gradient-to-r from-orange-600 to-red-600 text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_10px_30px_-10px_rgba(234,88,12,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(234,88,12,0.4)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
                             >
                                 <span className="relative z-10 flex items-center tracking-wide">
                                     {isSubmitting ? (
-                                        <Loader2 className="animate-spin w-6 h-6" />
+                                        <Loader2 className="animate-spin w-5 h-5" />
                                     ) : (
                                         <>
                                             Continue Securely
-                                            <ArrowRight className="w-6 h-6 ml-2 group-hover:translate-x-1 transition-transform" />
+                                            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
                                         </>
                                     )}
                                 </span>
@@ -217,21 +217,21 @@ const CompanyLogin: React.FC = () => {
                         </form>
                     ) : (
                         /* ── Indus Login Form ─────────────────────────────────── */
-                        <form onSubmit={handleIndusSubmit} className="space-y-7">
+                        <form onSubmit={handleIndusSubmit} className="space-y-5">
                             {/* Username */}
-                            <div className="space-y-2 group">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
+                            <div className="space-y-1.5 group">
+                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
                                     Username
                                 </label>
                                 <div className="relative">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
-                                        <User className="w-5 h-5 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
+                                        <User className="w-4 h-4 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
                                     </div>
                                     <input
                                         type="text"
                                         value={indusUser}
                                         onChange={(e) => setIndusUser(e.target.value)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
                                         placeholder="Enter username"
                                         required
                                         autoFocus
@@ -240,19 +240,19 @@ const CompanyLogin: React.FC = () => {
                             </div>
 
                             {/* Password */}
-                            <div className="space-y-2 group">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
+                            <div className="space-y-1.5 group">
+                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
                                     Password
                                 </label>
                                 <div className="relative">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
-                                        <Lock className="w-5 h-5 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
+                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
+                                        <Lock className="w-4 h-4 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
                                     </div>
                                     <input
                                         type="password"
                                         value={indusPass}
                                         onChange={(e) => setIndusPass(e.target.value)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl py-4 pl-16 text-gray-900 text-lg focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
                                         placeholder="••••••••"
                                         required
                                     />
@@ -263,15 +263,15 @@ const CompanyLogin: React.FC = () => {
                             <button
                                 type="submit"
                                 disabled={isSubmitting}
-                                className="w-full mt-10 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-lg font-bold py-5 rounded-2xl shadow-[0_10px_30px_-10px_rgba(79,70,229,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(79,70,229,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
+                                className="w-full mt-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_10px_30px_-10px_rgba(79,70,229,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(79,70,229,0.4)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
                             >
                                 <span className="relative z-10 flex items-center tracking-wide">
                                     {isSubmitting ? (
-                                        <Loader2 className="animate-spin w-6 h-6" />
+                                        <Loader2 className="animate-spin w-5 h-5" />
                                     ) : (
                                         <>
                                             Sign In
-                                            <ArrowRight className="w-6 h-6 ml-2 group-hover:translate-x-1 transition-transform" />
+                                            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
                                         </>
                                     )}
                                 </span>
@@ -284,37 +284,37 @@ const CompanyLogin: React.FC = () => {
                 <div className="hidden lg:flex w-[55%] bg-gradient-to-br from-indigo-50 to-slate-100 relative overflow-hidden items-center justify-center">
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay" />
 
-                    <div className="relative z-10 flex flex-col items-center justify-center text-center p-8 w-full max-w-3xl">
+                    <div className="relative z-10 flex flex-col items-center justify-center text-center p-6 w-full max-w-xl">
                         {/* Floating Robot */}
-                        <div className="relative mb-12 animate-float group perspective-1000">
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-white rounded-full blur-[80px] opacity-90" />
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] border border-indigo-200 rounded-full animate-[spin_12s_linear_infinite]" />
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] border border-orange-200 rounded-full animate-[spin_18s_linear_infinite_reverse]" />
+                        <div className="relative mb-8 animate-float group perspective-1000">
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] bg-white rounded-full blur-[60px] opacity-90" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[360px] h-[360px] border border-indigo-200 rounded-full animate-[spin_12s_linear_infinite]" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] border border-orange-200 rounded-full animate-[spin_18s_linear_infinite_reverse]" />
                             <img
                                 src="/printude.ai.png"
                                 alt="AI Assistant"
-                                className="w-[600px] h-auto object-contain relative z-10 drop-shadow-[0_30px_60px_rgba(0,0,0,0.2)] transform group-hover:scale-105 transition-transform duration-500 ease-out"
+                                className="w-[380px] h-auto object-contain relative z-10 drop-shadow-[0_20px_40px_rgba(0,0,0,0.15)] transform group-hover:scale-105 transition-transform duration-500 ease-out"
                             />
                         </div>
 
                         {/* Animated Text */}
-                        <div className="min-h-[100px] w-full">
-                            <h2 className="text-4xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-indigo-800 to-gray-600 tracking-tight leading-tight min-h-[60px]">
+                        <div className="min-h-[80px] w-full">
+                            <h2 className="text-2xl md:text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-indigo-800 to-gray-600 tracking-tight leading-tight min-h-[44px]">
                                 <Typewriter
                                     words={['Welcome Back!', 'Secure Login...', 'Bulk Import Master...', 'AI-Powered Solutions.', 'Efficiency Redefined.']}
                                     speed={100}
                                     wait={2000}
                                 />
                             </h2>
-                            <p className="mt-4 text-gray-500 text-lg font-medium tracking-wide animate-pulse-slow">
+                            <p className="mt-3 text-gray-500 text-sm font-medium tracking-wide animate-pulse-slow">
                                 Your gateway to seamless data management
                             </p>
                         </div>
                     </div>
 
                     {/* Floating Particles */}
-                    <div className="absolute top-20 right-20 w-3 h-3 bg-orange-400 rounded-full blur-[2px] animate-blob delay-100" />
-                    <div className="absolute bottom-32 left-20 w-2 h-2 bg-indigo-400 rounded-full blur-[1px] animate-blob delay-300" />
+                    <div className="absolute top-16 right-16 w-2.5 h-2.5 bg-orange-400 rounded-full blur-[2px] animate-blob delay-100" />
+                    <div className="absolute bottom-24 left-16 w-2 h-2 bg-indigo-400 rounded-full blur-[1px] animate-blob delay-300" />
                 </div>
             </div>
 

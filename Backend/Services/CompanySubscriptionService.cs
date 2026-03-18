@@ -732,6 +732,12 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             using var clientConn = ClientConnection(request.ConnectionString);
             await clientConn.OpenAsync();
 
+            // Fetch admin UserID and CompanyID for UserModuleAuthentication sync
+            var adminUserId = await clientConn.ExecuteScalarAsync<int?>(
+                "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'");
+            var companyId = await clientConn.ExecuteScalarAsync<int?>(
+                "SELECT TOP 1 CompanyID FROM CompanyMaster");
+
             // Get existing client modules
             var existingModules = (await clientConn.QueryAsync<dynamic>(
                 "SELECT ModuleName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster"
@@ -760,6 +766,23 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                             await clientConn.ExecuteAsync(
                                 "UPDATE ModuleMaster SET IsDeletedTransaction = 0 WHERE ModuleName = @ModuleName",
                                 new { mod.ModuleName });
+
+                            // Sync UserModuleAuthentication: insert if not exists
+                            if (adminUserId.HasValue)
+                            {
+                                var moduleId = await clientConn.ExecuteScalarAsync<int?>(
+                                    "SELECT ModuleID FROM ModuleMaster WHERE ModuleName = @ModuleName",
+                                    new { mod.ModuleName });
+                                if (moduleId.HasValue)
+                                {
+                                    await clientConn.ExecuteAsync(@"
+                                        IF NOT EXISTS (SELECT 1 FROM UserModuleAuthentication WHERE ModuleID = @ModuleID AND UserID = @UserID)
+                                        INSERT INTO UserModuleAuthentication
+                                        (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy, IsDeletedTransaction)
+                                        VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, @CompanyID, 0, @UserID, 0)",
+                                        new { UserID = adminUserId.Value, ModuleID = moduleId.Value, mod.ModuleName, CompanyID = companyId ?? 2 });
+                                }
+                            }
                             inserted++;
                         }
                         // Already active, skip
@@ -780,8 +803,19 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                                 paramObj.Add(col, masterRow[col]);
                             }
 
-                            await clientConn.ExecuteAsync(
-                                $"INSERT INTO ModuleMaster ({colNames}) VALUES ({paramNames})", paramObj);
+                            // Insert into ModuleMaster and get the new ModuleID
+                            var newModuleId = await clientConn.ExecuteScalarAsync<int>(
+                                $"INSERT INTO ModuleMaster ({colNames}) OUTPUT INSERTED.ModuleID VALUES ({paramNames})", paramObj);
+
+                            // Sync UserModuleAuthentication: insert with full permissions
+                            if (adminUserId.HasValue)
+                            {
+                                await clientConn.ExecuteAsync(@"
+                                    INSERT INTO UserModuleAuthentication
+                                    (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy, IsDeletedTransaction)
+                                    VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, @CompanyID, 0, @UserID, 0)",
+                                    new { UserID = adminUserId.Value, ModuleID = newModuleId, mod.ModuleName, CompanyID = companyId ?? 2 });
+                            }
                             inserted++;
                         }
                     }
@@ -791,7 +825,20 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                     // Should be inactive
                     if (existsInClient && existingLookup[mod.ModuleName] == 0)
                     {
-                        // DELETE from client
+                        // Get ModuleID before deleting
+                        var moduleId = await clientConn.ExecuteScalarAsync<int?>(
+                            "SELECT ModuleID FROM ModuleMaster WHERE ModuleName = @ModuleName",
+                            new { mod.ModuleName });
+
+                        // Delete from UserModuleAuthentication first
+                        if (moduleId.HasValue)
+                        {
+                            await clientConn.ExecuteAsync(
+                                "DELETE FROM UserModuleAuthentication WHERE ModuleID = @ModuleID AND ModuleName = @ModuleName",
+                                new { ModuleID = moduleId.Value, mod.ModuleName });
+                        }
+
+                        // DELETE from ModuleMaster
                         await clientConn.ExecuteAsync(
                             "DELETE FROM ModuleMaster WHERE ModuleName = @ModuleName",
                             new { mod.ModuleName });
@@ -824,7 +871,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             using var conn = GetIndusConnection();
             await conn.OpenAsync();
             var clients = (await conn.QueryAsync<ClientDropdownItem>(
-                "SELECT CompanyName, CompanyUserID FROM Indus_Company_Authentication_For_Web_Modules ORDER BY CompanyName"
+                "SELECT CompanyName, CompanyUserID, ISNULL(ApplicationName,'') AS ApplicationName FROM Indus_Company_Authentication_For_Web_Modules WHERE ISNULL(ApplicationName,'') <> 'Desktop' ORDER BY CompanyName"
             )).ToList();
 
             return new ClientDropdownResponse { Success = true, Data = clients };
@@ -870,7 +917,14 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             try
             {
-                // Delete existing data
+                // Fetch admin UserID and CompanyID for UserModuleAuthentication sync
+                var adminUserId = await targetConn.ExecuteScalarAsync<int?>(
+                    "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'", transaction: transaction);
+                var companyId = await targetConn.ExecuteScalarAsync<int?>(
+                    "SELECT TOP 1 CompanyID FROM CompanyMaster", transaction: transaction);
+
+                // Delete existing data (UserModuleAuthentication first, then ModuleMaster)
+                await targetConn.ExecuteAsync("DELETE FROM UserModuleAuthentication", transaction: transaction);
                 await targetConn.ExecuteAsync("DELETE FROM ModuleMaster", transaction: transaction);
 
                 // Insert all source rows (exclude identity ModuleID)
@@ -887,14 +941,28 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                         paramObj.Add(col, row[col]);
                     }
 
-                    await targetConn.ExecuteAsync(
-                        $"INSERT INTO ModuleMaster ({colNames}) VALUES ({paramNames})",
+                    // Insert into ModuleMaster and get new ModuleID
+                    var newModuleId = await targetConn.ExecuteScalarAsync<int>(
+                        $"INSERT INTO ModuleMaster ({colNames}) OUTPUT INSERTED.ModuleID VALUES ({paramNames})",
                         paramObj, transaction: transaction);
+
+                    // Sync UserModuleAuthentication: insert with full permissions for admin
+                    if (adminUserId.HasValue)
+                    {
+                        string moduleName = row.ContainsKey("ModuleName") ? row["ModuleName"]?.ToString() ?? "" : "";
+                        await targetConn.ExecuteAsync(@"
+                            INSERT INTO UserModuleAuthentication
+                            (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy, IsDeletedTransaction)
+                            VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, @CompanyID, 0, @UserID, 0)",
+                            new { UserID = adminUserId.Value, ModuleID = newModuleId, ModuleName = moduleName, CompanyID = companyId ?? 2 },
+                            transaction: transaction);
+                    }
+
                     copiedCount++;
                 }
 
                 transaction.Commit();
-                Console.WriteLine($"[CopyModules] Copied {copiedCount} modules to target {request.TargetCompanyUserID}");
+                Console.WriteLine($"[CopyModules] Copied {copiedCount} modules (+ UserModuleAuthentication) to target {request.TargetCompanyUserID}");
                 return new CopyModulesResponse
                 {
                     Success = true,

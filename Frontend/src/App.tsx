@@ -34,9 +34,9 @@ const AuthenticatedLayout = () => {
                 isCollapsed={isSidebarCollapsed}
                 onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             />
-            <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} ml-0`}>
+            <div className={`flex-1 min-w-0 flex flex-col transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} ml-0`}>
                 <Header onMenuClick={() => setIsSidebarOpen(true)} isSidebarCollapsed={isSidebarCollapsed} />
-                <main className="flex-1 overflow-y-auto mt-16 custom-scrollbar p-4 md:p-6">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden mt-16 custom-scrollbar p-4 md:p-6">
                     <Routes>
                         <Route path="/" element={loginType === 'indus' ? <Navigate to="/company-subscription" replace /> : <Dashboard />} />
                         <Route path="/import-master" element={<ImportMaster />} />
