@@ -1316,6 +1316,18 @@ export interface ServerListResponse {
     servers: string[];
 }
 
+export interface NextClientCodeResponse {
+    success: boolean;
+    companyUniqueCode: string;
+    maxCompanyUniqueCode: number;
+    message: string;
+}
+
+export const getNextClientCode = async (): Promise<NextClientCodeResponse> => {
+    const response = await api.get('/companysubscription/next-client-code');
+    return response.data;
+};
+
 export const getServers = async (): Promise<ServerListResponse> => {
     const response = await api.get('/companysubscription/servers');
     return response.data;
@@ -1323,6 +1335,183 @@ export const getServers = async (): Promise<ServerListResponse> => {
 
 export const setupDatabase = async (data: SetupDatabaseRequest): Promise<SetupDatabaseResponse> => {
     const response = await api.post('/companysubscription/setup-database', data);
+    return response.data;
+};
+
+// ─── Step 3: Company Master ───
+export interface CompanyMasterRequest {
+    connectionString: string;
+    companyID: number;
+    companyName: string;
+    address1?: string;
+    address2?: string;
+    address3?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
+    contactNO?: string;
+    mobileNO?: string;
+    email?: string;
+    website?: string;
+    stateTinNo?: string;
+    cinNo?: string;
+    productionUnitAddress?: string;
+    address?: string;
+    gstin?: string;
+    productionUnitName?: string;
+    pan?: string;
+}
+
+export interface CompanyMasterResponse {
+    success: boolean;
+    message: string;
+    companyID: number;
+}
+
+export const saveCompanyMaster = async (data: CompanyMasterRequest): Promise<CompanyMasterResponse> => {
+    const response = await api.post('/companysubscription/save-company-master', data);
+    return response.data;
+};
+
+// ─── Step 4: Branch Master ───
+export interface BranchMasterRequest {
+    connectionString: string;
+    branchID: number;
+    branchName: string;
+    mailingName?: string;
+    address1?: string;
+    address2?: string;
+    address3?: string;
+    address?: string;
+    city?: string;
+    district?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
+    mobileNo?: string;
+    email?: string;
+    stateTinNo?: string;
+    gstin?: string;
+    companyID?: number;
+}
+
+export interface BranchMasterResponse {
+    success: boolean;
+    message: string;
+}
+
+export const saveBranchMaster = async (data: BranchMasterRequest): Promise<BranchMasterResponse> => {
+    const response = await api.post('/companysubscription/save-branch-master', data);
+    return response.data;
+};
+
+// ─── Step 5: Production Unit ───
+export interface ProductionUnitRequest {
+    connectionString: string;
+    productionUnitName: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    gstNo?: string;
+    pincode?: string;
+    country?: string;
+    pan?: string;
+}
+
+export interface ProductionUnitResponse {
+    success: boolean;
+    message: string;
+}
+
+export const saveProductionUnit = async (data: ProductionUnitRequest): Promise<ProductionUnitResponse> => {
+    const response = await api.post('/companysubscription/save-production-unit', data);
+    return response.data;
+};
+
+// ─── Final Step: Complete Setup ───
+export interface CompleteSetupRequest {
+    connectionString: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    companyUserID: string;
+}
+
+export interface CompleteSetupResponse {
+    success: boolean;
+    message: string;
+    companyUserID: string;
+    password: string;
+}
+
+export const completeSetup = async (data: CompleteSetupRequest): Promise<CompleteSetupResponse> => {
+    const response = await api.post('/companysubscription/complete-setup', data);
+    return response.data;
+};
+
+// ─── Module Settings ───
+export interface ModuleSettingsRow {
+    moduleHeadName: string;
+    moduleDisplayName: string;
+    moduleName: string;
+    status: boolean;
+}
+
+export interface ModuleSettingsResponse {
+    success: boolean;
+    message: string;
+    data: ModuleSettingsRow[];
+}
+
+export interface SaveModuleSettingsRequest {
+    applicationName: string;
+    connectionString: string;
+    modules: { moduleName: string; status: boolean }[];
+}
+
+export interface SaveModuleSettingsResponse {
+    success: boolean;
+    message: string;
+    inserted: number;
+    deleted: number;
+}
+
+export const getModuleSettings = async (applicationName: string, connectionString: string): Promise<ModuleSettingsResponse> => {
+    const response = await api.post('/companysubscription/get-module-settings', { applicationName, connectionString });
+    return response.data;
+};
+
+export const saveModuleSettings = async (data: SaveModuleSettingsRequest): Promise<SaveModuleSettingsResponse> => {
+    const response = await api.post('/companysubscription/save-module-settings', data);
+    return response.data;
+};
+
+// ─── Copy Modules ───
+export interface ClientDropdownItem {
+    companyName: string;
+    companyUserID: string;
+}
+
+export interface ClientDropdownResponse {
+    success: boolean;
+    message: string;
+    data: ClientDropdownItem[];
+}
+
+export interface CopyModulesResponse {
+    success: boolean;
+    message: string;
+    copiedCount: number;
+}
+
+export const getClientDropdown = async (): Promise<ClientDropdownResponse> => {
+    const response = await api.get('/companysubscription/client-dropdown');
+    return response.data;
+};
+
+export const copyModules = async (sourceConnectionString: string, targetCompanyUserID: string): Promise<CopyModulesResponse> => {
+    const response = await api.post('/companysubscription/copy-modules', { sourceConnectionString, targetCompanyUserID });
     return response.data;
 };
 

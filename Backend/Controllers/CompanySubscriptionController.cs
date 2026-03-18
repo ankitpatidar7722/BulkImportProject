@@ -52,6 +52,13 @@ public class CompanySubscriptionController : ControllerBase
         return Ok(response);
     }
 
+    [HttpGet("next-client-code")]
+    public async Task<IActionResult> GetNextClientCode()
+    {
+        var response = await _service.GetNextClientCodeAsync();
+        return Ok(response);
+    }
+
     [HttpGet("servers")]
     public async Task<IActionResult> GetServers()
     {
@@ -63,6 +70,62 @@ public class CompanySubscriptionController : ControllerBase
     public async Task<IActionResult> SetupDatabase([FromBody] SetupDatabaseRequest request)
     {
         var response = await _service.SetupDatabaseAsync(request);
+        return Ok(response);
+    }
+
+    [HttpPost("save-company-master")]
+    public async Task<IActionResult> SaveCompanyMaster([FromBody] CompanyMasterRequest request)
+    {
+        var response = await _service.SaveCompanyMasterAsync(request);
+        return Ok(response);
+    }
+
+    [HttpPost("save-branch-master")]
+    public async Task<IActionResult> SaveBranchMaster([FromBody] BranchMasterRequest request)
+    {
+        var response = await _service.SaveBranchMasterAsync(request);
+        return Ok(response);
+    }
+
+    [HttpPost("save-production-unit")]
+    public async Task<IActionResult> SaveProductionUnit([FromBody] ProductionUnitRequest request)
+    {
+        var response = await _service.SaveProductionUnitAsync(request);
+        return Ok(response);
+    }
+
+    [HttpPost("complete-setup")]
+    public async Task<IActionResult> CompleteSetup([FromBody] CompleteSetupRequest request)
+    {
+        var response = await _service.CompleteSetupAsync(request);
+        return Ok(response);
+    }
+
+    [HttpPost("get-module-settings")]
+    public async Task<IActionResult> GetModuleSettings([FromBody] GetModuleSettingsRequest request)
+    {
+        var response = await _service.GetModuleSettingsAsync(request);
+        return Ok(response);
+    }
+
+    [HttpPost("save-module-settings")]
+    public async Task<IActionResult> SaveModuleSettings([FromBody] SaveModuleSettingsRequest request)
+    {
+        var response = await _service.SaveModuleSettingsAsync(request);
+        return Ok(response);
+    }
+
+    [HttpGet("client-dropdown")]
+    public async Task<IActionResult> GetClientDropdown()
+    {
+        var response = await _service.GetClientDropdownAsync();
+        return Ok(response);
+    }
+
+    [HttpPost("copy-modules")]
+    public async Task<IActionResult> CopyModules([FromBody] CopyModulesRequest request)
+    {
+        var response = await _service.CopyModulesAsync(request);
         return Ok(response);
     }
 }
