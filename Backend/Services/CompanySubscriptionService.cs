@@ -237,15 +237,20 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         return Task.FromResult(new ServerListResponse { Success = true, Servers = AvailableServers.ToList() });
     }
 
-    private static (string sourceServer, string sourceDb) GetSourceInfo(string applicationName)
+    public async Task<DynamicBackupDatabaseResponse> GetBackupDatabasesAsync(string applicationName)
     {
-        return applicationName.ToLower() switch
+        try
         {
-            "desktop" or "estimoprime" => ("13.200.122.70,1433", "IndusEnterpriseNewInstallation"),
-            "multiunit" => ("15.206.241.195,1433", "IndusEnterprisemultiunitdemo"),
-            "printuderp" => ("15.206.241.195,1433", "IndusPrintudeDemo"),
-            _ => throw new Exception($"Unknown application: {applicationName}")
-        };
+            using var conn = GetIndusConnection();
+            var query = "SELECT DatabaseName FROM DynamicBackupDatabase WHERE ApplicationName = @ApplicationName";
+            var databases = (await conn.QueryAsync<string>(query, new { ApplicationName = applicationName })).ToList();
+            return new DynamicBackupDatabaseResponse { Success = true, Databases = databases };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CompanySubscription] GetBackupDatabases Error: {ex.Message}");
+            return new DynamicBackupDatabaseResponse { Success = false, Message = ex.Message };
+        }
     }
 
     private static SqlConnection MasterConnection(string server)
@@ -264,8 +269,21 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 return new SetupDatabaseResponse { Success = false, Message = "Application Name is required." };
             if (string.IsNullOrWhiteSpace(request.DatabaseName))
                 return new SetupDatabaseResponse { Success = false, Message = "Database Name is required." };
+            if (string.IsNullOrWhiteSpace(request.BackupDatabaseName))
+                return new SetupDatabaseResponse { Success = false, Message = "Backup Database Name is required." };
 
-            var (sourceServer, sourceDb) = GetSourceInfo(request.ApplicationName);
+            string sourceServer;
+            string sourceDb = request.BackupDatabaseName;
+
+            using (var indusConn = GetIndusConnection())
+            {
+                var query = "SELECT ServerName FROM DynamicBackupDatabase WHERE ApplicationName = @AppName AND DatabaseName = @DbName";
+                sourceServer = await indusConn.ExecuteScalarAsync<string>(query, new { AppName = request.ApplicationName, DbName = sourceDb });
+                
+                if (string.IsNullOrEmpty(sourceServer))
+                    return new SetupDatabaseResponse { Success = false, Message = "Could not find matching backup database server." };
+            }
+
             var targetServer = request.Server;
             var newDbName = request.DatabaseName.Trim();
 
@@ -298,11 +316,13 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             }
 
             // Step 2: Restore on target server
-            // For cross-server: try UNC path if servers differ
             var restorePath = backupPath;
-            if (sourceServer != targetServer)
+            bool isCrossServer = sourceServer != targetServer;
+
+            if (isCrossServer)
             {
-                var sourceIp = sourceServer.Replace(",1433", "");
+                // Cross-server: build UNC path to source server's backup file
+                var sourceIp = sourceServer.Replace(",1433", "").Replace(",1434", "");
                 var driveLetter = backupPath.Substring(0, 1);
                 var pathAfterDrive = backupPath.Substring(2);
                 restorePath = $@"\\{sourceIp}\{driveLetter}${pathAfterDrive}";
@@ -319,6 +339,31 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                     new { Name = newDbName });
                 if (exists > 0)
                     return new SetupDatabaseResponse { Success = false, Message = $"Database '{newDbName}' already exists on {targetServer}." };
+
+                // Pre-check: verify UNC path is accessible from target server
+                if (isCrossServer)
+                {
+                    try
+                    {
+                        await targetConn.ExecuteAsync(
+                            $"EXEC master.dbo.xp_fileexist N'{restorePath}'", commandTimeout: 15);
+                    }
+                    catch (Exception uncEx)
+                    {
+                        var sourceIp = sourceServer.Replace(",1433", "").Replace(",1434", "");
+                        var targetIp = targetServer.Replace(",1433", "").Replace(",1434", "");
+                        Console.WriteLine($"[SetupDB] UNC path not accessible: {uncEx.Message}");
+                        return new SetupDatabaseResponse
+                        {
+                            Success = false,
+                            Message = $"Cross-server restore failed: Target server ({targetIp}) cannot access backup file on source server ({sourceIp}). " +
+                                      $"Please ensure: (1) Port 445 (SMB) is open between both servers, " +
+                                      $"(2) Windows admin shares (C$) are enabled on source server, " +
+                                      $"(3) SQL Server service account has network access. " +
+                                      $"Or use the same server ({sourceIp}) for both backup and target."
+                        };
+                    }
+                }
 
                 // Get logical file names from backup
                 var files = (await targetConn.QueryAsync(

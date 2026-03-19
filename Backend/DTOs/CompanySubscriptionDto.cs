@@ -92,8 +92,10 @@ public class SetupDatabaseRequest
 {
     public string Server { get; set; } = string.Empty;
     public string ApplicationName { get; set; } = string.Empty;
+    public string BackupType { get; set; } = string.Empty;
     public string ClientName { get; set; } = string.Empty;
     public string DatabaseName { get; set; } = string.Empty;
+    public string? BackupDatabaseName { get; set; }
 }
 
 public class SetupDatabaseResponse
@@ -105,6 +107,13 @@ public class SetupDatabaseResponse
     public string Server { get; set; } = string.Empty;
     public string ApplicationName { get; set; } = string.Empty;
     public string ClientName { get; set; } = string.Empty;
+}
+
+public class DynamicBackupDatabaseResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<string> Databases { get; set; } = new();
 }
 
 public class ServerListResponse

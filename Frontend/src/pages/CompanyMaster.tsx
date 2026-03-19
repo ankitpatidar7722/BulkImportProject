@@ -139,9 +139,21 @@ const CompanyMaster: React.FC = () => {
                         />
                     )
                 ) : (
-                    <p className="text-sm font-medium text-gray-900 dark:text-white bg-gray-50 dark:bg-[#1e293b] px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800 min-h-[38px] flex items-center">
-                        {dispVal ? String(dispVal) : <span className="text-gray-400 italic text-xs">Not set</span>}
-                    </p>
+                    <div className="text-sm font-medium w-full text-gray-900 dark:text-white bg-gray-50 dark:bg-[#1e293b] px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800 min-h-[38px] flex items-center">
+                        {dispVal ? (
+                            name === 'applicationConfiguration' ? (
+                                <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-[13px] tracking-wide flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Configuration Active
+                                </span>
+                            ) : type === 'password' ? (
+                                <span className="tracking-widest opacity-60">••••••••</span>
+                            ) : (
+                                <span className={`w-full ${type === 'textarea' ? 'line-clamp-3 break-words' : 'truncate'}`} title={String(dispVal)}>
+                                    {String(dispVal)}
+                                </span>
+                            )
+                        ) : <span className="text-gray-400 italic text-xs">Not set</span>}
+                    </div>
                 )}
             </div>
         );

@@ -10,6 +10,7 @@ import {
     updateCompanySubscription,
     deleteCompanySubscription,
     getServers,
+    getBackupDatabases,
     setupDatabase,
     saveCompanyMaster,
     saveBranchMaster,
@@ -118,9 +119,12 @@ const CompanySubscription: React.FC = () => {
     const [serverList, setServerList] = useState<string[]>([]);
     const [wizardServer, setWizardServer] = useState('');
     const [wizardAppName, setWizardAppName] = useState('estimoprime');
+    const [wizardBackupType, setWizardBackupType] = useState('Offset');
     const [wizardClientName, setWizardClientName] = useState('');
     const [wizardDbName, setWizardDbName] = useState('');
     const [wizardDbNameEdited, setWizardDbNameEdited] = useState(false);
+    const [wizardBackupDatabase, setWizardBackupDatabase] = useState('');
+    const [backupDatabaseList, setBackupDatabaseList] = useState<string[]>([]);
     const [isSettingUpDb, setIsSettingUpDb] = useState(false);
     const [setupResult, setSetupResult] = useState<SetupDatabaseResponse | null>(null);
 
@@ -174,12 +178,32 @@ const CompanySubscription: React.FC = () => {
         }
     }, [wizardAppName, wizardClientName, wizardDbNameEdited]);
 
+    // Fetch dynamic backup databases when application name changes
+    useEffect(() => {
+        if (wizardAppName) {
+            getBackupDatabases(wizardAppName).then(res => {
+                if (res.success && res.databases) {
+                    setBackupDatabaseList(res.databases);
+                } else {
+                    setBackupDatabaseList([]);
+                }
+                setWizardBackupDatabase('');
+            }).catch(err => {
+                console.error('Failed to get backup databases', err);
+                setBackupDatabaseList([]);
+                setWizardBackupDatabase('');
+            });
+        }
+    }, [wizardAppName]);
+
     // ─── Wizard Handlers ───
 
     const handleCreate = async () => {
         setWizardStep(1);
-        setWizardServer(''); setWizardAppName('estimoprime'); setWizardClientName('');
+        setWizardServer(''); setWizardAppName('estimoprime'); setWizardBackupType('Offset'); setWizardClientName('');
         setWizardDbName(''); setWizardDbNameEdited(false); setSetupResult(null);
+        setWizardBackupDatabase('');
+        setBackupDatabaseList([]);
         setFormData({ ...EMPTY_FORM }); setSetupComplete(null);
         setShowWizard(true);
         try {
@@ -202,14 +226,18 @@ const CompanySubscription: React.FC = () => {
     const handleStep1Save = async () => {
         if (!wizardServer) { showMessage('error', 'Validation', 'Please select a server.'); return; }
         if (!wizardAppName) { showMessage('error', 'Validation', 'Please select an application name.'); return; }
+        if (!wizardBackupType) { showMessage('error', 'Validation', 'Please select a backup type.'); return; }
         if (!wizardClientName.trim()) { showMessage('error', 'Validation', 'Client Name is required.'); return; }
         if (!wizardDbName.trim()) { showMessage('error', 'Validation', 'Database Name is required.'); return; }
+        if (!wizardBackupDatabase) { showMessage('error', 'Validation', 'Please select a Backup Database Name.'); return; }
 
         setIsSettingUpDb(true);
         try {
             const req: SetupDatabaseRequest = {
                 server: wizardServer, applicationName: wizardAppName,
+                backupType: wizardBackupType,
                 clientName: wizardClientName.trim(), databaseName: wizardDbName.trim(),
+                backupDatabaseName: wizardBackupDatabase,
             };
             const result = await setupDatabase(req);
             if (result.success) {
@@ -582,7 +610,7 @@ const CompanySubscription: React.FC = () => {
 
     const handleFormSubmit = async () => {
         if (!formData.companyName.trim()) { showMessage('error', 'Validation', 'Client Name is required.'); return; }
-        if (!formData.companyUserID.trim()) { showMessage('error', 'Validation', 'User ID is required.'); return; }
+        if (!formData.companyUserID.trim()) { showMessage('error', 'Validation', 'Company Login Name is required.'); return; }
         setIsSaving(true);
         try {
             const payload: any = {
@@ -705,7 +733,7 @@ const CompanySubscription: React.FC = () => {
                     <Column dataField="state" caption="State" />
                     <Column dataField="country" caption="Country" />
                     <Column dataField="companyCode" caption="Company Code" />
-                    <Column dataField="companyUserID" caption="User ID" />
+                    <Column dataField="companyUserID" caption="Company Login Name" />
                     <Column dataField="fromDate" caption="From Date" dataType="date" format="dd/MM/yyyy" />
                     <Column dataField="toDate" caption="To Date" dataType="date" format="dd/MM/yyyy" />
                     <Column dataField="paymentDueDate" caption="Payment Due" dataType="date" format="dd/MM/yyyy" />
@@ -740,10 +768,9 @@ const CompanySubscription: React.FC = () => {
                                     {WIZARD_STEPS.map((s, i) => (
                                         <React.Fragment key={s.num}>
                                             {i > 0 && <div className={`w-5 h-0.5 rounded-full transition-all duration-300 ${wizardStep > s.num ? 'bg-white/70' : 'bg-white/15'}`} />}
-                                            <div className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all duration-300 ${
-                                                wizardStep === s.num ? 'bg-white text-indigo-600 scale-110 shadow-lg shadow-white/20' :
-                                                wizardStep > s.num ? 'bg-white/80 text-indigo-600' : 'bg-white/15 text-white/70'
-                                            }`}>
+                                            <div className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all duration-300 ${wizardStep === s.num ? 'bg-white text-indigo-600 scale-110 shadow-lg shadow-white/20' :
+                                                    wizardStep > s.num ? 'bg-white/80 text-indigo-600' : 'bg-white/15 text-white/70'
+                                                }`}>
                                                 {wizardStep > s.num ? <CheckCircle2 className="w-3.5 h-3.5" /> : s.num}
                                             </div>
                                         </React.Fragment>
@@ -791,6 +818,13 @@ const CompanySubscription: React.FC = () => {
                                                 </select>
                                             </div>
                                             <div className="space-y-1">
+                                                <label className={labelCls}>Backup Type *</label>
+                                                <select value={wizardBackupType} onChange={e => setWizardBackupType(e.target.value)}
+                                                    className={`${inputCls} cursor-pointer`}>
+                                                    {['Offset', 'Flexo', 'Rotogravure'].map(o => <option key={o} value={o}>{o}</option>)}
+                                                </select>
+                                            </div>
+                                            <div className="space-y-1">
                                                 <label className={labelCls}>Client Name *</label>
                                                 <input type="text" value={wizardClientName} onChange={e => { setWizardClientName(e.target.value); if (wizardDbNameEdited) setWizardDbNameEdited(false); }}
                                                     placeholder="Enter client name" className={inputCls} />
@@ -800,17 +834,35 @@ const CompanySubscription: React.FC = () => {
                                                 <input type="text" value={wizardDbName} onChange={e => { setWizardDbName(e.target.value); setWizardDbNameEdited(true); }}
                                                     placeholder="Database name" className={inputCls} />
                                             </div>
+                                            <div className="space-y-1">
+                                                <label className={labelCls}>Backup Database Name</label>
+                                                <input 
+                                                    type="text" 
+                                                    list="backup-db-list" 
+                                                    value={wizardBackupDatabase} 
+                                                    onChange={e => setWizardBackupDatabase(e.target.value)}
+                                                    placeholder={backupDatabaseList.length === 0 ? "No backup database available" : "Select or type Database..."}
+                                                    className={inputCls} 
+                                                    disabled={backupDatabaseList.length === 0}
+                                                />
+                                                <datalist id="backup-db-list">
+                                                    {backupDatabaseList.filter(db => db !== 'Select Database...').map(db => (
+                                                        <option key={db} value={db} />
+                                                    ))}
+                                                </datalist>
+                                            </div>
                                         </div>
                                         {wizardDbName && (
                                             <div className="mt-2.5 px-2.5 py-2 bg-indigo-50/60 dark:bg-indigo-900/10 rounded-lg border border-indigo-100 dark:border-indigo-800/40">
                                                 <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
-                                                    <strong>Preview:</strong> Database <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardDbName}</code> on <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardServer || '(select server)'}</code> using <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardAppName}</code> template.
+                                                    <strong>Preview:</strong> Database <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardDbName}</code> on <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardServer || '(select server)'}</code> restored from <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardBackupDatabase || '(select backup DB)'}</code>.
                                                 </p>
                                             </div>
                                         )}
                                     </div>
                                 </div>
                                 <WizardFooter onCancel={() => setShowWizard(false)} onNext={handleStep1Save} isSaving={isSettingUpDb}
+                                    disableNext={!wizardBackupDatabase}
                                     nextLabel={isSettingUpDb ? 'Creating Database...' : 'Create Database & Continue'} nextIcon={<Database className="w-4 h-4" />} />
                             </>
                         )}
@@ -993,7 +1045,7 @@ const CompanySubscription: React.FC = () => {
                                 <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/50 p-4 max-w-sm mx-auto mb-5">
                                     <div className="space-y-2.5">
                                         <div className="flex items-center justify-between">
-                                            <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">User ID</span>
+                                            <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Company Login Name</span>
                                             <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg">{setupComplete.companyUserID}</span>
                                         </div>
                                         <div className="h-px bg-gray-200 dark:bg-gray-700" />
@@ -1019,10 +1071,10 @@ const CompanySubscription: React.FC = () => {
                 <>
                     <style>{`@keyframes editModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-                         onClick={() => setShowForm(false)}>
+                        onClick={() => setShowForm(false)}>
                         <div className="w-full max-w-6xl mx-4 max-h-[92vh] flex flex-col bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
-                             onClick={e => e.stopPropagation()}
-                             style={{ animation: 'editModalIn 0.2s ease-out' }}>
+                            onClick={e => e.stopPropagation()}
+                            style={{ animation: 'editModalIn 0.2s ease-out' }}>
 
                             {/* Header */}
                             <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-gradient-to-r from-amber-500 via-amber-500 to-orange-500 rounded-t-2xl">
@@ -1047,11 +1099,10 @@ const CompanySubscription: React.FC = () => {
                                     { id: 2 as const, label: 'Module Settings', icon: <Settings className="w-3.5 h-3.5" /> },
                                 ]).map(tab => (
                                     <button key={tab.id} onClick={() => setEditTab(tab.id)}
-                                        className={`flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-all duration-150 ${
-                                            editTab === tab.id
+                                        className={`flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-all duration-150 ${editTab === tab.id
                                                 ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-white dark:bg-gray-900'
                                                 : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-white/50 dark:hover:bg-gray-800/50'
-                                        }`}>
+                                            }`}>
                                         {tab.icon} {tab.label}
                                     </button>
                                 ))}
@@ -1072,7 +1123,7 @@ const CompanySubscription: React.FC = () => {
                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
                                                 <FormField label="Client Code" name="companyUniqueCode" value={formData.companyUniqueCode || ''} onChange={handleFormChange} />
                                                 <FormField label="Client Name *" name="companyName" value={formData.companyName} onChange={handleFormChange} />
-                                                <FormField label="User ID *" name="companyUserID" value={formData.companyUserID} onChange={handleFormChange} />
+                                                <FormField label="Company Login Name *" name="companyUserID" value={formData.companyUserID} onChange={handleFormChange} />
                                                 <FormField label="Password" name="password" value={formData.password} onChange={handleFormChange} />
                                                 <FormField label="Company Code" name="companyCode" value={formData.companyCode || ''} onChange={handleFormChange} />
                                                 <FormSelect label="Application" name="applicationName" value={formData.applicationName || ''} onChange={handleFormChange} options={APPLICATION_OPTIONS} />
@@ -1212,10 +1263,10 @@ const CompanySubscription: React.FC = () => {
                 <>
                     <style>{`@keyframes copyModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
                     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-                         onClick={() => setShowCopyModal(false)}>
+                        onClick={() => setShowCopyModal(false)}>
                         <div className="w-full max-w-[520px] mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
-                             onClick={e => e.stopPropagation()}
-                             style={{ animation: 'copyModalIn 0.2s ease-out' }}>
+                            onClick={e => e.stopPropagation()}
+                            style={{ animation: 'copyModalIn 0.2s ease-out' }}>
 
                             {/* Header */}
                             <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 rounded-t-2xl">
@@ -1260,21 +1311,20 @@ const CompanySubscription: React.FC = () => {
                                                 ) : filteredClientList.map(client => {
                                                     const isSelected = copyTargetUserID === client.companyUserID;
                                                     return (
-                                                    <div key={client.companyUserID}
-                                                        onClick={() => setCopyTargetUserID(client.companyUserID)}
-                                                        className={`flex items-center justify-between px-4 py-2.5 cursor-pointer border-b last:border-b-0 transition-all duration-150 ${
-                                                            isSelected
-                                                                ? 'bg-indigo-600 text-white border-b-indigo-700'
-                                                                : 'border-b-gray-100 dark:border-b-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/40'
-                                                        }`}>
-                                                        <div>
-                                                            <span className={`text-[13px] font-medium ${isSelected ? 'text-white' : 'text-gray-800 dark:text-gray-100'}`}>{client.companyName}</span>
-                                                            <span className={`ml-2 text-[11px] ${isSelected ? 'text-indigo-200' : 'text-gray-400'}`}>({client.companyUserID})</span>
+                                                        <div key={client.companyUserID}
+                                                            onClick={() => setCopyTargetUserID(client.companyUserID)}
+                                                            className={`flex items-center justify-between px-4 py-2.5 cursor-pointer border-b last:border-b-0 transition-all duration-150 ${isSelected
+                                                                    ? 'bg-indigo-600 text-white border-b-indigo-700'
+                                                                    : 'border-b-gray-100 dark:border-b-gray-800/50 hover:bg-gray-50 dark:hover:bg-gray-800/40'
+                                                                }`}>
+                                                            <div>
+                                                                <span className={`text-[13px] font-medium ${isSelected ? 'text-white' : 'text-gray-800 dark:text-gray-100'}`}>{client.companyName}</span>
+                                                                <span className={`ml-2 text-[11px] ${isSelected ? 'text-indigo-200' : 'text-gray-400'}`}>({client.companyUserID})</span>
+                                                            </div>
+                                                            {isSelected && (
+                                                                <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                                                            )}
                                                         </div>
-                                                        {isSelected && (
-                                                            <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
-                                                        )}
-                                                    </div>
                                                     );
                                                 })}
                                             </div>
@@ -1314,7 +1364,7 @@ const CompanySubscription: React.FC = () => {
                     <style>{`@keyframes deleteModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
                         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-sm mx-4 border border-gray-100 dark:border-gray-800 overflow-hidden"
-                             style={{ animation: 'deleteModalIn 0.2s ease-out' }}>
+                            style={{ animation: 'deleteModalIn 0.2s ease-out' }}>
                             <div className="p-6 text-center">
                                 <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center justify-center mx-auto mb-4">
                                     <Trash2 className="w-5 h-5 text-red-500" />
@@ -1427,9 +1477,9 @@ const CardSection: React.FC<{ title: string; color: string; children: React.Reac
 interface WizardFooterProps {
     onBack?: () => void; onCancel: () => void; onNext: () => void;
     isSaving: boolean; nextLabel: string; nextIcon?: React.ReactNode;
-    nextColor?: string;
+    nextColor?: string; disableNext?: boolean;
 }
-const WizardFooter: React.FC<WizardFooterProps> = ({ onBack, onCancel, onNext, isSaving, nextLabel, nextIcon, nextColor }) => (
+const WizardFooter: React.FC<WizardFooterProps> = ({ onBack, onCancel, onNext, isSaving, nextLabel, nextIcon, nextColor, disableNext }) => (
     <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50 rounded-b-2xl">
         <div>
             {onBack && (
@@ -1442,7 +1492,7 @@ const WizardFooter: React.FC<WizardFooterProps> = ({ onBack, onCancel, onNext, i
             <button onClick={onCancel} className="flex items-center gap-2 h-9 px-4 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150">
                 <X className="w-3.5 h-3.5" /> Cancel
             </button>
-            <button onClick={onNext} disabled={isSaving}
+            <button onClick={onNext} disabled={isSaving || disableNext}
                 className={`flex items-center gap-2 h-9 px-5 text-[13px] font-semibold text-white rounded-lg transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md ${nextColor || 'bg-indigo-600 hover:bg-indigo-700'}`}>
                 {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (nextIcon || <ChevronRight className="w-3.5 h-3.5" />)}
                 {nextLabel}

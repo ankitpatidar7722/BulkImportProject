@@ -11,6 +11,7 @@ public interface ICompanySubscriptionService
     Task<CompanySubscriptionResponse> DeleteAsync(string companyUserID);
     Task<NextClientCodeResponse> GetNextClientCodeAsync();
     Task<ServerListResponse> GetServersAsync();
+    Task<DynamicBackupDatabaseResponse> GetBackupDatabasesAsync(string applicationName);
     Task<SetupDatabaseResponse> SetupDatabaseAsync(SetupDatabaseRequest request);
     Task<CompanyMasterResponse> SaveCompanyMasterAsync(CompanyMasterRequest request);
     Task<BranchMasterResponse> SaveBranchMasterAsync(BranchMasterRequest request);

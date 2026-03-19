@@ -1297,8 +1297,10 @@ export const deleteCompanySubscription = async (companyUserID: string): Promise<
 export interface SetupDatabaseRequest {
     server: string;
     applicationName: string;
+    backupType: string;
     clientName: string;
     databaseName: string;
+    backupDatabaseName?: string;
 }
 
 export interface SetupDatabaseResponse {
@@ -1330,6 +1332,17 @@ export const getNextClientCode = async (): Promise<NextClientCodeResponse> => {
 
 export const getServers = async (): Promise<ServerListResponse> => {
     const response = await api.get('/companysubscription/servers');
+    return response.data;
+};
+
+export interface DynamicBackupDatabaseResponse {
+    success: boolean;
+    message: string;
+    databases: string[];
+}
+
+export const getBackupDatabases = async (applicationName: string): Promise<DynamicBackupDatabaseResponse> => {
+    const response = await api.get(`/companysubscription/backup-databases/${encodeURIComponent(applicationName)}`);
     return response.data;
 };
 

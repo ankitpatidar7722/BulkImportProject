@@ -66,6 +66,13 @@ public class CompanySubscriptionController : ControllerBase
         return Ok(response);
     }
 
+    [HttpGet("backup-databases/{applicationName}")]
+    public async Task<IActionResult> GetBackupDatabases(string applicationName)
+    {
+        var response = await _service.GetBackupDatabasesAsync(applicationName);
+        return Ok(response);
+    }
+
     [HttpPost("setup-database")]
     public async Task<IActionResult> SetupDatabase([FromBody] SetupDatabaseRequest request)
     {
