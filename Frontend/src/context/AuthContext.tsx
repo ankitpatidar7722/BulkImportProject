@@ -36,27 +36,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Always start fresh from CompanyLogin on every page load / refresh
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('companyToken');
-        localStorage.removeItem('companyName');
-        localStorage.removeItem('userName');
-        localStorage.removeItem('fYear');
-        localStorage.removeItem('loginType');
-        setLoginStep(0);
-        setLoginType('customer');
-        setCompanyName('');
-        setUserName('');
-        setFYear('');
+        // Restore session from localStorage on page load / refresh
+        const authToken = localStorage.getItem('authToken');
+        const companyToken = localStorage.getItem('companyToken');
+        const storedCompanyName = localStorage.getItem('companyName');
+        const storedUserName = localStorage.getItem('userName');
+        const storedFYear = localStorage.getItem('fYear');
+        const storedLoginType = localStorage.getItem('loginType') as LoginType;
+
+        if (authToken && storedUserName) {
+            // User is fully authenticated (Step 2)
+            setCompanyName(storedCompanyName || '');
+            setUserName(storedUserName);
+            setFYear(storedFYear || '');
+            setLoginType(storedLoginType || 'customer');
+            setLoginStep(2);
+        } else if (companyToken && storedCompanyName) {
+            // Company login completed, awaiting user login (Step 1)
+            setCompanyName(storedCompanyName);
+            setLoginStep(1);
+        } else {
+            // No authentication, start from CompanyLogin (Step 0)
+            setLoginStep(0);
+        }
+
         setIsLoading(false);
 
         // Listen for 401 Unauthorized events from API interceptor
         const handleUnauthorized = () => {
+            localStorage.clear();
             setLoginStep(0);
             setLoginType('customer');
             setCompanyName('');
             setUserName('');
             setFYear('');
+            window.location.href = '/';
         };
 
         window.addEventListener('auth:unauthorized', handleUnauthorized);

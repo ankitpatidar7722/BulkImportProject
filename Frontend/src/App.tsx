@@ -17,6 +17,7 @@ import ModuleAuthority from './pages/ModuleAuthority';
 import CreateModule from './pages/CreateModule';
 import DynamicModule from './pages/DynamicModule';
 import CompanySubscription from './pages/CompanySubscription';
+import ModuleGroupAuthority from './pages/ModuleGroupAuthority';
 
 // Authenticated Layout Component
 const AuthenticatedLayout = () => {
@@ -46,6 +47,7 @@ const AuthenticatedLayout = () => {
                         <Route path="/create-module" element={<CreateModule />} />
                         <Route path="/dynamic-module" element={<DynamicModule />} />
                         <Route path="/company-subscription" element={<CompanySubscription />} />
+                        <Route path="/module-group-authority" element={<ModuleGroupAuthority />} />
                         <Route path="*" element={<Navigate to={defaultPath} replace />} />
                     </Routes>
                 </main>

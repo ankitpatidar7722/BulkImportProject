@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw,
     Database, Server, ChevronRight, ArrowLeft, CheckCircle2, Building2,
-    GitBranch, Factory, PartyPopper, Settings, Copy, Search
+    GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers
 } from 'lucide-react';
 import {
     getCompanySubscriptions,
@@ -21,6 +21,13 @@ import {
     saveModuleSettings,
     getClientDropdown,
     copyModules,
+    getModuleGroups,
+    getModuleGroupModules,
+    getAvailableModulesForGroup,
+    createModuleGroup,
+    applyModuleGroupToClient,
+    checkModulesExist,
+    getCompanySubscriptionByKey,
     CompanySubscriptionDto,
     SetupDatabaseRequest,
     SetupDatabaseResponse,
@@ -31,6 +38,7 @@ import {
     CompleteSetupResponse,
     ModuleSettingsRow,
     ClientDropdownItem,
+    ModuleGroupModuleRow,
 } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
 
@@ -97,7 +105,7 @@ const CompanySubscription: React.FC = () => {
     const [originalCompanyUserID, setOriginalCompanyUserID] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [editTab, setEditTab] = useState<1 | 2>(1);
+    const [editTab, setEditTab] = useState<1 | 2 | 3>(1);
 
     // ─── Module Settings State ───
     const [moduleData, setModuleData] = useState<ModuleSettingsRow[]>([]);
@@ -113,9 +121,25 @@ const CompanySubscription: React.FC = () => {
     const [isCopying, setIsCopying] = useState(false);
     const [isClientListLoading, setIsClientListLoading] = useState(false);
 
+    // ─── Module Group Authority State ───
+    const [groupAppName, setGroupAppName] = useState<string>('estimoprime');
+    const [moduleGroups, setModuleGroups] = useState<string[]>([]);
+    const [selectedGroup, setSelectedGroup] = useState<string>('');
+    const [groupModules, setGroupModules] = useState<ModuleGroupModuleRow[]>([]);
+    const [isLoadingGroupModules, setIsLoadingGroupModules] = useState(false);
+    const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+    const [newGroupName, setNewGroupName] = useState('');
+    const [newGroupApp, setNewGroupApp] = useState('estimoprime');
+    const [availableModules, setAvailableModules] = useState<ModuleGroupModuleRow[]>([]);
+    const [selectedModulesForGroup, setSelectedModulesForGroup] = useState<Set<string>>(new Set());
+    const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+
     // ─── Wizard State ───
     const [showWizard, setShowWizard] = useState(false);
     const [wizardStep, setWizardStep] = useState<WizardStepNum>(1);
+    const [maxWizardStep, setMaxWizardStep] = useState<WizardStepNum>(1);
+    const [isStep2Saved, setIsStep2Saved] = useState(false);
+    const [step2SavedUserId, setStep2SavedUserId] = useState<string>('');
     const [serverList, setServerList] = useState<string[]>([]);
     const [wizardServer, setWizardServer] = useState('');
     const [wizardAppName, setWizardAppName] = useState('estimoprime');
@@ -200,6 +224,9 @@ const CompanySubscription: React.FC = () => {
 
     const handleCreate = async () => {
         setWizardStep(1);
+        setMaxWizardStep(1);
+        setIsStep2Saved(false);
+        setStep2SavedUserId('');
         setWizardServer(''); setWizardAppName('estimoprime'); setWizardBackupType('Offset'); setWizardClientName('');
         setWizardDbName(''); setWizardDbNameEdited(false); setSetupResult(null);
         setWizardBackupDatabase('');
@@ -231,6 +258,12 @@ const CompanySubscription: React.FC = () => {
         if (!wizardDbName.trim()) { showMessage('error', 'Validation', 'Database Name is required.'); return; }
         if (!wizardBackupDatabase) { showMessage('error', 'Validation', 'Please select a Backup Database Name.'); return; }
 
+        if (setupResult && setupResult.databaseName === wizardDbName.trim()) {
+            setWizardStep(2);
+            setMaxWizardStep(Math.max(maxWizardStep, 2) as WizardStepNum);
+            return;
+        }
+
         setIsSettingUpDb(true);
         try {
             const req: SetupDatabaseRequest = {
@@ -251,6 +284,7 @@ const CompanySubscription: React.FC = () => {
                     companyName: result.clientName,
                 }));
                 setWizardStep(2);
+                setMaxWizardStep(Math.max(maxWizardStep, 2) as WizardStepNum);
                 showMessage('success', 'Database Created', result.message);
             } else {
                 showMessage('error', 'Setup Failed', result.message);
@@ -297,9 +331,17 @@ const CompanySubscription: React.FC = () => {
                 toDate: formData.toDate || null, paymentDueDate: formData.paymentDueDate || null,
                 fYear: formData.fYear || null,
             };
-            const response = await createCompanySubscription(payload);
+            let response;
+            if (isStep2Saved && step2SavedUserId) {
+                payload.originalCompanyUserID = step2SavedUserId;
+                response = await updateCompanySubscription(payload);
+            } else {
+                response = await createCompanySubscription(payload);
+            }
             if (response.success) {
-                showMessage('success', 'Created', 'Subscription record created successfully.');
+                showMessage('success', isStep2Saved ? 'Updated' : 'Created', isStep2Saved ? 'Subscription record updated successfully.' : 'Subscription record created successfully.');
+                setIsStep2Saved(true);
+                setStep2SavedUserId(formData.companyUserID);
                 // Auto-fill Step 3 with data from subscription
                 const connStr = formData.conn_String || '';
                 setCompanyMaster(prev => ({
@@ -311,6 +353,7 @@ const CompanySubscription: React.FC = () => {
                     mobileNO: formData.mobile || '', address: formData.address || '',
                 }));
                 setWizardStep(3);
+                setMaxWizardStep(Math.max(maxWizardStep, 3) as WizardStepNum);
             } else {
                 showMessage('error', 'Save Error', response.message);
             }
@@ -344,6 +387,7 @@ const CompanySubscription: React.FC = () => {
                     companyID: response.companyID,
                 }));
                 setWizardStep(4);
+                setMaxWizardStep(Math.max(maxWizardStep, 4) as WizardStepNum);
             } else {
                 showMessage('error', 'Save Error', response.message);
             }
@@ -373,6 +417,7 @@ const CompanySubscription: React.FC = () => {
                     country: companyMaster.country || 'India', pan: companyMaster.pan || '',
                 }));
                 setWizardStep(5);
+                setMaxWizardStep(Math.max(maxWizardStep, 5) as WizardStepNum);
             } else {
                 showMessage('error', 'Save Error', response.message);
             }
@@ -402,6 +447,7 @@ const CompanySubscription: React.FC = () => {
             if (completeResp.success) {
                 setSetupComplete(completeResp);
                 setWizardStep(6);
+                setMaxWizardStep(Math.max(maxWizardStep, 6) as WizardStepNum);
                 await fetchData();
             } else {
                 showMessage('error', 'Setup Error', completeResp.message);
@@ -512,8 +558,35 @@ const CompanySubscription: React.FC = () => {
             showMessage('error', 'Error', 'Source connection string is missing.');
             return;
         }
+
         setIsCopying(true);
         try {
+            // Fetch target client's details to get connection string
+            const targetClientRes = await getCompanySubscriptionByKey(copyTargetUserID);
+            if (!targetClientRes.success || !targetClientRes.data?.conn_String) {
+                showMessage('error', 'Error', 'Target client connection string not found.');
+                setIsCopying(false);
+                return;
+            }
+
+            // Check if target client already has modules
+            const checkRes = await checkModulesExist(targetClientRes.data.conn_String);
+
+            if (checkRes.hasModules) {
+                // Show warning confirmation
+                const confirmed = window.confirm(
+                    `⚠️ Warning: Target client already has ${checkRes.moduleCount} module(s).\n\n` +
+                    `Are you sure you want to delete the existing modules and add new modules?\n\n` +
+                    `Click OK to proceed or Cancel to abort.`
+                );
+
+                if (!confirmed) {
+                    setIsCopying(false);
+                    return;
+                }
+            }
+
+            // Proceed with copy
             const res = await copyModules(formData.conn_String, copyTargetUserID);
             if (res.success) {
                 showMessage('success', 'Copied', res.message);
@@ -521,8 +594,8 @@ const CompanySubscription: React.FC = () => {
             } else {
                 showMessage('error', 'Copy Failed', res.message);
             }
-        } catch {
-            showMessage('error', 'Error', 'Failed to copy modules.');
+        } catch (err: any) {
+            showMessage('error', 'Error', err?.response?.data?.message || 'Failed to copy modules.');
         } finally {
             setIsCopying(false);
         }
@@ -533,6 +606,157 @@ const CompanySubscription: React.FC = () => {
         const q = copyClientSearch.toLowerCase();
         return clientList.filter(c => c.companyName.toLowerCase().includes(q) || c.companyUserID.toLowerCase().includes(q));
     }, [clientList, copyClientSearch]);
+
+    // ─── Module Group Authority Handlers ───
+    const loadModuleGroups = useCallback(async (appName: string) => {
+        try {
+            const res = await getModuleGroups(appName);
+            if (res.success) {
+                setModuleGroups(res.data);
+            }
+        } catch {
+            showMessage('error', 'Error', 'Failed to load module groups.');
+        }
+    }, [showMessage]);
+
+    const handleLoadGroupModules = async () => {
+        if (!selectedGroup) return;
+        setIsLoadingGroupModules(true);
+        try {
+            const res = await getModuleGroupModules(groupAppName, selectedGroup);
+            if (res.success) {
+                setGroupModules(res.data);
+            } else {
+                showMessage('error', 'Load Failed', res.message);
+            }
+        } catch {
+            showMessage('error', 'Error', 'Failed to load group modules.');
+        } finally {
+            setIsLoadingGroupModules(false);
+        }
+    };
+
+    const handleApplyModuleGroupToClient = async () => {
+        if (!selectedGroup) {
+            showMessage('info', 'Required', 'Please select a Module Group.');
+            return;
+        }
+        if (!formData.conn_String) {
+            showMessage('error', 'Error', 'Client connection string is missing.');
+            return;
+        }
+        if (groupModules.length === 0) {
+            showMessage('info', 'Required', 'Please load modules first by clicking "Load Module".');
+            return;
+        }
+
+        setIsModuleSaving(true);
+        try {
+            // Check if client database already has modules
+            const checkRes = await checkModulesExist(formData.conn_String);
+
+            if (checkRes.hasModules) {
+                // Show warning confirmation
+                const confirmed = window.confirm(
+                    `⚠️ Warning: This client database already has ${checkRes.moduleCount} module(s).\n\n` +
+                    `Are you sure you want to delete the existing modules and add new modules from "${selectedGroup}"?\n\n` +
+                    `Click OK to proceed or Cancel to abort.`
+                );
+
+                if (!confirmed) {
+                    setIsModuleSaving(false);
+                    return;
+                }
+            }
+
+            // Proceed with apply
+            const res = await applyModuleGroupToClient({
+                applicationName: groupAppName,
+                moduleGroupName: selectedGroup,
+                connectionString: formData.conn_String
+            });
+
+            if (res.success) {
+                showMessage('success', 'Applied Successfully', res.message);
+            } else {
+                showMessage('error', 'Apply Failed', res.message);
+            }
+        } catch (err: any) {
+            showMessage('error', 'Error', err?.response?.data?.message || 'Failed to apply module group to client database.');
+        } finally {
+            setIsModuleSaving(false);
+        }
+    };
+
+    const handleOpenCreateGroupModal = async () => {
+        setShowCreateGroupModal(true);
+        setNewGroupName('');
+        setSelectedModulesForGroup(new Set());
+        // Load available modules
+        try {
+            const res = await getAvailableModulesForGroup(newGroupApp);
+            if (res.success) {
+                setAvailableModules(res.data);
+            }
+        } catch {
+            showMessage('error', 'Error', 'Failed to load available modules.');
+        }
+    };
+
+    const handleCreateGroup = async () => {
+        if (!newGroupName.trim()) {
+            showMessage('info', 'Required', 'Please enter a Module Group Name.');
+            return;
+        }
+        if (selectedModulesForGroup.size === 0) {
+            showMessage('info', 'Required', 'Please select at least one module.');
+            return;
+        }
+        setIsCreatingGroup(true);
+        try {
+            const res = await createModuleGroup({
+                applicationName: newGroupApp,
+                moduleGroupName: newGroupName.trim(),
+                selectedModuleNames: Array.from(selectedModulesForGroup)
+            });
+            if (res.success) {
+                showMessage('success', 'Created', res.message);
+                setShowCreateGroupModal(false);
+                // Reload groups
+                await loadModuleGroups(groupAppName);
+            } else {
+                showMessage('error', 'Create Failed', res.message);
+            }
+        } catch {
+            showMessage('error', 'Error', 'Failed to create module group.');
+        } finally {
+            setIsCreatingGroup(false);
+        }
+    };
+
+    // Load module groups when application changes (Tab 3)
+    useEffect(() => {
+        if (editTab === 3) {
+            loadModuleGroups(groupAppName);
+        }
+    }, [groupAppName, editTab, loadModuleGroups]);
+
+    // Load available modules when newGroupApp changes in Create Group modal
+    useEffect(() => {
+        if (showCreateGroupModal) {
+            const loadAvailableModules = async () => {
+                try {
+                    const res = await getAvailableModulesForGroup(newGroupApp);
+                    if (res.success) {
+                        setAvailableModules(res.data);
+                    }
+                } catch {
+                    // Silent fail
+                }
+            };
+            loadAvailableModules();
+        }
+    }, [newGroupApp, showCreateGroupModal]);
 
     // Load module settings when switching to Module Settings tab
     useEffect(() => {
@@ -707,8 +931,8 @@ const CompanySubscription: React.FC = () => {
                     focusedRowEnabled={true}
                 >
                     <Sorting mode="multiple" />
-                    <Paging defaultPageSize={50} />
-                    <Pager showPageSizeSelector={true} allowedPageSizes={[25, 50, 100, 200]} showInfo={true} showNavigationButtons={true} displayMode="full" />
+                    <Paging defaultPageSize={100} />
+                    <Pager showPageSizeSelector={true} allowedPageSizes={[100, 500, 1000, 2000]} showInfo={true} showNavigationButtons={true} displayMode="full" />
                     <SearchPanel visible={true} width={280} placeholder="Search..." highlightSearchText={true} />
                     <FilterRow visible={true} />
                     <HeaderFilter visible={true} />
@@ -765,20 +989,30 @@ const CompanySubscription: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 {/* Step Progress Indicators */}
                                 <div className="hidden md:flex items-center gap-1">
-                                    {WIZARD_STEPS.map((s, i) => (
+                                    {WIZARD_STEPS.map((s, i) => {
+                                        const isCompleted = wizardStep > s.num;
+                                        const isCurrent = wizardStep === s.num;
+                                        const isAllowed = s.num <= maxWizardStep;
+                                        return (
                                         <React.Fragment key={s.num}>
-                                            {i > 0 && <div className={`w-5 h-0.5 rounded-full transition-all duration-300 ${wizardStep > s.num ? 'bg-white/70' : 'bg-white/15'}`} />}
-                                            <div className={`flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold transition-all duration-300 ${wizardStep === s.num ? 'bg-white text-indigo-600 scale-110 shadow-lg shadow-white/20' :
-                                                    wizardStep > s.num ? 'bg-white/80 text-indigo-600' : 'bg-white/15 text-white/70'
+                                            {i > 0 && <div className={`w-5 h-0.5 rounded-full transition-all duration-300 ${isCompleted ? 'bg-white/70' : 'bg-white/15'}`} />}
+                                            <button 
+                                                onClick={() => isAllowed && setWizardStep(s.num as WizardStepNum)}
+                                                disabled={!isAllowed}
+                                                className={`group flex items-center gap-1.5 px-2.5 h-7 rounded-full text-[11px] font-bold transition-all duration-300 ${
+                                                    isCurrent ? 'bg-white text-indigo-600 shadow-lg shadow-white/20 scale-105' :
+                                                    isAllowed ? 'bg-white/20 text-white hover:bg-white/30 cursor-pointer' : 
+                                                    'bg-white/10 text-white/50 cursor-not-allowed'
                                                 }`}>
-                                                {wizardStep > s.num ? <CheckCircle2 className="w-3.5 h-3.5" /> : s.num}
-                                            </div>
+                                                <div className="flex items-center justify-center w-4 h-4 rounded-full bg-black/10">
+                                                    {isCompleted ? <CheckCircle2 className="w-3 h-3" /> : s.num}
+                                                </div>
+                                                <span className="hidden lg:block whitespace-nowrap">{s.label}</span>
+                                                <span className="lg:hidden">{s.num}</span>
+                                            </button>
                                         </React.Fragment>
-                                    ))}
+                                    )})}
                                 </div>
-                                <button onClick={() => setShowWizard(false)} className="p-1.5 rounded-lg hover:bg-white/15 transition-all duration-150">
-                                    <X className="w-4 h-4 text-white" />
-                                </button>
                             </div>
                         </div>
 
@@ -933,7 +1167,7 @@ const CompanySubscription: React.FC = () => {
                                             <h3 className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">Login & Access</h3>
                                         </div>
                                         <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
-                                            <FormField label="User ID *" name="companyUserID" value={formData.companyUserID} onChange={handleFormChange} />
+                                            <FormField label="Company Login Name *" name="companyUserID" value={formData.companyUserID} onChange={handleFormChange} />
                                             <FormField label="Password *" name="password" value={formData.password} onChange={handleFormChange} />
                                             <FormField label="Connection String" name="conn_String" value={formData.conn_String || ''} onChange={handleFormChange} readOnly />
                                             <FormField label="Login Allowed" name="loginAllowed" value={String(formData.loginAllowed ?? '')} onChange={handleFormChange} type="number" />
@@ -1042,8 +1276,13 @@ const CompanySubscription: React.FC = () => {
                                 <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-1 tracking-tight">Congratulations!</h2>
                                 <p className="text-[12px] text-gray-500 dark:text-gray-400 mb-5 max-w-md mx-auto">Setup complete. The client can now login with the credentials below.</p>
 
-                                <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/50 p-4 max-w-sm mx-auto mb-5">
+                                <div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-800/50 p-4 max-w-sm mx-auto mb-5 relative">
                                     <div className="space-y-2.5">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Company Name</span>
+                                            <span className="text-[13px] font-extrabold text-indigo-700 dark:text-indigo-300 tracking-wide">{companyMaster.companyName || formData.companyName}</span>
+                                        </div>
+                                        <div className="h-px bg-gray-200 dark:bg-gray-700" />
                                         <div className="flex items-center justify-between">
                                             <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Company Login Name</span>
                                             <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg">{setupComplete.companyUserID}</span>
@@ -1051,8 +1290,34 @@ const CompanySubscription: React.FC = () => {
                                         <div className="h-px bg-gray-200 dark:bg-gray-700" />
                                         <div className="flex items-center justify-between">
                                             <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Password</span>
-                                            <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg">{setupComplete.password}</span>
+                                            <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg pt-1 pb-1">{"*".repeat(setupComplete.password.length || 6)}</span>
                                         </div>
+                                        {setupComplete.userName !== undefined && (
+                                            <>
+                                                <div className="h-px bg-gray-200 dark:bg-gray-700" />
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">User Name</span>
+                                                    <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1 rounded-lg">{setupComplete.userName || 'Admin'}</span>
+                                                </div>
+                                                <div className="h-px bg-gray-200 dark:bg-gray-700" />
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Password</span>
+                                                    <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1 rounded-lg pt-1 pb-1">{"*".repeat((setupComplete.userPassword || '').length || 6)}</span>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                    <div className="mt-4 flex justify-center">
+                                        <button 
+                                            onClick={() => {
+                                                const text = `Company Name: ${companyMaster.companyName || formData.companyName}\nCompany Login Name: ${setupComplete.companyUserID}\nPassword: ${setupComplete.password}\nUser Name: ${setupComplete.userName || 'Admin'}\nPassword: ${setupComplete.userPassword || ''}`;
+                                                navigator.clipboard.writeText(text);
+                                                showMessage('success', 'Copied', 'Credentials copied successfully');
+                                            }}
+                                            className="flex items-center gap-1.5 h-8 px-4 text-[12px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-100/50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/60 rounded-lg transition-all"
+                                        >
+                                            <Copy className="w-3.5 h-3.5" /> Copy Credentials
+                                        </button>
                                     </div>
                                 </div>
 
@@ -1097,6 +1362,7 @@ const CompanySubscription: React.FC = () => {
                                 {([
                                     { id: 1 as const, label: 'Company Detail', icon: <CreditCard className="w-3.5 h-3.5" /> },
                                     { id: 2 as const, label: 'Module Settings', icon: <Settings className="w-3.5 h-3.5" /> },
+                                    { id: 3 as const, label: 'Module Group Authority', icon: <Layers className="w-3.5 h-3.5" /> },
                                 ]).map(tab => (
                                     <button key={tab.id} onClick={() => setEditTab(tab.id)}
                                         className={`flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-all duration-150 ${editTab === tab.id
@@ -1230,6 +1496,97 @@ const CompanySubscription: React.FC = () => {
                                     </div>
                                 )}
 
+                                {/* Tab 3: Module Group Authority */}
+                                {editTab === 3 && (
+                                    <div className="space-y-3">
+                                        {/* Top Controls */}
+                                        <div className="flex items-center gap-3">
+                                            {/* Application Name Dropdown */}
+                                            <div className="flex-1">
+                                                <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                                                    Application Name
+                                                </label>
+                                                <select
+                                                    value={groupAppName}
+                                                    onChange={(e) => setGroupAppName(e.target.value)}
+                                                    className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 outline-none transition-all cursor-pointer"
+                                                >
+                                                    <option value="estimoprime">Estimoprime</option>
+                                                    <option value="PrintudeERP">PrintudeERP</option>
+                                                    <option value="MultiUnit">MultiUnit</option>
+                                                </select>
+                                            </div>
+
+                                            {/* Module Group Dropdown */}
+                                            <div className="flex-1">
+                                                <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                                                    Module Group
+                                                </label>
+                                                <select
+                                                    value={selectedGroup}
+                                                    onChange={(e) => setSelectedGroup(e.target.value)}
+                                                    className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 outline-none transition-all cursor-pointer"
+                                                    disabled={moduleGroups.length === 0}
+                                                >
+                                                    <option value="">Select Module Group</option>
+                                                    {moduleGroups.map(g => (
+                                                        <option key={g} value={g}>{g}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Load Module Button */}
+                                            <div className="pt-5">
+                                                <button
+                                                    onClick={handleLoadGroupModules}
+                                                    disabled={!selectedGroup || isLoadingGroupModules}
+                                                    className="h-9 px-4 text-[13px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-indigo-600/20"
+                                                >
+                                                    {isLoadingGroupModules ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : 'Load Module'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Grid Section */}
+                                        {isLoadingGroupModules ? (
+                                            <div className="flex items-center justify-center py-20">
+                                                <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                                                <span className="ml-2.5 text-[13px] text-gray-400">Loading modules...</span>
+                                            </div>
+                                        ) : groupModules.length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-20 text-center">
+                                                <Layers className="w-12 h-12 text-gray-200 dark:text-gray-700 mb-3" />
+                                                <p className="text-[13px] text-gray-400 dark:text-gray-500">Select a Module Group and click "Load Module" to view modules.</p>
+                                            </div>
+                                        ) : (
+                                            <DataGrid
+                                                dataSource={groupModules}
+                                                keyExpr="moduleDisplayName"
+                                                showBorders={true}
+                                                showRowLines={true}
+                                                showColumnLines={true}
+                                                rowAlternationEnabled={true}
+                                                hoverStateEnabled={true}
+                                                columnAutoWidth={true}
+                                                wordWrapEnabled={false}
+                                                allowColumnResizing={true}
+                                                columnResizingMode="widget"
+                                                height={500}
+                                            >
+                                                <Sorting mode="multiple" />
+                                                <Paging defaultPageSize={1000} />
+                                                <Pager showPageSizeSelector={true} allowedPageSizes={[1000, 2000, 5000]} showInfo={true} />
+                                                <SearchPanel visible={true} width={240} placeholder="Search..." />
+                                                <FilterRow visible={true} />
+                                                <HeaderFilter visible={true} />
+
+                                                <Column dataField="moduleHeadName" caption="Module Head Name" />
+                                                <Column dataField="moduleDisplayName" caption="Module Display Name" />
+                                            </DataGrid>
+                                        )}
+                                    </div>
+                                )}
+
                             </div>
 
                             {/* Footer - Dynamic buttons based on tab */}
@@ -1250,6 +1607,13 @@ const CompanySubscription: React.FC = () => {
                                         className="flex items-center gap-1.5 h-9 px-5 text-[13px] font-semibold text-white bg-amber-500 rounded-lg hover:bg-amber-600 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-amber-500/20">
                                         {isModuleSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                         {isModuleSaving ? 'Saving...' : 'Save Module'}
+                                    </button>
+                                )}
+                                {editTab === 3 && formData.conn_String && (
+                                    <button onClick={handleApplyModuleGroupToClient} disabled={isModuleSaving || !selectedGroup || groupModules.length === 0}
+                                        className="flex items-center gap-1.5 h-9 px-5 text-[13px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-indigo-600/20">
+                                        {isModuleSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                        {isModuleSaving ? 'Applying...' : 'Apply to Client'}
                                     </button>
                                 )}
                             </div>
@@ -1380,6 +1744,126 @@ const CompanySubscription: React.FC = () => {
                                 <button onClick={confirmDelete}
                                     className="flex-1 h-9 text-[13px] font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-all duration-150 shadow-sm hover:shadow-md shadow-red-500/20">
                                     Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Create Module Group Modal */}
+            {showCreateGroupModal && (
+                <>
+                    <style>{`@keyframes groupModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                        onClick={() => setShowCreateGroupModal(false)}>
+                        <div className="w-full max-w-3xl mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
+                            onClick={e => e.stopPropagation()}
+                            style={{ animation: 'groupModalIn 0.2s ease-out', maxHeight: '90vh' }}>
+
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 rounded-t-2xl">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 bg-white/15 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                                        <Layers className="w-4 h-4 text-white" />
+                                    </div>
+                                    <h3 className="text-base font-bold text-white tracking-tight">Create Module Group</h3>
+                                </div>
+                                <button onClick={() => setShowCreateGroupModal(false)}
+                                    className="w-8 h-8 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-all backdrop-blur-sm">
+                                    <X className="w-4 h-4 text-white" />
+                                </button>
+                            </div>
+
+                            {/* Content */}
+                            <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 160px)' }}>
+                                {/* Form Fields */}
+                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                    {/* Application Name */}
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                                            Application Name <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            value={newGroupApp}
+                                            onChange={(e) => setNewGroupApp(e.target.value)}
+                                            className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 outline-none transition-all cursor-pointer"
+                                        >
+                                            <option value="estimoprime">Estimoprime</option>
+                                            <option value="PrintudeERP">PrintudeERP</option>
+                                            <option value="MultiUnit">MultiUnit</option>
+                                        </select>
+                                    </div>
+
+                                    {/* Module Group Name */}
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                                            Module Group Name <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={newGroupName}
+                                            onChange={(e) => setNewGroupName(e.target.value)}
+                                            placeholder="Enter group name"
+                                            className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 outline-none transition-all"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Module Selection Grid */}
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                                        Select Modules <span className="text-red-500">*</span>
+                                    </label>
+                                    {availableModules.length === 0 ? (
+                                        <div className="flex items-center justify-center py-12 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                            <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+                                            <span className="ml-2 text-[13px] text-gray-400">Loading modules...</span>
+                                        </div>
+                                    ) : (
+                                        <DataGrid
+                                            dataSource={availableModules}
+                                            keyExpr="moduleDisplayName"
+                                            showBorders={true}
+                                            showRowLines={true}
+                                            showColumnLines={true}
+                                            rowAlternationEnabled={true}
+                                            hoverStateEnabled={true}
+                                            columnAutoWidth={true}
+                                            height={400}
+                                            selectedRowKeys={Array.from(selectedModulesForGroup)}
+                                            onSelectionChanged={(e: any) => {
+                                                const selected = new Set(e.selectedRowKeys as string[]);
+                                                setSelectedModulesForGroup(selected);
+                                            }}
+                                        >
+                                            <Sorting mode="multiple" />
+                                            <Paging defaultPageSize={1000} />
+                                            <SearchPanel visible={true} width={240} placeholder="Search modules..." />
+                                            <FilterRow visible={true} />
+                                            <HeaderFilter visible={true} />
+
+                                            <Column type="selection" width={50} />
+                                            <Column dataField="moduleHeadName" caption="Module Head Name" />
+                                            <Column dataField="moduleDisplayName" caption="Module Display Name" />
+                                        </DataGrid>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/30 rounded-b-2xl">
+                                <button onClick={() => setShowCreateGroupModal(false)}
+                                    disabled={isCreatingGroup}
+                                    className="h-9 px-4 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-150 disabled:opacity-50">
+                                    <X className="w-3.5 h-3.5 inline mr-1" /> Cancel
+                                </button>
+                                <button
+                                    onClick={handleCreateGroup}
+                                    disabled={!newGroupName.trim() || selectedModulesForGroup.size === 0 || isCreatingGroup}
+                                    className="h-9 px-4 text-[13px] font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-emerald-600/20">
+                                    {isCreatingGroup ? <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" /> : <Save className="w-3.5 h-3.5 inline mr-1" />}
+                                    {isCreatingGroup ? 'Creating...' : 'Create Group'}
                                 </button>
                             </div>
                         </div>

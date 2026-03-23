@@ -135,4 +135,60 @@ public class CompanySubscriptionController : ControllerBase
         var response = await _service.CopyModulesAsync(request);
         return Ok(response);
     }
+
+    [HttpGet("module-groups/{applicationName}")]
+    public async Task<IActionResult> GetModuleGroups(string applicationName)
+    {
+        var response = await _service.GetModuleGroupsAsync(applicationName);
+        return Ok(response);
+    }
+
+    [HttpPost("module-group-modules")]
+    public async Task<IActionResult> GetModuleGroupModules([FromBody] ModuleGroupModulesRequest request)
+    {
+        var response = await _service.GetModuleGroupModulesAsync(request);
+        return Ok(response);
+    }
+
+    [HttpGet("available-modules/{applicationName}")]
+    public async Task<IActionResult> GetAvailableModulesForGroup(string applicationName)
+    {
+        var response = await _service.GetAvailableModulesForGroupAsync(applicationName);
+        return Ok(response);
+    }
+
+    [HttpPost("create-module-group")]
+    public async Task<IActionResult> CreateModuleGroup([FromBody] CreateModuleGroupRequest request)
+    {
+        var response = await _service.CreateModuleGroupAsync(request);
+        return Ok(response);
+    }
+
+    [HttpPut("update-module-group")]
+    public async Task<IActionResult> UpdateModuleGroup([FromBody] UpdateModuleGroupRequest request)
+    {
+        var response = await _service.UpdateModuleGroupAsync(request);
+        return Ok(response);
+    }
+
+    [HttpPost("apply-module-group-to-client")]
+    public async Task<IActionResult> ApplyModuleGroupToClient([FromBody] ApplyModuleGroupToClientRequest request)
+    {
+        var response = await _service.ApplyModuleGroupToClientAsync(request);
+        return Ok(response);
+    }
+
+    [HttpGet("check-modules-exist")]
+    public async Task<IActionResult> CheckModulesExist([FromQuery] string connectionString)
+    {
+        var response = await _service.CheckModulesExistAsync(connectionString);
+        return Ok(response);
+    }
+
+    [HttpPost("delete-module-group")]
+    public async Task<IActionResult> DeleteModuleGroup([FromBody] DeleteModuleGroupRequest request)
+    {
+        var response = await _service.DeleteModuleGroupAsync(request);
+        return Ok(response);
+    }
 }

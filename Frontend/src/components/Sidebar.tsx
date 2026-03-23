@@ -37,6 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
 
     const indusMenuItems = [
         { name: 'Company Subscription', path: '/company-subscription', icon: CreditCard },
+        { name: 'Module Group Authority', path: '/module-group-authority', icon: Layers },
     ];
 
     const menuItems = loginType === 'indus' ? indusMenuItems : customerMenuItems;

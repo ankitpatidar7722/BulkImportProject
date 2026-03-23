@@ -1456,6 +1456,8 @@ export interface CompleteSetupResponse {
     message: string;
     companyUserID: string;
     password: string;
+    userName?: string;
+    userPassword?: string;
 }
 
 export const completeSetup = async (data: CompleteSetupRequest): Promise<CompleteSetupResponse> => {
@@ -1526,6 +1528,124 @@ export const getClientDropdown = async (): Promise<ClientDropdownResponse> => {
 
 export const copyModules = async (sourceConnectionString: string, targetCompanyUserID: string): Promise<CopyModulesResponse> => {
     const response = await api.post('/companysubscription/copy-modules', { sourceConnectionString, targetCompanyUserID });
+    return response.data;
+};
+
+// ─── Module Group Authority ───
+export interface ModuleGroupModuleRow {
+    moduleHeadName: string;
+    moduleDisplayName: string;
+    moduleName: string;
+}
+
+export interface ModuleGroupDropdownResponse {
+    success: boolean;
+    message: string;
+    data: string[];
+}
+
+export interface ModuleGroupModulesResponse {
+    success: boolean;
+    message: string;
+    data: ModuleGroupModuleRow[];
+}
+
+export interface CreateModuleGroupRequest {
+    applicationName: string;
+    moduleGroupName: string;
+    selectedModuleNames: string[];
+}
+
+export interface CreateModuleGroupResponse {
+    success: boolean;
+    message: string;
+}
+
+export const getModuleGroups = async (applicationName: string): Promise<ModuleGroupDropdownResponse> => {
+    const response = await api.get(`/companysubscription/module-groups/${applicationName}`);
+    return response.data;
+};
+
+export const getModuleGroupModules = async (applicationName: string, moduleGroupName: string): Promise<ModuleGroupModulesResponse> => {
+    const response = await api.post('/companysubscription/module-group-modules', { applicationName, moduleGroupName });
+    return response.data;
+};
+
+export const getAvailableModulesForGroup = async (applicationName: string): Promise<ModuleGroupModulesResponse> => {
+    const response = await api.get(`/companysubscription/available-modules/${applicationName}`);
+    return response.data;
+};
+
+export const createModuleGroup = async (data: CreateModuleGroupRequest): Promise<CreateModuleGroupResponse> => {
+    const response = await api.post('/companysubscription/create-module-group', data);
+    return response.data;
+};
+
+export interface UpdateModuleGroupRequest {
+    applicationName: string;
+    moduleGroupName: string;
+    selectedModuleNames: string[];
+}
+
+export interface UpdateModuleGroupResponse {
+    success: boolean;
+    message: string;
+    inserted: number;
+    deleted: number;
+}
+
+export const updateModuleGroup = async (data: UpdateModuleGroupRequest): Promise<UpdateModuleGroupResponse> => {
+    const response = await api.put('/companysubscription/update-module-group', data);
+    return response.data;
+};
+
+export interface ApplyModuleGroupToClientRequest {
+    applicationName: string;
+    moduleGroupName: string;
+    connectionString: string;
+}
+
+export interface ApplyModuleGroupToClientResponse {
+    success: boolean;
+    message: string;
+    totalModules: number;
+}
+
+export const applyModuleGroupToClient = async (data: ApplyModuleGroupToClientRequest): Promise<ApplyModuleGroupToClientResponse> => {
+    const response = await api.post('/companysubscription/apply-module-group-to-client', data);
+    return response.data;
+};
+
+export interface CheckModulesExistResponse {
+    success: boolean;
+    message: string;
+    hasModules: boolean;
+    moduleCount: number;
+}
+
+export const checkModulesExist = async (connectionString: string): Promise<CheckModulesExistResponse> => {
+    const response = await api.get('/companysubscription/check-modules-exist', {
+        params: { connectionString }
+    });
+    return response.data;
+};
+
+export interface DeleteModuleGroupRequest {
+    applicationName: string;
+    moduleGroupName: string;
+    userName: string;
+    password: string;
+    reason: string;
+}
+
+export interface DeleteModuleGroupResponse {
+    success: boolean;
+    message: string;
+    deletedCount: number;
+}
+
+export const deleteModuleGroup = async (data: DeleteModuleGroupRequest): Promise<DeleteModuleGroupResponse> => {
+    const response = await api.post('/companysubscription/delete-module-group', data);
     return response.data;
 };
 

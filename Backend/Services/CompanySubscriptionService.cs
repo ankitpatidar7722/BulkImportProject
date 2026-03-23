@@ -205,7 +205,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             var nextCode = await conn.ExecuteScalarAsync<int>(
                 "SELECT ISNULL(MAX(MaxCompanyUniqueCode), 0) + 1 FROM Indus_Company_Authentication_For_Web_Modules");
 
-            var companyUniqueCode = $"IA{nextCode:D4}";
+            var companyUniqueCode = $"IA{nextCode:D5}";
 
             Console.WriteLine($"[NextClientCode] Generated: {companyUniqueCode} (MaxCompanyUniqueCode={nextCode})");
 
@@ -279,13 +279,35 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             {
                 var query = "SELECT ServerName FROM DynamicBackupDatabase WHERE ApplicationName = @AppName AND DatabaseName = @DbName";
                 sourceServer = await indusConn.ExecuteScalarAsync<string>(query, new { AppName = request.ApplicationName, DbName = sourceDb });
-                
+
                 if (string.IsNullOrEmpty(sourceServer))
                     return new SetupDatabaseResponse { Success = false, Message = "Could not find matching backup database server." };
             }
 
             var targetServer = request.Server;
             var newDbName = request.DatabaseName.Trim();
+
+            // Smart optimization: If target server also has the backup database, use local restore (no cross-server needed)
+            if (sourceServer != targetServer)
+            {
+                try
+                {
+                    using var checkConn = MasterConnection(targetServer);
+                    await checkConn.OpenAsync();
+                    var existsOnTarget = await checkConn.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(*) FROM sys.databases WHERE name = @Name",
+                        new { Name = sourceDb });
+                    if (existsOnTarget > 0)
+                    {
+                        Console.WriteLine($"[SetupDB] Backup database '{sourceDb}' found on target server ({targetServer}). Using local restore instead of cross-server.");
+                        sourceServer = targetServer;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SetupDB] Could not check target for backup DB: {ex.Message}");
+                }
+            }
 
             Console.WriteLine($"[SetupDB] Starting: App={request.ApplicationName}, Source={sourceServer}/{sourceDb}, Target={targetServer}/{newDbName}");
 
@@ -1033,6 +1055,9 @@ public class CompanySubscriptionService : ICompanySubscriptionService
     {
         try
         {
+            string adminUserName = "admin";
+            string adminPassword = string.Empty;
+
             // 1. Update UserMaster with City, State, Country on client DB
             using (var conn = ClientConnection(request.ConnectionString))
             {
@@ -1041,6 +1066,14 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                     @"UPDATE UserMaster SET City = @City, State = @State, Country = @Country
                       WHERE UserName = 'admin'",
                     new { request.City, request.State, request.Country });
+                
+                var adminUser = await conn.QueryFirstOrDefaultAsync<dynamic>(
+                    "SELECT UserName, Password FROM UserMaster WHERE UserName = 'admin'");
+                if (adminUser != null)
+                {
+                    adminUserName = adminUser.UserName;
+                    adminPassword = adminUser.Password;
+                }
                 Console.WriteLine("[CompleteSetup] Updated UserMaster for admin");
             }
 
@@ -1060,13 +1093,598 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 Success = true,
                 Message = "Setup completed successfully!",
                 CompanyUserID = sub.CompanyUserID,
-                Password = sub.Password
+                Password = sub.Password,
+                UserName = adminUserName,
+                UserPassword = adminPassword
             };
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[CompleteSetup] Error: {ex.Message}");
             return new CompleteSetupResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    // ─── Module Group Authority ───
+    public async Task<ModuleGroupDropdownResponse> GetModuleGroupsAsync(string applicationName)
+    {
+        try
+        {
+            using var indusConn = GetIndusConnection();
+            await indusConn.OpenAsync();
+
+            var groups = await indusConn.QueryAsync<string>(
+                "SELECT DISTINCT ModuleGroupName FROM ModuleGroupMaster WHERE ApplicationName = @AppName ORDER BY ModuleGroupName",
+                new { AppName = applicationName });
+
+            return new ModuleGroupDropdownResponse { Success = true, Data = groups.ToList() };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleGroupAuthority] GetGroups Error: {ex.Message}");
+            return new ModuleGroupDropdownResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public async Task<ModuleGroupModulesResponse> GetModuleGroupModulesAsync(ModuleGroupModulesRequest request)
+    {
+        try
+        {
+            using var indusConn = GetIndusConnection();
+            await indusConn.OpenAsync();
+
+            var modules = await indusConn.QueryAsync<ModuleGroupModuleRow>(
+                "SELECT ModuleHeadName, ModuleDisplayName, ModuleName FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName ORDER BY ModuleHeadName, ModuleDisplayName",
+                new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName });
+
+            return new ModuleGroupModulesResponse { Success = true, Data = modules.ToList() };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleGroupAuthority] GetModules Error: {ex.Message}");
+            return new ModuleGroupModulesResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public async Task<ModuleGroupModulesResponse> GetAvailableModulesForGroupAsync(string applicationName)
+    {
+        try
+        {
+            using var masterConn = new SqlConnection("Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseNewInstallation;User ID=INDUS;Password=Param@99811;TrustServerCertificate=True");
+            await masterConn.OpenAsync();
+
+            var modules = await masterConn.QueryAsync<ModuleGroupModuleRow>(
+                "SELECT ModuleHeadName, ModuleDisplayName, ModuleName FROM ModuleMaster ORDER BY ModuleHeadName, ModuleDisplayName");
+
+            return new ModuleGroupModulesResponse { Success = true, Data = modules.ToList() };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleGroupAuthority] GetAvailableModules Error: {ex.Message}");
+            return new ModuleGroupModulesResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public async Task<CreateModuleGroupResponse> CreateModuleGroupAsync(CreateModuleGroupRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.ApplicationName))
+                return new CreateModuleGroupResponse { Success = false, Message = "Application Name is required." };
+            if (string.IsNullOrWhiteSpace(request.ModuleGroupName))
+                return new CreateModuleGroupResponse { Success = false, Message = "Module Group Name is required." };
+            if (request.SelectedModuleNames == null || request.SelectedModuleNames.Count == 0)
+                return new CreateModuleGroupResponse { Success = false, Message = "Please select at least one module." };
+
+            using var indusConn = GetIndusConnection();
+            await indusConn.OpenAsync();
+
+            // Check if group already exists (prevent duplicates)
+            var exists = await indusConn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName",
+                new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName });
+
+            if (exists > 0)
+                return new CreateModuleGroupResponse { Success = false, Message = $"Module Group '{request.ModuleGroupName}' already exists for {request.ApplicationName}." };
+
+            // Use default metadata values (these tables don't exist in Indus DB)
+            var companyID = 2;
+            var userID = 1;
+            var fYear = "2024-25";
+
+            // Get module details from IndusEnterpriseNewInstallation
+            using var masterConn = new SqlConnection("Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseNewInstallation;User ID=INDUS;Password=Param@99811;TrustServerCertificate=True");
+            await masterConn.OpenAsync();
+
+            // Use transaction for atomicity
+            using var transaction = indusConn.BeginTransaction();
+            try
+            {
+                int inserted = 0;
+                foreach (var moduleName in request.SelectedModuleNames)
+                {
+                    // Check if module already exists in this group (prevent duplicate module in same group)
+                    var moduleExists = await indusConn.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(*) FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName AND ModuleName = @ModuleName",
+                        new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName, ModuleName = moduleName },
+                        transaction: transaction);
+
+                    if (moduleExists > 0)
+                        continue; // Skip duplicate
+
+                    // Get full module details from template database
+                    var module = await masterConn.QueryFirstOrDefaultAsync<dynamic>(
+                        "SELECT * FROM ModuleMaster WHERE ModuleName = @ModuleName",
+                        new { ModuleName = moduleName });
+
+                    if (module != null)
+                    {
+                        // Build column list (exclude ModuleID and columns we'll override)
+                        var moduleDict = (IDictionary<string, object>)module;
+
+                        // Columns to exclude (ModuleID and columns we'll set custom values for)
+                        var excludeColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            "ModuleID", "ApplicationName", "ModuleGroupName", "CompanyID", "UserID",
+                            "FYear", "IsLocked", "CreatedBy", "CreatedDate", "ModifiedBy", "ModifiedDate",
+                            "DeletedBy", "DeletedDate", "IsDeletedTransaction", "ProductionUnitID"
+                        };
+
+                        var columns = moduleDict.Keys.Where(k => !excludeColumns.Contains(k)).ToList();
+
+                        // Build insert columns list
+                        var insertColumns = new List<string>(columns);
+                        insertColumns.Add("ApplicationName");
+                        insertColumns.Add("ModuleGroupName");
+                        insertColumns.Add("CompanyID");
+                        insertColumns.Add("UserID");
+                        insertColumns.Add("FYear");
+                        insertColumns.Add("IsLocked");
+                        insertColumns.Add("CreatedBy");
+                        insertColumns.Add("CreatedDate");
+                        insertColumns.Add("ModifiedBy");
+                        insertColumns.Add("ModifiedDate");
+                        insertColumns.Add("DeletedBy");
+                        insertColumns.Add("DeletedDate");
+                        insertColumns.Add("IsDeletedTransaction");
+                        insertColumns.Add("ProductionUnitID");
+
+                        var colNames = string.Join(", ", insertColumns.Select(c => $"[{c}]"));
+                        var paramNames = string.Join(", ", insertColumns.Select(c => $"@{c}"));
+
+                        var paramObj = new DynamicParameters();
+
+                        // Map ModuleMaster columns (only the ones not excluded)
+                        foreach (var col in columns)
+                        {
+                            paramObj.Add(col, moduleDict[col]);
+                        }
+
+                        // Add metadata columns with custom values
+                        paramObj.Add("ApplicationName", request.ApplicationName);
+                        paramObj.Add("ModuleGroupName", request.ModuleGroupName);
+                        paramObj.Add("CompanyID", companyID);
+                        paramObj.Add("UserID", userID);
+                        paramObj.Add("FYear", fYear);
+                        paramObj.Add("IsLocked", 0);
+                        paramObj.Add("CreatedBy", userID);
+                        paramObj.Add("CreatedDate", DateTime.Now);
+                        paramObj.Add("ModifiedBy", 0);
+                        paramObj.Add("ModifiedDate", null);
+                        paramObj.Add("DeletedBy", 0);
+                        paramObj.Add("DeletedDate", null);
+                        paramObj.Add("IsDeletedTransaction", 0);
+                        paramObj.Add("ProductionUnitID", 0);
+
+                        await indusConn.ExecuteAsync(
+                            $"INSERT INTO ModuleGroupMaster ({colNames}) VALUES ({paramNames})",
+                            paramObj,
+                            transaction: transaction);
+                        inserted++;
+                    }
+                }
+
+                transaction.Commit();
+                Console.WriteLine($"[ModuleGroupAuthority] Created group '{request.ModuleGroupName}' with {inserted} modules");
+                return new CreateModuleGroupResponse
+                {
+                    Success = true,
+                    Message = $"Module Group '{request.ModuleGroupName}' created successfully with {inserted} modules."
+                };
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleGroupAuthority] CreateGroup Error: {ex.Message}");
+            return new CreateModuleGroupResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public async Task<UpdateModuleGroupResponse> UpdateModuleGroupAsync(UpdateModuleGroupRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.ApplicationName))
+                return new UpdateModuleGroupResponse { Success = false, Message = "Application Name is required." };
+            if (string.IsNullOrWhiteSpace(request.ModuleGroupName))
+                return new UpdateModuleGroupResponse { Success = false, Message = "Module Group Name is required." };
+            if (request.SelectedModuleNames == null)
+                request.SelectedModuleNames = new List<string>();
+
+            using var indusConn = GetIndusConnection();
+            await indusConn.OpenAsync();
+
+            // Check if group exists
+            var exists = await indusConn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName",
+                new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName });
+
+            if (exists == 0)
+                return new UpdateModuleGroupResponse { Success = false, Message = $"Module Group '{request.ModuleGroupName}' does not exist." };
+
+            // Get existing modules for this group
+            var existingModules = (await indusConn.QueryAsync<string>(
+                "SELECT ModuleName FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName",
+                new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName })).ToList();
+
+            var existingSet = new HashSet<string>(existingModules, StringComparer.OrdinalIgnoreCase);
+            var newSet = new HashSet<string>(request.SelectedModuleNames, StringComparer.OrdinalIgnoreCase);
+
+            // Calculate differences
+            var toDelete = existingSet.Except(newSet).ToList(); // Modules to remove
+            var toInsert = newSet.Except(existingSet).ToList(); // Modules to add
+
+            // Use default metadata values
+            var companyID = 2;
+            var userID = 1;
+            var fYear = "2024-25";
+
+            // Get module details from IndusEnterpriseNewInstallation
+            using var masterConn = new SqlConnection("Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseNewInstallation;User ID=INDUS;Password=Param@99811;TrustServerCertificate=True");
+            await masterConn.OpenAsync();
+
+            // Use transaction for atomicity
+            using var transaction = indusConn.BeginTransaction();
+            try
+            {
+                int deleted = 0;
+                int inserted = 0;
+
+                // DELETE removed modules
+                foreach (var moduleName in toDelete)
+                {
+                    await indusConn.ExecuteAsync(
+                        "DELETE FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName AND ModuleName = @ModuleName",
+                        new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName, ModuleName = moduleName },
+                        transaction: transaction);
+                    deleted++;
+                }
+
+                // INSERT new modules
+                foreach (var moduleName in toInsert)
+                {
+                    // Get full module details from template database
+                    var module = await masterConn.QueryFirstOrDefaultAsync<dynamic>(
+                        "SELECT * FROM ModuleMaster WHERE ModuleName = @ModuleName",
+                        new { ModuleName = moduleName });
+
+                    if (module != null)
+                    {
+                        // Build column list (exclude ModuleID and columns we'll override)
+                        var moduleDict = (IDictionary<string, object>)module;
+
+                        // Columns to exclude (ModuleID and columns we'll set custom values for)
+                        var excludeColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            "ModuleID", "ApplicationName", "ModuleGroupName", "CompanyID", "UserID",
+                            "FYear", "IsLocked", "CreatedBy", "CreatedDate", "ModifiedBy", "ModifiedDate",
+                            "DeletedBy", "DeletedDate", "IsDeletedTransaction", "ProductionUnitID"
+                        };
+
+                        var columns = moduleDict.Keys.Where(k => !excludeColumns.Contains(k)).ToList();
+
+                        // Build insert columns list
+                        var insertColumns = new List<string>(columns);
+                        insertColumns.Add("ApplicationName");
+                        insertColumns.Add("ModuleGroupName");
+                        insertColumns.Add("CompanyID");
+                        insertColumns.Add("UserID");
+                        insertColumns.Add("FYear");
+                        insertColumns.Add("IsLocked");
+                        insertColumns.Add("CreatedBy");
+                        insertColumns.Add("CreatedDate");
+                        insertColumns.Add("ModifiedBy");
+                        insertColumns.Add("ModifiedDate");
+                        insertColumns.Add("DeletedBy");
+                        insertColumns.Add("DeletedDate");
+                        insertColumns.Add("IsDeletedTransaction");
+                        insertColumns.Add("ProductionUnitID");
+
+                        var colNames = string.Join(", ", insertColumns.Select(c => $"[{c}]"));
+                        var paramNames = string.Join(", ", insertColumns.Select(c => $"@{c}"));
+
+                        var paramObj = new DynamicParameters();
+
+                        // Map ModuleMaster columns (only the ones not excluded)
+                        foreach (var col in columns)
+                        {
+                            paramObj.Add(col, moduleDict[col]);
+                        }
+
+                        // Add metadata columns with custom values
+                        paramObj.Add("ApplicationName", request.ApplicationName);
+                        paramObj.Add("ModuleGroupName", request.ModuleGroupName);
+                        paramObj.Add("CompanyID", companyID);
+                        paramObj.Add("UserID", userID);
+                        paramObj.Add("FYear", fYear);
+                        paramObj.Add("IsLocked", 0);
+                        paramObj.Add("CreatedBy", userID);
+                        paramObj.Add("CreatedDate", DateTime.Now);
+                        paramObj.Add("ModifiedBy", 0);
+                        paramObj.Add("ModifiedDate", null);
+                        paramObj.Add("DeletedBy", 0);
+                        paramObj.Add("DeletedDate", null);
+                        paramObj.Add("IsDeletedTransaction", 0);
+                        paramObj.Add("ProductionUnitID", 0);
+
+                        await indusConn.ExecuteAsync(
+                            $"INSERT INTO ModuleGroupMaster ({colNames}) VALUES ({paramNames})",
+                            paramObj,
+                            transaction: transaction);
+                        inserted++;
+                    }
+                }
+
+                transaction.Commit();
+                Console.WriteLine($"[ModuleGroupAuthority] Updated group '{request.ModuleGroupName}': +{inserted} modules, -{deleted} modules");
+                return new UpdateModuleGroupResponse
+                {
+                    Success = true,
+                    Message = $"Module Group '{request.ModuleGroupName}' updated successfully. Added {inserted} modules, removed {deleted} modules.",
+                    Inserted = inserted,
+                    Deleted = deleted
+                };
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleGroupAuthority] UpdateGroup Error: {ex.Message}");
+            return new UpdateModuleGroupResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public async Task<ApplyModuleGroupToClientResponse> ApplyModuleGroupToClientAsync(ApplyModuleGroupToClientRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.ApplicationName))
+                return new ApplyModuleGroupToClientResponse { Success = false, Message = "Application Name is required." };
+            if (string.IsNullOrWhiteSpace(request.ModuleGroupName))
+                return new ApplyModuleGroupToClientResponse { Success = false, Message = "Module Group Name is required." };
+            if (string.IsNullOrWhiteSpace(request.ConnectionString))
+                return new ApplyModuleGroupToClientResponse { Success = false, Message = "Connection String is required." };
+
+            // Step 1: Get modules from ModuleGroupMaster (Indus DB)
+            using var indusConn = GetIndusConnection();
+            await indusConn.OpenAsync();
+
+            var groupModules = (await indusConn.QueryAsync<dynamic>(
+                "SELECT * FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName AND ISNULL(IsDeletedTransaction, 0) = 0",
+                new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName })).ToList();
+
+            if (groupModules.Count == 0)
+                return new ApplyModuleGroupToClientResponse { Success = false, Message = $"No modules found for Module Group '{request.ModuleGroupName}'." };
+
+            // Step 2: Connect to Client Database
+            using var clientConn = ClientConnection(request.ConnectionString);
+            await clientConn.OpenAsync();
+
+            // Get admin UserID and CompanyID
+            var adminUserId = await clientConn.ExecuteScalarAsync<int?>(
+                "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'");
+            var companyId = await clientConn.ExecuteScalarAsync<int?>(
+                "SELECT TOP 1 CompanyID FROM CompanyMaster");
+
+            if (!adminUserId.HasValue)
+                return new ApplyModuleGroupToClientResponse { Success = false, Message = "Admin user not found in client database." };
+
+            using var transaction = clientConn.BeginTransaction();
+            try
+            {
+                // Step 3: Clear existing data
+                await clientConn.ExecuteAsync("DELETE FROM UserModuleAuthentication", transaction: transaction);
+                await clientConn.ExecuteAsync("DELETE FROM ModuleMaster", transaction: transaction);
+
+                Console.WriteLine("[ApplyModuleGroup] Cleared existing modules and permissions");
+
+                int inserted = 0;
+
+                // Step 4: Insert modules from ModuleGroupMaster to client's ModuleMaster
+                foreach (IDictionary<string, object> sourceRow in groupModules)
+                {
+                    // Exclude columns specific to ModuleGroupMaster
+                    var excludeColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        "ModuleID", "ModuleGroupID", "ModuleGroupName", "ApplicationName"
+                    };
+
+                    var columns = sourceRow.Keys.Where(k => !excludeColumns.Contains(k)).ToList();
+                    var colNames = string.Join(", ", columns.Select(c => $"[{c}]"));
+                    var paramNames = string.Join(", ", columns.Select(c => $"@{c}"));
+
+                    var paramObj = new DynamicParameters();
+                    foreach (var col in columns)
+                    {
+                        paramObj.Add(col, sourceRow[col]);
+                    }
+
+                    // Insert and get new ModuleID
+                    var newModuleId = await clientConn.ExecuteScalarAsync<int>(
+                        $"INSERT INTO ModuleMaster ({colNames}) OUTPUT INSERTED.ModuleID VALUES ({paramNames})",
+                        paramObj,
+                        transaction: transaction);
+
+                    // Step 5: Insert into UserModuleAuthentication for admin
+                    string moduleName = sourceRow.ContainsKey("ModuleName") ? sourceRow["ModuleName"]?.ToString() ?? "" : "";
+
+                    await clientConn.ExecuteAsync(@"
+                        INSERT INTO UserModuleAuthentication
+                        (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy, IsDeletedTransaction)
+                        VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, @CompanyID, 0, @UserID, 0)",
+                        new { UserID = adminUserId.Value, ModuleID = newModuleId, ModuleName = moduleName, CompanyID = companyId ?? 2 },
+                        transaction: transaction);
+
+                    inserted++;
+                }
+
+                transaction.Commit();
+                Console.WriteLine($"[ApplyModuleGroup] Applied {inserted} modules to client database");
+
+                return new ApplyModuleGroupToClientResponse
+                {
+                    Success = true,
+                    Message = $"Successfully applied {inserted} modules to client database.",
+                    TotalModules = inserted
+                };
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ApplyModuleGroup] Error: {ex.Message}");
+            return new ApplyModuleGroupToClientResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public async Task<CheckModulesExistResponse> CheckModulesExistAsync(string connectionString)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(connectionString))
+                return new CheckModulesExistResponse { Success = false, Message = "Connection String is required." };
+
+            using var clientConn = ClientConnection(connectionString);
+            await clientConn.OpenAsync();
+
+            var count = await clientConn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM ModuleMaster");
+
+            return new CheckModulesExistResponse
+            {
+                Success = true,
+                HasModules = count > 0,
+                ModuleCount = count
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[CheckModulesExist] Error: {ex.Message}");
+            return new CheckModulesExistResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public async Task<DeleteModuleGroupResponse> DeleteModuleGroupAsync(DeleteModuleGroupRequest request)
+    {
+        try
+        {
+            Console.WriteLine($"[DeleteModuleGroup] Starting delete request for group '{request.ModuleGroupName}' by user '{request.UserName}'");
+
+            // Validate inputs
+            if (string.IsNullOrWhiteSpace(request.ApplicationName))
+            {
+                Console.WriteLine("[DeleteModuleGroup] Validation failed: Application Name is required");
+                return new DeleteModuleGroupResponse { Success = false, Message = "Application Name is required." };
+            }
+            if (string.IsNullOrWhiteSpace(request.ModuleGroupName))
+            {
+                Console.WriteLine("[DeleteModuleGroup] Validation failed: Module Group Name is required");
+                return new DeleteModuleGroupResponse { Success = false, Message = "Module Group Name is required." };
+            }
+            if (string.IsNullOrWhiteSpace(request.UserName))
+            {
+                Console.WriteLine("[DeleteModuleGroup] Validation failed: User Name is required");
+                return new DeleteModuleGroupResponse { Success = false, Message = "User Name is required." };
+            }
+            if (string.IsNullOrWhiteSpace(request.Password))
+            {
+                Console.WriteLine("[DeleteModuleGroup] Validation failed: Password is required");
+                return new DeleteModuleGroupResponse { Success = false, Message = "Password is required." };
+            }
+            if (string.IsNullOrWhiteSpace(request.Reason))
+            {
+                Console.WriteLine("[DeleteModuleGroup] Validation failed: Reason is required");
+                return new DeleteModuleGroupResponse { Success = false, Message = "Reason is required." };
+            }
+
+            Console.WriteLine("[DeleteModuleGroup] All validations passed, connecting to database");
+
+            using var indusConn = GetIndusConnection();
+            await indusConn.OpenAsync();
+
+            Console.WriteLine("[DeleteModuleGroup] Database connection opened, authenticating user");
+
+            // Step 1: Authenticate user
+            var authCount = await indusConn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM CompanyWebUser WHERE WebUserName = @UserName AND WebUserPassword = @Password",
+                new { UserName = request.UserName, Password = request.Password });
+
+            Console.WriteLine($"[DeleteModuleGroup] Authentication query returned count: {authCount}");
+
+            if (authCount == 0)
+            {
+                Console.WriteLine($"[DeleteModuleGroup] Authentication failed for user: {request.UserName}");
+                return new DeleteModuleGroupResponse { Success = false, Message = "Invalid Username or Password" };
+            }
+
+            Console.WriteLine($"[DeleteModuleGroup] User '{request.UserName}' authenticated successfully");
+
+            // Step 2: Check if module group exists
+            Console.WriteLine($"[DeleteModuleGroup] Checking if module group exists: '{request.ModuleGroupName}' in app '{request.ApplicationName}'");
+            var groupCount = await indusConn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName",
+                new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName });
+
+            Console.WriteLine($"[DeleteModuleGroup] Module group check returned count: {groupCount}");
+
+            if (groupCount == 0)
+            {
+                Console.WriteLine($"[DeleteModuleGroup] Module group not found");
+                return new DeleteModuleGroupResponse { Success = false, Message = $"Module Group '{request.ModuleGroupName}' does not exist." };
+            }
+
+            // Step 3: Delete all records for this module group
+            Console.WriteLine($"[DeleteModuleGroup] Proceeding with deletion");
+            var deletedCount = await indusConn.ExecuteAsync(
+                "DELETE FROM ModuleGroupMaster WHERE ApplicationName = @AppName AND ModuleGroupName = @GroupName",
+                new { AppName = request.ApplicationName, GroupName = request.ModuleGroupName });
+
+            Console.WriteLine($"[DeleteModuleGroup] SUCCESS - Deleted {deletedCount} modules from group '{request.ModuleGroupName}' by user '{request.UserName}'. Reason: {request.Reason}");
+
+            return new DeleteModuleGroupResponse
+            {
+                Success = true,
+                Message = $"Module Group '{request.ModuleGroupName}' deleted successfully. Removed {deletedCount} modules.",
+                DeletedCount = deletedCount
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DeleteModuleGroup] EXCEPTION: {ex.Message}");
+            Console.WriteLine($"[DeleteModuleGroup] Stack Trace: {ex.StackTrace}");
+            return new DeleteModuleGroupResponse { Success = false, Message = ex.Message };
         }
     }
 }

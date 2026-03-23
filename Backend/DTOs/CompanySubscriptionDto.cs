@@ -222,6 +222,8 @@ public class CompleteSetupResponse
     public string Message { get; set; } = string.Empty;
     public string CompanyUserID { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public string UserPassword { get; set; } = string.Empty;
 }
 
 // ─── Module Settings ───
@@ -293,4 +295,104 @@ public class CopyModulesResponse
     public bool Success { get; set; }
     public string Message { get; set; } = string.Empty;
     public int CopiedCount { get; set; }
+}
+
+// ─── Module Group Authority ───
+public class ModuleGroupRow
+{
+    public string ModuleGroupName { get; set; } = string.Empty;
+    public string ApplicationName { get; set; } = string.Empty;
+}
+
+public class ModuleGroupDropdownResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<string> Data { get; set; } = new();
+}
+
+public class ModuleGroupModulesRequest
+{
+    public string ApplicationName { get; set; } = string.Empty;
+    public string ModuleGroupName { get; set; } = string.Empty;
+}
+
+public class ModuleGroupModuleRow
+{
+    public string ModuleHeadName { get; set; } = string.Empty;
+    public string ModuleDisplayName { get; set; } = string.Empty;
+    public string ModuleName { get; set; } = string.Empty;
+}
+
+public class ModuleGroupModulesResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<ModuleGroupModuleRow> Data { get; set; } = new();
+}
+
+public class CreateModuleGroupRequest
+{
+    public string ApplicationName { get; set; } = string.Empty;
+    public string ModuleGroupName { get; set; } = string.Empty;
+    public List<string> SelectedModuleNames { get; set; } = new();
+}
+
+public class CreateModuleGroupResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+}
+
+public class UpdateModuleGroupRequest
+{
+    public string ApplicationName { get; set; } = string.Empty;
+    public string ModuleGroupName { get; set; } = string.Empty;
+    public List<string> SelectedModuleNames { get; set; } = new();
+}
+
+public class UpdateModuleGroupResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int Inserted { get; set; }
+    public int Deleted { get; set; }
+}
+
+public class ApplyModuleGroupToClientRequest
+{
+    public string ApplicationName { get; set; } = string.Empty;
+    public string ModuleGroupName { get; set; } = string.Empty;
+    public string ConnectionString { get; set; } = string.Empty;
+}
+
+public class ApplyModuleGroupToClientResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int TotalModules { get; set; }
+}
+
+public class CheckModulesExistResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public bool HasModules { get; set; }
+    public int ModuleCount { get; set; }
+}
+
+public class DeleteModuleGroupRequest
+{
+    public string ApplicationName { get; set; } = string.Empty;
+    public string ModuleGroupName { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}
+
+public class DeleteModuleGroupResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public int DeletedCount { get; set; }
 }

@@ -21,4 +21,12 @@ public interface ICompanySubscriptionService
     Task<SaveModuleSettingsResponse> SaveModuleSettingsAsync(SaveModuleSettingsRequest request);
     Task<ClientDropdownResponse> GetClientDropdownAsync();
     Task<CopyModulesResponse> CopyModulesAsync(CopyModulesRequest request);
+    Task<ModuleGroupDropdownResponse> GetModuleGroupsAsync(string applicationName);
+    Task<ModuleGroupModulesResponse> GetModuleGroupModulesAsync(ModuleGroupModulesRequest request);
+    Task<ModuleGroupModulesResponse> GetAvailableModulesForGroupAsync(string applicationName);
+    Task<CreateModuleGroupResponse> CreateModuleGroupAsync(CreateModuleGroupRequest request);
+    Task<UpdateModuleGroupResponse> UpdateModuleGroupAsync(UpdateModuleGroupRequest request);
+    Task<ApplyModuleGroupToClientResponse> ApplyModuleGroupToClientAsync(ApplyModuleGroupToClientRequest request);
+    Task<CheckModulesExistResponse> CheckModulesExistAsync(string connectionString);
+    Task<DeleteModuleGroupResponse> DeleteModuleGroupAsync(DeleteModuleGroupRequest request);
 }

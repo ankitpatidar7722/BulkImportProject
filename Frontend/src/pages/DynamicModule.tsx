@@ -9,10 +9,7 @@ import DataGrid, {
     Grouping,
     GroupPanel,
     Sorting,
-    ColumnChooser,
-    Selection,
-    Toolbar,
-    Item
+    ColumnChooser
 } from 'devextreme-react/data-grid';
 import { getModuleAuthorityData, saveModuleAuthority, ModuleAuthorityRowDto, ModuleAuthoritySaveDto } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';

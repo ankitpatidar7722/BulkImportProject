@@ -12,9 +12,7 @@ import DataGrid, {
     Editing,
     ColumnChooser
 } from 'devextreme-react/data-grid';
-import { Popup } from 'devextreme-react/popup';
-import SelectBox from 'devextreme-react/select-box';
-import { getAllModules, createModule, updateModule, deleteModule, getModuleHeads, ModuleDto } from '../services/api';
+import { getAllModules, deleteModule, ModuleDto } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
 import 'devextreme/dist/css/dx.light.css';
 
@@ -22,7 +20,6 @@ const ModuleAuthority: React.FC = () => {
     const navigate = useNavigate();
     const { showMessage, ModalRenderer } = useMessageModal();
     const [modules, setModules] = useState<ModuleDto[]>([]);
-    const [moduleHeads, setModuleHeads] = useState<string[]>([]);
 
     useEffect(() => {
         loadData();
@@ -30,9 +27,8 @@ const ModuleAuthority: React.FC = () => {
 
     const loadData = async () => {
         try {
-            const [data, heads] = await Promise.all([getAllModules(), getModuleHeads()]);
+            const data = await getAllModules();
             setModules(data);
-            setModuleHeads(heads);
         } catch (error) {
             console.error(error);
             showMessage('error', 'Load Error', 'Failed to load module data. Please try refreshing the page.');
