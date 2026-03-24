@@ -12,6 +12,25 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false
     const { isDark, toggleTheme } = useTheme();
     const { companyName, userName, logout } = useAuth();
     const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
+    const [showUserMenu, setShowUserMenu] = React.useState(false);
+    const userMenuRef = React.useRef<HTMLDivElement>(null);
+
+    // Close dropdown when clicking outside
+    React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+                setShowUserMenu(false);
+            }
+        };
+
+        if (showUserMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showUserMenu]);
 
     return (
         <header className={`h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 z-10 transition-all duration-300 ${isSidebarCollapsed ? 'left-0 md:left-20' : 'left-0 md:left-64'}`}>
@@ -50,8 +69,11 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false
                     </button>
 
                     {/* Profile Icon */}
-                    <div className="relative group">
-                        <button className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors border border-transparent hover:border-gray-700">
+                    <div className="relative" ref={userMenuRef}>
+                        <button
+                            onClick={() => setShowUserMenu(!showUserMenu)}
+                            className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-800 transition-colors border border-transparent hover:border-gray-700"
+                        >
                             <div className="hidden text-right md:block">
                                 <p className="text-sm font-medium text-white">{userName}</p>
                                 <p className="text-xs text-gray-400">User</p>
@@ -62,7 +84,11 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false
                         </button>
 
                         {/* Dropdown menu */}
-                        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 transform origin-top-right scale-95 group-hover:scale-100">
+                        <div className={`absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 transition-all duration-200 transform origin-top-right z-50 ${
+                            showUserMenu
+                                ? 'opacity-100 visible scale-100'
+                                : 'opacity-0 invisible scale-95'
+                        }`}>
                             <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-t-xl">
                                 <p className="text-sm font-semibold text-gray-900 dark:text-white">{userName}</p>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{companyName}</p>

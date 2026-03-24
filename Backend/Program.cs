@@ -8,7 +8,8 @@ using System.Text;
 Console.WriteLine("!!! BACKEND STARTING - VERSION DEBUG !!!");
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://localhost:5050");
+// Commented out for IIS deployment - IIS will manage the URL
+// builder.WebHost.UseUrls("http://localhost:5050");
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -20,9 +21,14 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(
+                  "https://bulkimport.vercel.app",
+                  "http://localhost:3000",
+                  "http://localhost:5173"
+              )
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 

@@ -217,15 +217,35 @@ Body: file (Excel file)
 {
   "ConnectionStrings": {
     "DefaultConnection": "Server=YOUR_SERVER;Database=YOUR_DB;Trusted_Connection=True;TrustServerCertificate=True;"
+  },
+  "Jwt": {
+    "Key": "YourSecretKeyHere",
+    "Issuer": "BulkImportBackend",
+    "Audience": "BulkImportFrontend"
   }
 }
 ```
 
-### Frontend (src/services/api.ts)
+### Frontend Environment Variables
 
-```typescript
-const API_BASE_URL = 'http://localhost:5000/api';
+**Development** (`.env`):
+```env
+VITE_API_BASE_URL=http://localhost:5050/api
+NODE_ENV=development
 ```
+
+**Production** (`.env.production`):
+```env
+VITE_API_BASE_URL=https://exceljet.indusanalytics.co.in/api
+NODE_ENV=production
+```
+
+### CORS Configuration
+
+The backend is configured to allow these origins:
+- `https://bulkimport.vercel.app` (Production)
+- `http://localhost:3000` (Development)
+- `http://localhost:5173` (Vite default)
 
 ## 🧪 Testing
 
@@ -244,25 +264,43 @@ The system checks duplicates by comparing **all column values**:
 - Only non-duplicate rows are inserted
 - Duplicate count is reported in the import result
 
-## 🎬 Production Build
+## 🎬 Production Deployment
 
-### Frontend
+### Production URLs
+- **Backend (IIS)**: https://exceljet.indusanalytics.co.in
+- **Frontend (Vercel)**: https://bulkimport.vercel.app
 
+### Quick Deploy
+
+**Backend to IIS** (Windows PowerShell):
+```powershell
+cd Backend
+.\publish-iis.ps1
+```
+
+**Frontend to Vercel** (Windows PowerShell):
+```powershell
+cd Frontend
+.\deploy-vercel.ps1
+```
+
+### Manual Build
+
+**Frontend**:
 ```bash
 cd Frontend
 npm run build
 ```
+Output: `Frontend/dist/`
 
-Output will be in `Frontend/dist/`
-
-### Backend
-
+**Backend**:
 ```bash
 cd Backend
 dotnet publish -c Release
 ```
+Output: `Backend/bin/Release/net8.0/publish/`
 
-Output will be in `Backend/bin/Release/net8.0/publish/`
+📖 **For detailed deployment instructions**, see [DEPLOYMENT-GUIDE.md](./DEPLOYMENT-GUIDE.md)
 
 ## 📚 Dependencies
 
