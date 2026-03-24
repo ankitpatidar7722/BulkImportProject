@@ -130,11 +130,10 @@
 .dx-datagrid-headers .dx-header-row>td {
   background-color: #0f172a !important;
   color: #ffffff !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   font-size: 13px !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.05em !important;
-  padding: 14px 10px !important;
+  text-transform: none !important;
+  padding: 12px 10px !important;
 }
 
 /* DevExtreme Dark Mode Overrides */
