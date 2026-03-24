@@ -92,10 +92,10 @@ const ModuleAuthority: React.FC = () => {
                     onRowRemoving={onRowRemoving}
                     className="custom-datagrid"
                 >
-                    <Paging defaultPageSize={15} />
+                    <Paging defaultPageSize={50} />
                     <Pager 
                         showPageSizeSelector={true} 
-                        allowedPageSizes={[10, 15, 25, 50, 100]} 
+                        allowedPageSizes={[50, 100, 200, 500, 1000]} 
                         showInfo={true} 
                         showNavigationButtons={true} 
                     />
@@ -117,33 +117,29 @@ const ModuleAuthority: React.FC = () => {
                     />
 
                     <Column 
+                        dataField="moduleHeadName" 
+                        caption="Module Head Name" 
+                        minWidth={200}
+                        allowGrouping={true}
+                    />
+                    <Column 
                         dataField="moduleName" 
                         caption="Module Name" 
-                        minWidth={250}
+                        minWidth={200}
                         cellRender={(config) => (
                             <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
                                 <span className="font-medium text-gray-800 dark:text-gray-200">{config.value}</span>
                             </div>
                         )}
                     />
-                    <Column dataField="moduleDisplayName" caption="Display Name" minWidth={200} />
-                    <Column 
-                        dataField="moduleHeadName" 
-                        caption="Head Name" 
-                        groupIndex={0} 
-                        minWidth={200} 
-                    />
+                    <Column dataField="moduleDisplayName" caption="Module Display Name" minWidth={220} />
+                    
                     <Column 
                         dataField="setGroupIndex" 
                         caption="Group Index" 
                         alignment="center"
                         width={120}
-                        cellRender={(config) => (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-                                {config.value ?? '—'}
-                            </span>
-                        )}
                     />
 
                     {/* Hidden columns available in chooser */}
