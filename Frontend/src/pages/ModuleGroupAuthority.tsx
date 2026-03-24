@@ -272,11 +272,11 @@ const ModuleGroupAuthority: React.FC = () => {
     }, [newGroupApp, showCreateGroupModal]);
 
     return (
-        <div className="h-screen overflow-hidden bg-gray-50 dark:bg-[#020617]">
+        <div className="min-h-screen bg-gray-50 dark:bg-[#020617]">
             {ModalRenderer}
 
-            {/* Header */}
-            <div className="sticky top-0 z-30">
+            {/* Header - Sticky */}
+            <div className="sticky top-0 z-20 bg-white/80 dark:bg-[#020617]/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 -mx-4 md:-mx-6 lg:-mx-8 px-4 md:px-6 lg:px-8 mb-6">
                 <div className="px-6 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-md">

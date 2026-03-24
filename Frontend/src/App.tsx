@@ -28,16 +28,17 @@ const AuthenticatedLayout = () => {
     const defaultPath = loginType === 'indus' ? '/company-subscription' : '/';
 
     return (
-        <div className="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+        <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden transition-colors duration-200">
             <Sidebar
                 isOpen={isSidebarOpen}
                 onClose={() => setIsSidebarOpen(false)}
                 isCollapsed={isSidebarCollapsed}
                 onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             />
-            <div className={`flex-1 min-w-0 flex flex-col transition-all duration-300 ease-in-out ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'} ml-0`}>
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden transition-all duration-300 ease-in-out">
                 <Header onMenuClick={() => setIsSidebarOpen(true)} isSidebarCollapsed={isSidebarCollapsed} />
-                <main className="flex-1 overflow-y-auto overflow-x-hidden mt-16 custom-scrollbar p-4 md:p-6">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-0">
+                    <div className="p-4 md:p-6 lg:p-8">
                     <Routes>
                         <Route path="/" element={loginType === 'indus' ? <Navigate to="/company-subscription" replace /> : <Dashboard />} />
                         <Route path="/import-master" element={<ImportMaster />} />
@@ -50,6 +51,7 @@ const AuthenticatedLayout = () => {
                         <Route path="/module-group-authority" element={<ModuleGroupAuthority />} />
                         <Route path="*" element={<Navigate to={defaultPath} replace />} />
                     </Routes>
+                    </div>
                 </main>
             </div>
         </div>

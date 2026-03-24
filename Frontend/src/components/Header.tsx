@@ -8,7 +8,7 @@ interface HeaderProps {
     isSidebarCollapsed?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false }) => {
+const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     const { isDark, toggleTheme } = useTheme();
     const { companyName, userName, logout } = useAuth();
     const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
@@ -33,7 +33,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false
     }, [showUserMenu]);
 
     return (
-        <header className={`h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 z-[100] transition-all duration-300 ${isSidebarCollapsed ? 'left-0 md:left-20' : 'left-0 md:left-64'}`}>
+        <header className="h-16 bg-[#0B1120] border-b border-gray-800 flex-shrink-0 z-40">
             <div className="h-full px-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <button

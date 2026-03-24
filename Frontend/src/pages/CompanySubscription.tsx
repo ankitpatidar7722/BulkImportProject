@@ -937,42 +937,47 @@ const CompanySubscription: React.FC = () => {
 
     // ─── RENDER ───
     return (
-        <div className="flex flex-col h-[calc(100vh-64px)] overflow-hidden gap-3 p-1 w-full max-w-full">
+        <div className="min-h-screen bg-gray-50 dark:bg-[#020617] flex flex-col">
             {ModalRenderer}
 
-            {/* Page Header - Fixed */}
-            <div className="flex-shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white dark:bg-gray-900/60 rounded-xl border border-gray-100 dark:border-gray-800 px-5 py-3 shadow-sm">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/20">
-                        <CreditCard className="w-5 h-5 text-white" />
+            {/* Page Header - Sticky & Responsive */}
+            <div className="sticky top-0 z-20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white/80 dark:bg-[#0F172A]/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 px-6 py-4 mb-6 transition-all duration-300 -mx-4 md:-mx-6 lg:-mx-8">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                        <CreditCard className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">Company Subscription</h1>
-                        <p className="text-[11px] text-gray-400 dark:text-gray-500 font-medium">{data.length} records</p>
+                        <h1 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">Company Subscription</h1>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 font-medium">Manage your {data.length} registered clients</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center flex-wrap gap-2.5">
                     <button onClick={fetchData} disabled={isLoading}
-                        className="flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150 disabled:opacity-50">
-                        <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> Refresh
+                        className="flex items-center gap-2 h-10 px-4 text-[13px] font-semibold text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-indigo-200 dark:hover:border-indigo-900/40 transition-all duration-150 disabled:opacity-50 focus:ring-2 focus:ring-indigo-500/20 outline-none">
+                        <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                        <span className="hidden sm:inline">Refresh</span>
                     </button>
                     <button onClick={handleCreate}
-                        className="flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all duration-150 shadow-sm hover:shadow-md shadow-indigo-600/20">
-                        <Plus className="w-3.5 h-3.5" /> Create
+                        className="flex items-center gap-2 h-10 px-5 text-[13px] font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all duration-150 shadow-lg shadow-indigo-600/20 active:scale-95 focus:ring-2 focus:ring-indigo-500/50 outline-none">
+                        <Plus className="w-4 h-4" />
+                        <span className="hidden sm:inline">Create New</span>
+                        <span className="sm:hidden">Create</span>
                     </button>
                     <button onClick={handleEdit}
-                        className="flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-semibold text-white bg-amber-500 rounded-lg hover:bg-amber-600 transition-all duration-150 shadow-sm hover:shadow-md shadow-amber-500/20">
-                        <Edit2 className="w-3.5 h-3.5" /> Edit
+                        className="flex items-center gap-2 h-10 px-5 text-[13px] font-bold text-white bg-amber-500 rounded-xl hover:bg-amber-600 transition-all duration-150 shadow-lg shadow-amber-500/20 active:scale-95 focus:ring-2 focus:ring-amber-500/50 outline-none">
+                        <Edit2 className="w-4 h-4" />
+                        <span className="hidden sm:inline">Edit</span>
                     </button>
                     <button onClick={handleDelete}
-                        className="flex items-center gap-1.5 h-9 px-3.5 text-[13px] font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-all duration-150 shadow-sm hover:shadow-md shadow-red-500/20">
-                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                        className="flex items-center gap-2 h-10 px-5 text-[13px] font-bold text-white bg-rose-500 rounded-xl hover:bg-rose-600 transition-all duration-150 shadow-lg shadow-rose-500/20 active:scale-95 focus:ring-2 focus:ring-rose-500/50 outline-none">
+                        <Trash2 className="w-4 h-4" />
+                        <span className="hidden sm:inline">Delete</span>
                     </button>
                 </div>
             </div>
 
             {/* Main DataGrid - fills remaining space, scroll stays inside */}
-            <div className="flex-1 min-h-0 min-w-0 bg-white dark:bg-gray-900/60 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+            <div className="bg-white dark:bg-gray-900/60 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden pb-6">
                 <DataGrid
                     dataSource={data}
                     keyExpr="companyUserID"
@@ -987,7 +992,7 @@ const CompanySubscription: React.FC = () => {
                     columnResizingMode="widget"
                     onRowClick={(e: any) => { if (e.data) setSelectedRow(e.data); }}
                     onRowDblClick={(e: any) => { if (e.data) handleRowDoubleClick(e); }}
-                    height="100%"
+                    height="calc(100vh - 220px)"
                     focusedRowEnabled={true}
                 >
                     <Sorting mode="multiple" />
