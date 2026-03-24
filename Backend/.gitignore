@@ -1,0 +1,184 @@
+# ==========================================
+# Build Results
+# ==========================================
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+
+# ==========================================
+# Visual Studio
+# ==========================================
+.vs/
+.vscode/
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+.idea/
+
+# Mono Auto Generated Files
+mono_crash.*
+
+# User-specific files
+*.DotSettings
+*.DotSettings.user
+
+# ==========================================
+# ASP.NET Core
+# ==========================================
+project.lock.json
+project.fragment.lock.json
+artifacts/
+**/Properties/launchSettings.json
+
+# ==========================================
+# NuGet
+# ==========================================
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+
+# ==========================================
+# Test Results
+# ==========================================
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+nunit-*.xml
+
+# ==========================================
+# Build Files
+# ==========================================
+*.pidb
+*.svclog
+*.scc
+_Chutzpah*
+
+# ==========================================
+# Environment & Secrets
+# ==========================================
+appsettings.Development.json
+appsettings.Local.json
+appsettings.Production.json
+secrets.json
+*.env
+.env
+
+# ==========================================
+# Database
+# ==========================================
+*.mdf
+*.ldf
+*.ndf
+*.bak
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# ==========================================
+# Publish Profiles
+# ==========================================
+PublishProfiles/
+*.pubxml
+*.publishproj
+
+# ==========================================
+# Web Publish Settings
+# ==========================================
+*.Publish.xml
+*.azurePubxml
+*.pubxml.user
+*.publishproj
+
+# ==========================================
+# Microsoft Azure
+# ==========================================
+*.publishsettings
+node_modules/
+orleans.codegen.cs
+
+# ==========================================
+# ReSharper
+# ==========================================
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# ==========================================
+# JetBrains Rider
+# ==========================================
+.idea/
+*.sln.iml
+
+# ==========================================
+# SQL Server files
+# ==========================================
+*.mdf
+*.ldf
+*.ndf
+
+# ==========================================
+# Logs
+# ==========================================
+*.log
+logs/
+npm-debug.log*
+
+# ==========================================
+# OS Files
+# ==========================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==========================================
+# Temporary Files
+# ==========================================
+*.tmp
+*.temp
+*.cache
+*.bak
+*.swp
+*.orig
+
+# ==========================================
+# StyleCop
+# ==========================================
+StyleCopReport.xml
+
+# ==========================================
+# NCrunch
+# ==========================================
+_NCrunch_*
+.*crunch*.local.xml
+nCrunchTemp_*
+
+# ==========================================
+# BenchmarkDotNet
+# ==========================================
+BenchmarkDotNet.Artifacts/
+
+# ==========================================
+# .NET Analyzer
+# ==========================================
+*.sarif
+*.ruleset
