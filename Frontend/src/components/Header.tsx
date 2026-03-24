@@ -33,7 +33,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false
     }, [showUserMenu]);
 
     return (
-        <header className={`h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 z-10 transition-all duration-300 ${isSidebarCollapsed ? 'left-0 md:left-20' : 'left-0 md:left-64'}`}>
+        <header className={`h-16 bg-[#0B1120] border-b border-gray-800 fixed top-0 right-0 z-[100] transition-all duration-300 ${isSidebarCollapsed ? 'left-0 md:left-20' : 'left-0 md:left-64'}`}>
             <div className="h-full px-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <button
@@ -84,7 +84,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, isSidebarCollapsed = false
                         </button>
 
                         {/* Dropdown menu */}
-                        <div className={`absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 transition-all duration-200 transform origin-top-right z-50 ${
+                        <div className={`absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 transition-all duration-200 transform origin-top-right z-[101] ${
                             showUserMenu
                                 ? 'opacity-100 visible scale-100'
                                 : 'opacity-0 invisible scale-95'
