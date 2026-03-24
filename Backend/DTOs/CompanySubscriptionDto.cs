@@ -396,3 +396,17 @@ public class DeleteModuleGroupResponse
     public string Message { get; set; } = string.Empty;
     public int DeletedCount { get; set; }
 }
+
+public class DeleteCompanySubscriptionRequest
+{
+    public string CompanyUserID { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}
+
+public class DeleteCompanySubscriptionResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+}

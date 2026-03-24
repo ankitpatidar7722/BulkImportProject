@@ -1289,8 +1289,20 @@ export const updateCompanySubscription = async (data: CompanySubscriptionSaveReq
     return response.data;
 };
 
-export const deleteCompanySubscription = async (companyUserID: string): Promise<CompanySubscriptionResponse> => {
-    const response = await api.delete(`/companysubscription/${encodeURIComponent(companyUserID)}`);
+export interface DeleteCompanySubscriptionRequest {
+    companyUserID: string;
+    userName: string;
+    password: string;
+    reason: string;
+}
+
+export interface DeleteCompanySubscriptionResponse {
+    success: boolean;
+    message: string;
+}
+
+export const deleteCompanySubscription = async (data: DeleteCompanySubscriptionRequest): Promise<DeleteCompanySubscriptionResponse> => {
+    const response = await api.post('/companysubscription/delete-with-auth', data);
     return response.data;
 };
 

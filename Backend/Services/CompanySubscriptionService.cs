@@ -1687,4 +1687,90 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             return new DeleteModuleGroupResponse { Success = false, Message = ex.Message };
         }
     }
+
+    public async Task<DeleteCompanySubscriptionResponse> DeleteCompanySubscriptionWithAuthAsync(DeleteCompanySubscriptionRequest request)
+    {
+        try
+        {
+            Console.WriteLine($"[DeleteCompanySubscription] Starting delete request for Company User ID '{request.CompanyUserID}' by user '{request.UserName}'");
+
+            // Validate inputs
+            if (string.IsNullOrWhiteSpace(request.CompanyUserID))
+            {
+                Console.WriteLine("[DeleteCompanySubscription] Validation failed: Company User ID is required");
+                return new DeleteCompanySubscriptionResponse { Success = false, Message = "Company User ID is required." };
+            }
+            if (string.IsNullOrWhiteSpace(request.UserName))
+            {
+                Console.WriteLine("[DeleteCompanySubscription] Validation failed: User Name is required");
+                return new DeleteCompanySubscriptionResponse { Success = false, Message = "User Name is required." };
+            }
+            if (string.IsNullOrWhiteSpace(request.Password))
+            {
+                Console.WriteLine("[DeleteCompanySubscription] Validation failed: Password is required");
+                return new DeleteCompanySubscriptionResponse { Success = false, Message = "Password is required." };
+            }
+            if (string.IsNullOrWhiteSpace(request.Reason))
+            {
+                Console.WriteLine("[DeleteCompanySubscription] Validation failed: Reason is required");
+                return new DeleteCompanySubscriptionResponse { Success = false, Message = "Reason is required." };
+            }
+
+            Console.WriteLine("[DeleteCompanySubscription] All validations passed, connecting to database");
+
+            using var indusConn = GetIndusConnection();
+            await indusConn.OpenAsync();
+
+            Console.WriteLine("[DeleteCompanySubscription] Database connection opened, authenticating user");
+
+            // Step 1: Authenticate user
+            var authCount = await indusConn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM CompanyWebUser WHERE WebUserName = @UserName AND WebUserPassword = @Password",
+                new { UserName = request.UserName, Password = request.Password });
+
+            Console.WriteLine($"[DeleteCompanySubscription] Authentication query returned count: {authCount}");
+
+            if (authCount == 0)
+            {
+                Console.WriteLine($"[DeleteCompanySubscription] Authentication failed for user: {request.UserName}");
+                return new DeleteCompanySubscriptionResponse { Success = false, Message = "Invalid Username or Password" };
+            }
+
+            Console.WriteLine($"[DeleteCompanySubscription] User '{request.UserName}' authenticated successfully");
+
+            // Step 2: Check if company subscription exists
+            Console.WriteLine($"[DeleteCompanySubscription] Checking if company subscription exists: '{request.CompanyUserID}'");
+            var subCount = await indusConn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM CompanyWebUserMaster WHERE CompanyUserID = @CompanyUserID",
+                new { CompanyUserID = request.CompanyUserID });
+
+            Console.WriteLine($"[DeleteCompanySubscription] Company subscription check returned count: {subCount}");
+
+            if (subCount == 0)
+            {
+                Console.WriteLine($"[DeleteCompanySubscription] Company subscription not found");
+                return new DeleteCompanySubscriptionResponse { Success = false, Message = $"Company subscription '{request.CompanyUserID}' does not exist." };
+            }
+
+            // Step 3: Delete the record
+            Console.WriteLine($"[DeleteCompanySubscription] Proceeding with deletion");
+            var deletedCount = await indusConn.ExecuteAsync(
+                "DELETE FROM CompanyWebUserMaster WHERE CompanyUserID = @CompanyUserID",
+                new { CompanyUserID = request.CompanyUserID });
+
+            Console.WriteLine($"[DeleteCompanySubscription] SUCCESS - Deleted company subscription '{request.CompanyUserID}' by user '{request.UserName}'. Reason: {request.Reason}");
+
+            return new DeleteCompanySubscriptionResponse
+            {
+                Success = true,
+                Message = $"Company subscription '{request.CompanyUserID}' deleted successfully."
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DeleteCompanySubscription] EXCEPTION: {ex.Message}");
+            Console.WriteLine($"[DeleteCompanySubscription] Stack Trace: {ex.StackTrace}");
+            return new DeleteCompanySubscriptionResponse { Success = false, Message = ex.Message };
+        }
+    }
 }

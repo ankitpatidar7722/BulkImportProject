@@ -29,4 +29,5 @@ public interface ICompanySubscriptionService
     Task<ApplyModuleGroupToClientResponse> ApplyModuleGroupToClientAsync(ApplyModuleGroupToClientRequest request);
     Task<CheckModulesExistResponse> CheckModulesExistAsync(string connectionString);
     Task<DeleteModuleGroupResponse> DeleteModuleGroupAsync(DeleteModuleGroupRequest request);
+    Task<DeleteCompanySubscriptionResponse> DeleteCompanySubscriptionWithAuthAsync(DeleteCompanySubscriptionRequest request);
 }

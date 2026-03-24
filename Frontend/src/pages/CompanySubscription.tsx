@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw,
     Database, Server, ChevronRight, ArrowLeft, CheckCircle2, Building2,
-    GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers
+    GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers, AlertTriangle
 } from 'lucide-react';
 import {
     getCompanySubscriptions,
@@ -105,6 +105,10 @@ const CompanySubscription: React.FC = () => {
     const [originalCompanyUserID, setOriginalCompanyUserID] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deleteAuthUserName, setDeleteAuthUserName] = useState('');
+    const [deleteAuthPassword, setDeleteAuthPassword] = useState('');
+    const [deleteAuthReason, setDeleteAuthReason] = useState('');
+    const [isDeletingRecord, setIsDeletingRecord] = useState(false);
     const [editTab, setEditTab] = useState<1 | 2 | 3>(1);
 
     // ─── Module Settings State ───
@@ -688,6 +692,7 @@ const CompanySubscription: React.FC = () => {
         }
     };
 
+    // @ts-ignore - Reserved for future use
     const handleOpenCreateGroupModal = async () => {
         setShowCreateGroupModal(true);
         setNewGroupName('');
@@ -808,18 +813,73 @@ const CompanySubscription: React.FC = () => {
 
     const handleDelete = () => {
         if (!selectedRow) { showMessage('info', 'No Selection', 'Please select a row to delete.'); return; }
-        setShowDeleteConfirm(true);
+
+        // Show browser confirmation first
+        const confirmed = window.confirm(
+            `⚠️ Warning: Are you sure you want to delete "${selectedRow.companyName}"?\n\n` +
+            `This action will permanently delete this subscription record and cannot be undone.`
+        );
+
+        if (confirmed) {
+            // Open authentication modal
+            setShowDeleteConfirm(true);
+            setDeleteAuthUserName('');
+            setDeleteAuthPassword('');
+            setDeleteAuthReason('');
+        }
     };
 
     const confirmDelete = async () => {
+        // Validate inputs
+        if (!deleteAuthUserName.trim()) {
+            showMessage('info', 'Required', 'Please enter User Name.');
+            return;
+        }
+        if (!deleteAuthPassword.trim()) {
+            showMessage('info', 'Required', 'Please enter Password.');
+            return;
+        }
+        if (!deleteAuthReason.trim()) {
+            showMessage('info', 'Required', 'Please enter Reason for deletion.');
+            return;
+        }
+
         if (!selectedRow) return;
-        setShowDeleteConfirm(false); setIsLoading(true);
+
+        setIsDeletingRecord(true);
         try {
-            const response = await deleteCompanySubscription(selectedRow.companyUserID);
-            if (response.success) { showMessage('success', 'Deleted', 'Record deleted.'); setSelectedRow(null); await fetchData(); }
-            else showMessage('error', 'Delete Error', response.message);
-        } catch { showMessage('error', 'Delete Error', 'Failed to delete record.'); }
-        finally { setIsLoading(false); }
+            console.log('Deleting with auth:', {
+                companyUserID: selectedRow.companyUserID,
+                userName: deleteAuthUserName.trim(),
+                reason: deleteAuthReason.trim()
+            });
+
+            const response = await deleteCompanySubscription({
+                companyUserID: selectedRow.companyUserID,
+                userName: deleteAuthUserName.trim(),
+                password: deleteAuthPassword.trim(),
+                reason: deleteAuthReason.trim()
+            });
+
+            console.log('Delete response:', response);
+
+            if (response.success) {
+                showMessage('success', 'Deleted', response.message);
+                setShowDeleteConfirm(false);
+                setSelectedRow(null);
+                await fetchData();
+            } else {
+                showMessage('error', 'Delete Error', response.message);
+            }
+        } catch (err: any) {
+            console.error('Delete error:', err);
+            console.error('Error response:', err?.response);
+            console.error('Error data:', err?.response?.data);
+            const errorMessage = err?.response?.data?.message || err?.response?.data || err?.message || 'Failed to delete record.';
+            showMessage('error', 'Delete Error', errorMessage);
+        } finally {
+            setIsDeletingRecord(false);
+        }
     };
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -1722,28 +1782,103 @@ const CompanySubscription: React.FC = () => {
                 </>
             )}
 
-            {/* Delete Confirmation */}
+            {/* Delete Authentication Modal */}
             {showDeleteConfirm && (
                 <>
-                    <style>{`@keyframes deleteModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-sm mx-4 border border-gray-100 dark:border-gray-800 overflow-hidden"
+                    <style>{`@keyframes deleteModalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
+                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                        onClick={() => setShowDeleteConfirm(false)}>
+                        <div className="w-full max-w-md mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
+                            onClick={e => e.stopPropagation()}
                             style={{ animation: 'deleteModalIn 0.2s ease-out' }}>
-                            <div className="p-6 text-center">
-                                <div className="w-12 h-12 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center justify-center mx-auto mb-4">
-                                    <Trash2 className="w-5 h-5 text-red-500" />
+
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-red-600 to-rose-600 rounded-t-2xl">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-white/15 rounded-lg flex items-center justify-center backdrop-blur-sm">
+                                        <AlertTriangle className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-base font-bold text-white tracking-tight">Authentication Required</h3>
+                                        <p className="text-xs text-white/80 mt-0.5">Verify your identity to delete subscription</p>
+                                    </div>
                                 </div>
-                                <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1.5 tracking-tight">Delete Subscription</h3>
-                                <p className="text-[13px] text-gray-500 dark:text-gray-400 leading-relaxed">Are you sure you want to delete <strong className="text-gray-700 dark:text-gray-200">{selectedRow?.companyName}</strong>? This action cannot be undone.</p>
-                            </div>
-                            <div className="flex items-center gap-2.5 px-5 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-800/30">
                                 <button onClick={() => setShowDeleteConfirm(false)}
-                                    className="flex-1 h-9 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-150">
-                                    Cancel
+                                    className="w-8 h-8 bg-white/10 hover:bg-white/20 rounded-lg flex items-center justify-center transition-all backdrop-blur-sm">
+                                    <X className="w-4 h-4 text-white" />
                                 </button>
-                                <button onClick={confirmDelete}
-                                    className="flex-1 h-9 text-[13px] font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-all duration-150 shadow-sm hover:shadow-md shadow-red-500/20">
-                                    Delete
+                            </div>
+
+                            {/* Content */}
+                            <div className="p-6 space-y-4">
+                                <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/30 rounded-lg p-3 mb-4">
+                                    <div className="flex items-start gap-2">
+                                        <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                                        <div className="text-xs text-red-700 dark:text-red-300">
+                                            <p className="font-semibold mb-1">You are about to delete:</p>
+                                            <p className="font-bold">"{selectedRow?.companyName}" (ID: {selectedRow?.companyUserID})</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* User Name */}
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                                        User Name <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={deleteAuthUserName}
+                                        onChange={(e) => setDeleteAuthUserName(e.target.value)}
+                                        placeholder="Enter your username"
+                                        className="w-full h-9 px-3 py-2 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500/40 focus:border-red-500 outline-none transition-all"
+                                        autoComplete="username"
+                                    />
+                                </div>
+
+                                {/* Password */}
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                                        Password <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="password"
+                                        value={deleteAuthPassword}
+                                        onChange={(e) => setDeleteAuthPassword(e.target.value)}
+                                        placeholder="Enter your password"
+                                        className="w-full h-9 px-3 py-2 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500/40 focus:border-red-500 outline-none transition-all"
+                                        autoComplete="current-password"
+                                    />
+                                </div>
+
+                                {/* Reason */}
+                                <div>
+                                    <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                                        Reason for Deletion <span className="text-red-500">*</span>
+                                    </label>
+                                    <textarea
+                                        value={deleteAuthReason}
+                                        onChange={(e) => setDeleteAuthReason(e.target.value)}
+                                        placeholder="Please provide a reason for deleting this subscription..."
+                                        rows={3}
+                                        className="w-full px-3 py-2 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-red-500/40 focus:border-red-500 outline-none transition-all resize-none"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/30 rounded-b-2xl">
+                                <button onClick={() => setShowDeleteConfirm(false)}
+                                    disabled={isDeletingRecord}
+                                    className="h-9 px-4 text-[13px] font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-150 disabled:opacity-50">
+                                    <X className="w-3.5 h-3.5 inline mr-1" /> Cancel
+                                </button>
+                                <button
+                                    onClick={confirmDelete}
+                                    disabled={!deleteAuthUserName.trim() || !deleteAuthPassword.trim() || !deleteAuthReason.trim() || isDeletingRecord}
+                                    className="h-9 px-4 text-[13px] font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-red-600/20">
+                                    {isDeletingRecord ? <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" /> : <Trash2 className="w-3.5 h-3.5 inline mr-1" />}
+                                    {isDeletingRecord ? 'Deleting...' : 'Delete Subscription'}
                                 </button>
                             </div>
                         </div>

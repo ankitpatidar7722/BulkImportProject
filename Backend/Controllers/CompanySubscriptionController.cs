@@ -191,4 +191,11 @@ public class CompanySubscriptionController : ControllerBase
         var response = await _service.DeleteModuleGroupAsync(request);
         return Ok(response);
     }
+
+    [HttpPost("delete-with-auth")]
+    public async Task<IActionResult> DeleteWithAuth([FromBody] DeleteCompanySubscriptionRequest request)
+    {
+        var response = await _service.DeleteCompanySubscriptionWithAuthAsync(request);
+        return Ok(response);
+    }
 }
