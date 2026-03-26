@@ -23,6 +23,9 @@ public class ToolService : IToolService
                 t.ToolGroupID,
                 tg.ToolGroupName,
                 t.ToolType,
+                t.JobName,
+                t.LedgerName as ClientName,
+                t.ToolRefCode,
                 t.ProductHSNID,
                 hsn.DisplayName as ProductHSNName,
                 hsn.HSNCode,
@@ -76,6 +79,51 @@ public class ToolService : IToolService
 
                     switch (fieldName)
                     {
+                        case "ToolType":
+                            tool.ToolType = fieldValue;
+                            break;
+                        case "JobName":
+                            tool.JobName = fieldValue;
+                            break;
+                        case "ClientName":
+                            tool.ClientName = fieldValue;
+                            break;
+                        case "ToolRefCode":
+                            tool.ToolRefCode = fieldValue;
+                            break;
+                        case "Manufacturer":
+                            tool.Manufacturer = fieldValue;
+                            break;
+                        case "NoOfTeeth":
+                            if (int.TryParse(fieldValue, out int noOfTeeth)) tool.NoOfTeeth = noOfTeeth;
+                            break;
+                        case "CircumferenceMM":
+                            if (decimal.TryParse(fieldValue, out decimal circumMM)) tool.CircumferenceMM = circumMM;
+                            break;
+                        case "CircumferenceInch":
+                            if (decimal.TryParse(fieldValue, out decimal circumInch)) tool.CircumferenceInch = circumInch;
+                            break;
+                        case "BCM":
+                            if (decimal.TryParse(fieldValue, out decimal bcm)) tool.BCM = bcm;
+                            break;
+                        case "LPI":
+                            if (decimal.TryParse(fieldValue, out decimal lpi)) tool.LPI = lpi;
+                            break;
+                        case "AroundGap":
+                            if (decimal.TryParse(fieldValue, out decimal aroundGap)) tool.AroundGap = aroundGap;
+                            break;
+                        case "AcrossGap":
+                            if (decimal.TryParse(fieldValue, out decimal acrossGap)) tool.AcrossGap = acrossGap;
+                            break;
+                        case "UnitSymbol":
+                            tool.UnitSymbol = fieldValue;
+                            break;
+                        case "ReferenceToolNo":
+                            tool.ReferenceToolNo = fieldValue;
+                            break;
+                        case "EstimateRate":
+                            if (decimal.TryParse(fieldValue, out decimal estimateRate)) tool.EstimateRate = estimateRate;
+                            break;
                         case "SizeL":
                             if (decimal.TryParse(fieldValue, out decimal sizeL)) tool.SizeL = sizeL;
                             break;
@@ -100,6 +148,9 @@ public class ToolService : IToolService
                         case "PurchaseRate":
                             if (decimal.TryParse(fieldValue, out decimal purchaseRate)) tool.PurchaseRate = purchaseRate;
                             break;
+                        case "StockUnit":
+                            tool.StockUnit = fieldValue;
+                            break;
                         case "ManufecturerItemCode":
                             tool.ManufecturerItemCode = fieldValue;
                             break;
@@ -108,9 +159,6 @@ public class ToolService : IToolService
                             break;
                         case "ShelfLife":
                             if (int.TryParse(fieldValue, out int shelfLife)) tool.ShelfLife = shelfLife;
-                            break;
-                        case "StockUnit":
-                            tool.StockUnit = fieldValue;
                             break;
                         case "MinimumStockQty":
                             if (decimal.TryParse(fieldValue, out decimal minStock)) tool.MinimumStockQty = minStock;
@@ -169,11 +217,71 @@ public class ToolService : IToolService
             validUnits.Select(u => u.UnitSymbol.Trim())
         );
 
-        // Required fields for PLATES (and default for all tool groups)
-        string[] requiredFields = new[] {
-            "SizeL", "SizeW", "PurchaseUnit", "PurchaseRate",
-            "StockUnit", "ProductHSNName"
-        };
+        // For DIE (ToolGroupId == 3), get valid LedgerMaster entries for ClientName validation
+        Dictionary<string, int> clientLedgerMap = new();
+        if (toolGroupId == 3)
+        {
+            var clientsQuery = @"
+                SELECT LedgerId, LedgerName
+                FROM LedgerMaster
+                WHERE LedgerGroupId = 1 AND ISNULL(IsDeletedTransaction, 0) = 0";
+            var clients = await _connection.QueryAsync<(int LedgerId, string LedgerName)>(clientsQuery);
+            foreach (var c in clients)
+            {
+                if (!string.IsNullOrWhiteSpace(c.LedgerName))
+                    clientLedgerMap[c.LedgerName.Trim()] = c.LedgerId;
+            }
+        }
+
+        // Required fields based on ToolGroupId
+        string[] requiredFields;
+
+        if (toolGroupId == 3) // DIE
+        {
+            requiredFields = new[] {
+                "ToolName", "JobName", "SizeL", "SizeW", "SizeH",
+                "UpsAround", "UpsAcross", "TotalUps", "ProductHSNName",
+                "PurchaseUnit", "PurchaseRate", "StockUnit"
+            };
+        }
+        else if (toolGroupId == 5) // PRINTING CYLINDER
+        {
+            requiredFields = new[] {
+                "ToolName", "SizeW", "Manufacturer", "NoOfTeeth",
+                "CircumferenceMM", "CircumferenceInch", "ProductHSNName",
+                "PurchaseUnit", "PurchaseRate", "StockUnit"
+            };
+        }
+        else if (toolGroupId == 6) // ANILOX CYLINDER
+        {
+            requiredFields = new[] {
+                "ToolName", "SizeW", "Manufacturer", "BCM", "LPI",
+                "ProductHSNName", "PurchaseUnit", "PurchaseRate", "StockUnit"
+            };
+        }
+        else if (toolGroupId == 7) // EMBOSSING CYLINDER
+        {
+            requiredFields = new[] {
+                "ToolName", "SizeW", "Manufacturer", "NoOfTeeth",
+                "CircumferenceMM", "CircumferenceInch", "ProductHSNName",
+                "PurchaseUnit", "PurchaseRate", "StockUnit"
+            };
+        }
+        else if (toolGroupId == 8) // FLEXO DIE
+        {
+            requiredFields = new[] {
+                "ToolName", "ToolType", "JobName", "SizeL", "SizeH",
+                "UpsAround", "UpsAcross", "TotalUps", "AroundGap", "AcrossGap",
+                "ProductHSNName", "PurchaseUnit", "PurchaseRate", "StockUnit"
+            };
+        }
+        else // PLATES (ToolGroupId == 1) and default for all other tool groups
+        {
+            requiredFields = new[] {
+                "ToolName", "ToolType", "SizeL", "SizeW", "PurchaseUnit", "PurchaseRate",
+                "StockUnit", "ProductHSNName", "TotalUps"
+            };
+        }
 
         for (int i = 0; i < tools.Count; i++)
         {
@@ -227,22 +335,16 @@ public class ToolService : IToolService
                 }
             }
 
-            // 2. Check for duplicates (RED) - SizeL + SizeW + SizeH + ManufecturerItemCode
+            // 2. Check for duplicates (RED) - ToolName + JobName combination
             bool IsDuplicate(ToolMasterDto a, ToolMasterDto b)
             {
-                var sizeLa = a.SizeL?.ToString() ?? "";
-                var sizeLb = b.SizeL?.ToString() ?? "";
-                var sizeWa = a.SizeW?.ToString() ?? "";
-                var sizeWb = b.SizeW?.ToString() ?? "";
-                var sizeHa = a.SizeH?.ToString() ?? "";
-                var sizeHb = b.SizeH?.ToString() ?? "";
-                var micA = a.ManufecturerItemCode?.Trim() ?? "";
-                var micB = b.ManufecturerItemCode?.Trim() ?? "";
+                var toolNameA = a.ToolName?.Trim() ?? "";
+                var toolNameB = b.ToolName?.Trim() ?? "";
+                var jobNameA = a.JobName?.Trim() ?? "";
+                var jobNameB = b.JobName?.Trim() ?? "";
 
-                return string.Equals(sizeLa, sizeLb, StringComparison.OrdinalIgnoreCase) &&
-                       string.Equals(sizeWa, sizeWb, StringComparison.OrdinalIgnoreCase) &&
-                       string.Equals(sizeHa, sizeHb, StringComparison.OrdinalIgnoreCase) &&
-                       string.Equals(micA, micB, StringComparison.OrdinalIgnoreCase);
+                return string.Equals(toolNameA, toolNameB, StringComparison.OrdinalIgnoreCase) &&
+                       string.Equals(jobNameA, jobNameB, StringComparison.OrdinalIgnoreCase);
             }
 
             var isDuplicate = existingTools.Any(e => IsDuplicate(e, tool));
@@ -263,6 +365,25 @@ public class ToolService : IToolService
                     {
                         ColumnName = "ProductHSNName",
                         ValidationMessage = "ProductHSNName does not match ProductHSNMaster DisplayName (Tool category)",
+                        Status = ValidationStatus.Mismatch
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                        rowValidation.RowStatus = ValidationStatus.Mismatch;
+
+                    hasMismatch = true;
+                }
+            }
+
+            // 3b. Check ClientName mismatch (YELLOW) - only for DIE (ToolGroupId == 3)
+            if (toolGroupId == 3 && !string.IsNullOrWhiteSpace(tool.ClientName))
+            {
+                if (!clientLedgerMap.ContainsKey(tool.ClientName.Trim()))
+                {
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = "ClientName",
+                        ValidationMessage = "ClientName does not match LedgerMaster LedgerName (LedgerGroupId=1)",
                         Status = ValidationStatus.Mismatch
                     });
 
@@ -402,19 +523,38 @@ public class ToolService : IToolService
                 hsnGroupMapping[hsn.DisplayName.Trim()] = hsn.ProductHSNID;
         }
 
-        // Get ToolGroup info
+        // Get ToolGroup info with Prefix
         var toolGroupQuery = @"
-            SELECT ToolGroupID, ToolGroupName
+            SELECT ToolGroupID, ToolGroupName, ToolGroupPrefix
             FROM ToolGroupMaster
             WHERE ToolGroupID = @ToolGroupID";
 
-        var toolGroup = await _connection.QueryFirstOrDefaultAsync<ToolGroupDto>(toolGroupQuery, new { ToolGroupID = toolGroupId });
+        var toolGroup = await _connection.QueryFirstOrDefaultAsync<dynamic>(toolGroupQuery, new { ToolGroupID = toolGroupId });
 
         if (toolGroup == null)
         {
             result.Success = false;
             result.Message = $"ToolGroup with ID {toolGroupId} not found.";
             return result;
+        }
+
+        string toolGroupName = toolGroup.ToolGroupName;
+        string toolGroupPrefix = toolGroup.ToolGroupPrefix ?? "TL"; // Default to "TL" if ToolGroupPrefix is null
+
+        // Fetch client ledger IDs for DIE (ToolGroupId == 3)
+        Dictionary<string, int> clientLedgerMap = new();
+        if (toolGroupId == 3)
+        {
+            var clientsQuery = @"
+                SELECT LedgerId, LedgerName
+                FROM LedgerMaster
+                WHERE LedgerGroupId = 1 AND ISNULL(IsDeletedTransaction, 0) = 0";
+            var clients = await _connection.QueryAsync<(int LedgerId, string LedgerName)>(clientsQuery);
+            foreach (var c in clients)
+            {
+                if (!string.IsNullOrWhiteSpace(c.LedgerName))
+                    clientLedgerMap[c.LedgerName.Trim()] = c.LedgerId;
+            }
         }
 
         // Get Max Tool No (outside transaction)
@@ -429,7 +569,10 @@ public class ToolService : IToolService
         var insertMasterSql = @"
             INSERT INTO ToolMaster (
                 ToolName, ToolDescription, ToolCode, MaxToolNo, Prefix,
-                ToolGroupID, ToolSubGroupID, ToolType, ProductHSNID, IsToolActive,
+                ToolGroupID, ToolSubGroupID, ToolType, JobName, LedgerName, ToolRefCode,
+                Manufacturer, NoOfTeeth, CircumferenceMM, CircumferenceInch,
+                BCM, LPI, AroundGap, AcrossGap, UnitSymbol, ReferenceToolNo,
+                ProductHSNID, IsToolActive,
                 SizeL, SizeW, SizeH, UpsL, UpsW, TotalUps,
                 PurchaseUnit, PurchaseRate, EstimationUnit, EstimationRate,
                 StockUnit,
@@ -438,7 +581,10 @@ public class ToolService : IToolService
             OUTPUT INSERTED.ToolID
             VALUES (
                 @ToolName, @ToolDescription, @ToolCode, @MaxToolNo, @Prefix,
-                @ToolGroupID, 0, @ToolType, @ProductHSNID, 1,
+                @ToolGroupID, 0, @ToolType, @JobName, @LedgerName, @ToolRefCode,
+                @Manufacturer, @NoOfTeeth, @CircumferenceMM, @CircumferenceInch,
+                @BCM, @LPI, @AroundGap, @AcrossGap, @UnitSymbol, @ReferenceToolNo,
+                @ProductHSNID, 1,
                 @SizeL, @SizeW, @SizeH, @UpsL, @UpsW, @TotalUps,
                 @PurchaseUnit, @PurchaseRate, @EstimationUnit, @EstimationRate,
                 @StockUnit,
@@ -460,10 +606,8 @@ public class ToolService : IToolService
                 0, 0
             )";
 
-        // Derive prefix from ToolGroupName (first 2 chars uppercase, e.g. PLATES -> PL)
-        string prefix = toolGroup.ToolGroupName?.Length >= 2
-            ? toolGroup.ToolGroupName.Substring(0, 2).ToUpper()
-            : "TL";
+        // Use prefix from ToolGroupMaster.ToolGroupPrefix
+        string prefix = toolGroupPrefix;
 
         // Row-by-row insert with per-row transaction
         for (int rowIndex = 0; rowIndex < tools.Count; rowIndex++)
@@ -476,7 +620,7 @@ public class ToolService : IToolService
                 maxToolNo++;
                 string toolCode = $"{prefix}{maxToolNo.ToString().PadLeft(5, '0')}";
 
-                string toolType = tool.ToolType ?? toolGroup.ToolGroupName;
+                string toolType = tool.ToolType ?? toolGroupName;
 
                 int? totalUps = tool.TotalUps;
                 if (!totalUps.HasValue && tool.UpsAround.HasValue && tool.UpsAcross.HasValue)
@@ -510,6 +654,19 @@ public class ToolService : IToolService
                     Prefix = prefix,
                     ToolGroupID = toolGroupId,
                     ToolType = toolType ?? (object)DBNull.Value,
+                    JobName = tool.JobName ?? (object)DBNull.Value,
+                    LedgerName = tool.ClientName ?? (object)DBNull.Value,
+                    ToolRefCode = tool.ToolRefCode ?? (object)DBNull.Value,
+                    Manufacturer = tool.Manufacturer ?? (object)DBNull.Value,
+                    NoOfTeeth = tool.NoOfTeeth ?? (object)DBNull.Value,
+                    CircumferenceMM = tool.CircumferenceMM ?? (object)DBNull.Value,
+                    CircumferenceInch = tool.CircumferenceInch ?? (object)DBNull.Value,
+                    BCM = tool.BCM ?? (object)DBNull.Value,
+                    LPI = tool.LPI ?? (object)DBNull.Value,
+                    AroundGap = tool.AroundGap ?? (object)DBNull.Value,
+                    AcrossGap = tool.AcrossGap ?? (object)DBNull.Value,
+                    UnitSymbol = tool.UnitSymbol ?? (object)DBNull.Value,
+                    ReferenceToolNo = tool.ReferenceToolNo ?? (object)DBNull.Value,
                     ProductHSNID = productHSNID > 0 ? productHSNID : (object)DBNull.Value,
                     SizeL = tool.SizeL ?? (object)DBNull.Value,
                     SizeW = tool.SizeW ?? (object)DBNull.Value,
@@ -520,7 +677,7 @@ public class ToolService : IToolService
                     PurchaseUnit = tool.PurchaseUnit ?? (object)DBNull.Value,
                     PurchaseRate = tool.PurchaseRate ?? (object)DBNull.Value,
                     EstimationUnit = tool.PurchaseUnit ?? (object)DBNull.Value,
-                    EstimationRate = tool.PurchaseRate ?? (object)DBNull.Value,
+                    EstimationRate = tool.EstimateRate ?? tool.PurchaseRate ?? (object)DBNull.Value,
                     StockUnit = tool.StockUnit ?? (object)DBNull.Value,
                     CompanyID = 2,
                     UserID = 2,
@@ -534,6 +691,21 @@ public class ToolService : IToolService
                 int seq = 1;
                 var detailFields = new List<(string FieldName, string FieldValue)>();
 
+                if (!string.IsNullOrEmpty(toolType)) detailFields.Add(("ToolType", toolType));
+                if (!string.IsNullOrEmpty(tool.JobName)) detailFields.Add(("JobName", tool.JobName));
+                if (!string.IsNullOrEmpty(tool.ClientName)) detailFields.Add(("ClientName", tool.ClientName));
+                if (!string.IsNullOrEmpty(tool.ToolRefCode)) detailFields.Add(("ToolRefCode", tool.ToolRefCode));
+                if (!string.IsNullOrEmpty(tool.Manufacturer)) detailFields.Add(("Manufacturer", tool.Manufacturer));
+                if (tool.NoOfTeeth.HasValue) detailFields.Add(("NoOfTeeth", tool.NoOfTeeth.ToString()!));
+                if (tool.CircumferenceMM.HasValue) detailFields.Add(("CircumferenceMM", tool.CircumferenceMM.ToString()!));
+                if (tool.CircumferenceInch.HasValue) detailFields.Add(("CircumferenceInch", tool.CircumferenceInch.ToString()!));
+                if (tool.BCM.HasValue) detailFields.Add(("BCM", tool.BCM.ToString()!));
+                if (tool.LPI.HasValue) detailFields.Add(("LPI", tool.LPI.ToString()!));
+                if (tool.AroundGap.HasValue) detailFields.Add(("AroundGap", tool.AroundGap.ToString()!));
+                if (tool.AcrossGap.HasValue) detailFields.Add(("AcrossGap", tool.AcrossGap.ToString()!));
+                if (!string.IsNullOrEmpty(tool.UnitSymbol)) detailFields.Add(("UnitSymbol", tool.UnitSymbol));
+                if (!string.IsNullOrEmpty(tool.ReferenceToolNo)) detailFields.Add(("ReferenceToolNo", tool.ReferenceToolNo));
+                if (tool.EstimateRate.HasValue) detailFields.Add(("EstimateRate", tool.EstimateRate.ToString()!));
                 if (tool.SizeL.HasValue) detailFields.Add(("SizeL", tool.SizeL.ToString()!));
                 if (tool.SizeW.HasValue) detailFields.Add(("SizeW", tool.SizeW.ToString()!));
                 if (tool.SizeH.HasValue) detailFields.Add(("SizeH", tool.SizeH.ToString()!));
@@ -542,10 +714,10 @@ public class ToolService : IToolService
                 if (totalUps.HasValue) detailFields.Add(("TotalUps", totalUps.ToString()!));
                 if (!string.IsNullOrEmpty(tool.PurchaseUnit)) detailFields.Add(("PurchaseUnit", tool.PurchaseUnit));
                 if (tool.PurchaseRate.HasValue) detailFields.Add(("PurchaseRate", tool.PurchaseRate.ToString()!));
+                if (!string.IsNullOrEmpty(tool.StockUnit)) detailFields.Add(("StockUnit", tool.StockUnit));
                 if (!string.IsNullOrEmpty(tool.ManufecturerItemCode)) detailFields.Add(("ManufecturerItemCode", tool.ManufecturerItemCode));
                 if (tool.PurchaseOrderQuantity.HasValue) detailFields.Add(("PurchaseOrderQuantity", tool.PurchaseOrderQuantity.ToString()!));
                 if (shelfLife.HasValue) detailFields.Add(("ShelfLife", shelfLife.ToString()!));
-                if (!string.IsNullOrEmpty(tool.StockUnit)) detailFields.Add(("StockUnit", tool.StockUnit));
                 if (tool.MinimumStockQty.HasValue) detailFields.Add(("MinimumStockQty", tool.MinimumStockQty.ToString()!));
                 if (isStandardItem.HasValue) detailFields.Add(("IsStandardItem", isStandardItem.ToString()!));
                 if (isRegularItem.HasValue) detailFields.Add(("IsRegularItem", isRegularItem.ToString()!));
@@ -554,7 +726,6 @@ public class ToolService : IToolService
                     detailFields.Add(("ProductHSNID", productHSNID.ToString()));
                     detailFields.Add(("ProductHSNName", productHSNID.ToString()));
                 }
-                if (!string.IsNullOrEmpty(toolType)) detailFields.Add(("ToolType", toolType));
 
                 foreach (var field in detailFields)
                 {

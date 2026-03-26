@@ -1067,7 +1067,8 @@ public class ItemService : IItemService
             bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
 
         // Capture the server time just before the bulk copy so the ID retrieval is exact
-        var bulkStartTime = await _connection.ExecuteScalarAsync<DateTime>("SELECT GETDATE()");
+        // Subtract 2 seconds to account for datetime precision differences between local and production SQL Server
+        var bulkStartTime = await _connection.ExecuteScalarAsync<DateTime>("SELECT DATEADD(SECOND, -2, GETDATE())");
 
         await bulkCopy.WriteToServerAsync(masterTable);
 

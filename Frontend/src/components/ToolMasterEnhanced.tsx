@@ -222,85 +222,39 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
     const gridApiRef = useRef<GridApi | null>(null);
 
     const columnDefs: ColDef[] = useMemo(() => {
-        return [
+        const baseColumns: ColDef[] = [
             {
                 field: 'checkbox', headerName: '', checkboxSelection: true,
                 headerCheckboxSelection: true, headerCheckboxSelectionFilteredOnly: true,
-                width: 20, pinned: 'left', lockPosition: false, resizable: false, suppressMenu: true
+                width: 20, pinned: 'left' as const, lockPosition: false, resizable: false
             },
             {
                 headerName: '#', valueGetter: "node.rowIndex + 1",
-                width: 30, pinned: 'left', lockPosition: false, resizable: true, suppressMenu: true
+                width: 30, pinned: 'left' as const, lockPosition: false, resizable: true
             },
+        ];
+
+        // PLATES columns (ToolGroupId == 1)
+        const platesColumns = [
+            { field: 'toolType', headerName: 'ToolType', minWidth: 120 },
+            { field: 'jobName', headerName: 'JobName', minWidth: 150 },
             { field: 'sizeL', headerName: 'SizeL', minWidth: 80 },
             { field: 'sizeW', headerName: 'SizeW', minWidth: 80 },
-            { field: 'sizeH', headerName: 'SizeH', minWidth: 80 },
-            { field: 'upsAround', headerName: 'UpsAround', minWidth: 100 },
-            { field: 'upsAcross', headerName: 'UpsAcross', minWidth: 100 },
             { field: 'totalUps', headerName: 'TotalUps', minWidth: 90 },
+            { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
             {
                 field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: { values: units.map(u => u.unitSymbol) },
                 cellRenderer: DropdownCellRenderer
             },
-            { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
-            { field: 'manufacturerItemCode', headerName: 'ManufecturerItemCode', minWidth: 170 },
-            { field: 'purchaseOrderQuantity', headerName: 'PurchaseOrderQuantity', minWidth: 170 },
-            { field: 'shelfLife', headerName: 'ShelfLife', minWidth: 90 },
             {
                 field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: { values: units.map(u => u.unitSymbol) },
                 cellRenderer: DropdownCellRenderer
             },
-            { field: 'minimumStockQty', headerName: 'MinimumStockQty', minWidth: 140 },
-            {
-                field: 'isStandardItem', headerName: 'IsStandardItem', minWidth: 120,
-                valueGetter: (params: any) => {
-                    const val = params.data?.isStandardItem;
-                    if (val === true || val === 'TRUE') return 'TRUE';
-                    if (val === false || val === 'FALSE') return 'FALSE';
-                    return val;
-                },
-                cellStyle: (params: any): Record<string, string> | null => {
-                    const val = params.data?.isStandardItem;
-                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
-                        return { backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff', color: isDark ? '#e9d5ff' : '#581c87' };
-                    }
-                    return null;
-                },
-                tooltipValueGetter: (params: any) => {
-                    const val = params.data?.isStandardItem;
-                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
-                        return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
-                    }
-                    return null;
-                }
-            },
-            {
-                field: 'isRegularItem', headerName: 'IsRegularItem', minWidth: 120,
-                valueGetter: (params: any) => {
-                    const val = params.data?.isRegularItem;
-                    if (val === true || val === 'TRUE') return 'TRUE';
-                    if (val === false || val === 'FALSE') return 'FALSE';
-                    return val;
-                },
-                cellStyle: (params: any): Record<string, string> | null => {
-                    const val = params.data?.isRegularItem;
-                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
-                        return { backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff', color: isDark ? '#e9d5ff' : '#581c87' };
-                    }
-                    return null;
-                },
-                tooltipValueGetter: (params: any) => {
-                    const val = params.data?.isRegularItem;
-                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
-                        return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
-                    }
-                    return null;
-                }
-            },
+            { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
             {
                 field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
                 cellEditor: 'agSelectCellEditor',
@@ -308,7 +262,186 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 cellRenderer: DropdownCellRenderer
             },
         ];
-    }, [units, hsnGroups]);
+
+        // DIE columns (ToolGroupId == 3)
+        const dieColumns = [
+            { field: 'clientName', headerName: 'ClientName', minWidth: 150 },
+            { field: 'jobName', headerName: 'JobName', minWidth: 150 },
+            { field: 'sizeL', headerName: 'SizeL', minWidth: 80 },
+            { field: 'sizeW', headerName: 'SizeW', minWidth: 80 },
+            { field: 'sizeH', headerName: 'SizeH', minWidth: 80 },
+            { field: 'upsAround', headerName: 'UpsAround', minWidth: 90 },
+            { field: 'upsAcross', headerName: 'UpsAcross', minWidth: 90 },
+            { field: 'totalUps', headerName: 'TotalUps', minWidth: 90 },
+            {
+                field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellRenderer: DropdownCellRenderer
+            },
+            {
+                field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
+            {
+                field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
+            { field: 'toolRefCode', headerName: 'ToolRefCode', minWidth: 120 },
+        ];
+
+        // PRINTING CYLINDER columns (ToolGroupId == 5)
+        const printingCylinderColumns = [
+            { field: 'sizeW', headerName: 'SizeW', minWidth: 80 },
+            { field: 'manufacturer', headerName: 'Manufacturer', minWidth: 150 },
+            { field: 'noOfTeeth', headerName: 'NoOfTeeth', minWidth: 100 },
+            { field: 'circumferenceMM', headerName: 'CircumferenceMM', minWidth: 130 },
+            { field: 'circumferenceInch', headerName: 'CircumferenceInch', minWidth: 140 },
+            {
+                field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellRenderer: DropdownCellRenderer
+            },
+            {
+                field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
+            {
+                field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
+        ];
+
+        // ANILOX CYLINDER columns (ToolGroupId == 6)
+        const aniloxCylinderColumns = [
+            { field: 'sizeW', headerName: 'SizeW', minWidth: 80 },
+            { field: 'manufacturer', headerName: 'Manufacturer', minWidth: 150 },
+            { field: 'bcm', headerName: 'BCM', minWidth: 80 },
+            { field: 'lpi', headerName: 'LPI', minWidth: 80 },
+            {
+                field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellRenderer: DropdownCellRenderer
+            },
+            {
+                field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
+            {
+                field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
+        ];
+
+        // EMBOSSING CYLINDER columns (ToolGroupId == 7)
+        const embossingCylinderColumns = [
+            { field: 'sizeW', headerName: 'SizeW', minWidth: 80 },
+            { field: 'manufacturer', headerName: 'Manufacturer', minWidth: 150 },
+            { field: 'noOfTeeth', headerName: 'NoOfTeeth', minWidth: 100 },
+            { field: 'circumferenceMM', headerName: 'CircumferenceMM', minWidth: 130 },
+            { field: 'circumferenceInch', headerName: 'CircumferenceInch', minWidth: 140 },
+            {
+                field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellRenderer: DropdownCellRenderer
+            },
+            {
+                field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
+            {
+                field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
+        ];
+
+        // FLEXO DIE columns (ToolGroupId == 8)
+        const flexoDieColumns = [
+            { field: 'clientName', headerName: 'LedgerName', minWidth: 150 },
+            { field: 'jobName', headerName: 'JobName', minWidth: 150 },
+            { field: 'sizeL', headerName: 'SizeL', minWidth: 80 },
+            { field: 'sizeH', headerName: 'SizeH', minWidth: 80 },
+            { field: 'upsAround', headerName: 'UpsAround', minWidth: 90 },
+            { field: 'upsAcross', headerName: 'UpsAcross', minWidth: 90 },
+            { field: 'totalUps', headerName: 'TotalUps', minWidth: 90 },
+            {
+                field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
+            { field: 'toolType', headerName: 'ToolType', minWidth: 120 },
+            { field: 'aroundGap', headerName: 'AroundGap', minWidth: 100 },
+            { field: 'acrossGap', headerName: 'AcrossGap', minWidth: 100 },
+            {
+                field: 'unitSymbol', headerName: 'UnitSymbol', minWidth: 100,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            {
+                field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
+            { field: 'referenceToolNo', headerName: 'ReferenceToolNo', minWidth: 140 },
+            { field: 'estimateRate', headerName: 'EstimateRate', minWidth: 120 },
+            {
+                field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellRenderer: DropdownCellRenderer
+            },
+        ];
+
+        // Select columns based on toolGroupId
+        let dataColumns;
+        if (toolGroupId === 3) {
+            dataColumns = dieColumns;
+        } else if (toolGroupId === 5) {
+            dataColumns = printingCylinderColumns;
+        } else if (toolGroupId === 6) {
+            dataColumns = aniloxCylinderColumns;
+        } else if (toolGroupId === 7) {
+            dataColumns = embossingCylinderColumns;
+        } else if (toolGroupId === 8) {
+            dataColumns = flexoDieColumns;
+        } else {
+            dataColumns = platesColumns; // Default for PLATES and other tool groups
+        }
+
+        return [...baseColumns, ...dataColumns];
+    }, [toolGroupId, units, hsnGroups, isDark]);
 
     // Helper: find matching CellValidation for a column
     const findToolCellValidation = useCallback((rowValidation: ToolRowValidation | undefined, colField: string | undefined, colHeader: string | undefined) => {
@@ -579,61 +712,141 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                         if (!isNaN(ua) && !isNaN(uc)) totalUps = ua * uc;
                     }
 
-                    // ShelfLife default 365
-                    let shelfLife = row.ShelfLife;
-                    if (shelfLife === undefined || shelfLife === null || shelfLife === '') shelfLife = 365;
-
-                    // Strict boolean validation: normalize to uppercase TRUE/FALSE
-                    let isStandardItem: any = 'TRUE';
-                    if (row.IsStandardItem !== undefined && row.IsStandardItem !== null && row.IsStandardItem !== '') {
-                        const val = String(row.IsStandardItem).trim().toLowerCase();
-                        if (val === 'true') {
-                            isStandardItem = 'TRUE';
-                        } else if (val === 'false') {
-                            isStandardItem = 'FALSE';
-                        } else {
-                            isStandardItem = row.IsStandardItem; // Invalid value, keep for validation
-                        }
+                    if (toolGroupId === 3) { // DIE
+                        return {
+                            toolGroupID: toolGroupId,
+                            clientName: toStr(row.ClientName),
+                            jobName: toStr(row.JobName),
+                            sizeL: row.SizeL !== undefined && row.SizeL !== '' && !isNaN(parseFloat(row.SizeL)) ? parseFloat(row.SizeL) : undefined,
+                            sizeW: row.SizeW !== undefined && row.SizeW !== '' && !isNaN(parseFloat(row.SizeW)) ? parseFloat(row.SizeW) : undefined,
+                            sizeH: row.SizeH !== undefined && row.SizeH !== '' && !isNaN(parseFloat(row.SizeH)) ? parseFloat(row.SizeH) : undefined,
+                            upsAround: upsAround !== undefined && upsAround !== '' && !isNaN(parseInt(upsAround)) ? parseInt(upsAround) : undefined,
+                            upsAcross: upsAcross !== undefined && upsAcross !== '' && !isNaN(parseInt(upsAcross)) ? parseInt(upsAcross) : undefined,
+                            totalUps: totalUps !== undefined && totalUps !== '' && !isNaN(parseInt(totalUps)) ? parseInt(totalUps) : undefined,
+                            productHSNName: toStr(row.ProductHSNName),
+                            purchaseUnit: toStr(row.PurchaseUnit),
+                            purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
+                            stockUnit: toStr(row.StockUnit),
+                            toolName: toStr(row.ToolName),
+                            toolRefCode: toStr(row.ToolRefCode),
+                        };
+                    } else if (toolGroupId === 5) { // PRINTING CYLINDER
+                        return {
+                            toolGroupID: toolGroupId,
+                            sizeW: row.SizeW !== undefined && row.SizeW !== '' && !isNaN(parseFloat(row.SizeW)) ? parseFloat(row.SizeW) : undefined,
+                            manufacturer: toStr(row.Manufacturer),
+                            noOfTeeth: row.NoOfTeeth !== undefined && row.NoOfTeeth !== '' && !isNaN(parseInt(row.NoOfTeeth)) ? parseInt(row.NoOfTeeth) : undefined,
+                            circumferenceMM: row.CircumferenceMM !== undefined && row.CircumferenceMM !== '' && !isNaN(parseFloat(row.CircumferenceMM)) ? parseFloat(row.CircumferenceMM) : undefined,
+                            circumferenceInch: row.CircumferenceInch !== undefined && row.CircumferenceInch !== '' && !isNaN(parseFloat(row.CircumferenceInch)) ? parseFloat(row.CircumferenceInch) : undefined,
+                            productHSNName: toStr(row.ProductHSNName),
+                            purchaseUnit: toStr(row.PurchaseUnit),
+                            purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
+                            stockUnit: toStr(row.StockUnit),
+                            toolName: toStr(row.ToolName),
+                        };
+                    } else if (toolGroupId === 6) { // ANILOX CYLINDER
+                        return {
+                            toolGroupID: toolGroupId,
+                            sizeW: row.SizeW !== undefined && row.SizeW !== '' && !isNaN(parseFloat(row.SizeW)) ? parseFloat(row.SizeW) : undefined,
+                            manufacturer: toStr(row.Manufacturer),
+                            bcm: row.BCM !== undefined && row.BCM !== '' && !isNaN(parseFloat(row.BCM)) ? parseFloat(row.BCM) : undefined,
+                            lpi: row.LPI !== undefined && row.LPI !== '' && !isNaN(parseFloat(row.LPI)) ? parseFloat(row.LPI) : undefined,
+                            productHSNName: toStr(row.ProductHSNName),
+                            purchaseUnit: toStr(row.PurchaseUnit),
+                            purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
+                            stockUnit: toStr(row.StockUnit),
+                            toolName: toStr(row.ToolName),
+                        };
+                    } else if (toolGroupId === 7) { // EMBOSSING CYLINDER
+                        return {
+                            toolGroupID: toolGroupId,
+                            sizeW: row.SizeW !== undefined && row.SizeW !== '' && !isNaN(parseFloat(row.SizeW)) ? parseFloat(row.SizeW) : undefined,
+                            manufacturer: toStr(row.Manufacturer),
+                            noOfTeeth: row.NoOfTeeth !== undefined && row.NoOfTeeth !== '' && !isNaN(parseInt(row.NoOfTeeth)) ? parseInt(row.NoOfTeeth) : undefined,
+                            circumferenceMM: row.CircumferenceMM !== undefined && row.CircumferenceMM !== '' && !isNaN(parseFloat(row.CircumferenceMM)) ? parseFloat(row.CircumferenceMM) : undefined,
+                            circumferenceInch: row.CircumferenceInch !== undefined && row.CircumferenceInch !== '' && !isNaN(parseFloat(row.CircumferenceInch)) ? parseFloat(row.CircumferenceInch) : undefined,
+                            productHSNName: toStr(row.ProductHSNName),
+                            purchaseUnit: toStr(row.PurchaseUnit),
+                            purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
+                            stockUnit: toStr(row.StockUnit),
+                            toolName: toStr(row.ToolName),
+                        };
+                    } else if (toolGroupId === 8) { // FLEXO DIE
+                        return {
+                            toolGroupID: toolGroupId,
+                            clientName: toStr(row.LedgerName),
+                            jobName: toStr(row.JobName),
+                            sizeL: row.SizeL !== undefined && row.SizeL !== '' && !isNaN(parseFloat(row.SizeL)) ? parseFloat(row.SizeL) : undefined,
+                            sizeH: row.SizeH !== undefined && row.SizeH !== '' && !isNaN(parseFloat(row.SizeH)) ? parseFloat(row.SizeH) : undefined,
+                            upsAround: upsAround !== undefined && upsAround !== '' && !isNaN(parseInt(upsAround)) ? parseInt(upsAround) : undefined,
+                            upsAcross: upsAcross !== undefined && upsAcross !== '' && !isNaN(parseInt(upsAcross)) ? parseInt(upsAcross) : undefined,
+                            totalUps: totalUps !== undefined && totalUps !== '' && !isNaN(parseInt(totalUps)) ? parseInt(totalUps) : undefined,
+                            productHSNName: toStr(row.ProductHSNName),
+                            toolName: toStr(row.ToolName),
+                            toolType: toStr(row.ToolType),
+                            aroundGap: row.AroundGap !== undefined && row.AroundGap !== '' && !isNaN(parseFloat(row.AroundGap)) ? parseFloat(row.AroundGap) : undefined,
+                            acrossGap: row.AcrossGap !== undefined && row.AcrossGap !== '' && !isNaN(parseFloat(row.AcrossGap)) ? parseFloat(row.AcrossGap) : undefined,
+                            unitSymbol: toStr(row.UnitSymbol),
+                            purchaseUnit: toStr(row.PurchaseUnit),
+                            purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
+                            referenceToolNo: toStr(row.ReferenceToolNo),
+                            estimateRate: row.EstimateRate !== undefined && row.EstimateRate !== '' && !isNaN(parseFloat(row.EstimateRate)) ? parseFloat(row.EstimateRate) : undefined,
+                            stockUnit: toStr(row.StockUnit),
+                        };
+                    } else { // PLATES (default)
+                        return {
+                            toolGroupID: toolGroupId,
+                            toolType: toStr(row.ToolType) || toolGroupName, // Use Excel ToolType or default to ToolGroupName
+                            jobName: toStr(row.JobName),
+                            sizeL: row.SizeL !== undefined && row.SizeL !== '' && !isNaN(parseFloat(row.SizeL)) ? parseFloat(row.SizeL) : undefined,
+                            sizeW: row.SizeW !== undefined && row.SizeW !== '' && !isNaN(parseFloat(row.SizeW)) ? parseFloat(row.SizeW) : undefined,
+                            totalUps: totalUps !== undefined && totalUps !== '' && !isNaN(parseInt(totalUps)) ? parseInt(totalUps) : undefined,
+                            purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
+                            purchaseUnit: toStr(row.PurchaseUnit),
+                            stockUnit: toStr(row.StockUnit),
+                            toolName: toStr(row.ToolName),
+                            productHSNName: toStr(row.ProductHSNName),
+                        };
                     }
-
-                    let isRegularItem: any = 'TRUE';
-                    if (row.IsRegularItem !== undefined && row.IsRegularItem !== null && row.IsRegularItem !== '') {
-                        const val = String(row.IsRegularItem).trim().toLowerCase();
-                        if (val === 'true') {
-                            isRegularItem = 'TRUE';
-                        } else if (val === 'false') {
-                            isRegularItem = 'FALSE';
-                        } else {
-                            isRegularItem = row.IsRegularItem; // Invalid value, keep for validation
-                        }
-                    }
-
-                    return {
-                        toolGroupID: toolGroupId,
-                        toolType: toolGroupName, // Auto-insert ToolType = ToolGroupName
-                        sizeL: row.SizeL !== undefined && row.SizeL !== '' && !isNaN(parseFloat(row.SizeL)) ? parseFloat(row.SizeL) : undefined,
-                        sizeW: row.SizeW !== undefined && row.SizeW !== '' && !isNaN(parseFloat(row.SizeW)) ? parseFloat(row.SizeW) : undefined,
-                        sizeH: row.SizeH !== undefined && row.SizeH !== '' && !isNaN(parseFloat(row.SizeH)) ? parseFloat(row.SizeH) : undefined,
-                        upsAround: upsAround !== undefined && upsAround !== '' && !isNaN(parseInt(upsAround)) ? parseInt(upsAround) : undefined,
-                        upsAcross: upsAcross !== undefined && upsAcross !== '' && !isNaN(parseInt(upsAcross)) ? parseInt(upsAcross) : undefined,
-                        totalUps: totalUps !== undefined && totalUps !== '' && !isNaN(parseInt(totalUps)) ? parseInt(totalUps) : undefined,
-                        purchaseUnit: toStr(row.PurchaseUnit),
-                        purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
-                        manufacturerItemCode: toStr(row.ManufecturerItemCode),
-                        purchaseOrderQuantity: row.PurchaseOrderQuantity !== undefined && row.PurchaseOrderQuantity !== '' && !isNaN(parseFloat(row.PurchaseOrderQuantity)) ? parseFloat(row.PurchaseOrderQuantity) : undefined,
-                        shelfLife: shelfLife !== undefined && shelfLife !== '' && !isNaN(parseInt(shelfLife)) ? parseInt(shelfLife) : 365,
-                        stockUnit: toStr(row.StockUnit),
-                        minimumStockQty: row.MinimumStockQty !== undefined && row.MinimumStockQty !== '' && !isNaN(parseFloat(row.MinimumStockQty)) ? parseFloat(row.MinimumStockQty) : undefined,
-                        isStandardItem,
-                        isRegularItem,
-                        productHSNName: toStr(row.ProductHSNName),
-                    };
                 }).filter((item: ToolMasterDto) => {
-                    return !!(
-                        item.sizeL || item.sizeW || item.sizeH || item.purchaseUnit ||
-                        item.purchaseRate || item.manufacturerItemCode || item.stockUnit ||
-                        item.productHSNName || item.upsAround || item.upsAcross
-                    );
+                    if (toolGroupId === 3) { // DIE
+                        return !!(
+                            item.clientName || item.jobName || item.sizeL || item.sizeW || item.sizeH ||
+                            item.upsAround || item.upsAcross || item.totalUps || item.productHSNName ||
+                            item.purchaseUnit || item.purchaseRate || item.stockUnit || item.toolName || item.toolRefCode
+                        );
+                    } else if (toolGroupId === 5) { // PRINTING CYLINDER
+                        return !!(
+                            item.sizeW || item.manufacturer || item.noOfTeeth || item.circumferenceMM ||
+                            item.circumferenceInch || item.productHSNName || item.purchaseUnit ||
+                            item.purchaseRate || item.stockUnit || item.toolName
+                        );
+                    } else if (toolGroupId === 6) { // ANILOX CYLINDER
+                        return !!(
+                            item.sizeW || item.manufacturer || item.bcm || item.lpi ||
+                            item.productHSNName || item.purchaseUnit || item.purchaseRate ||
+                            item.stockUnit || item.toolName
+                        );
+                    } else if (toolGroupId === 7) { // EMBOSSING CYLINDER
+                        return !!(
+                            item.sizeW || item.manufacturer || item.noOfTeeth || item.circumferenceMM ||
+                            item.circumferenceInch || item.productHSNName || item.purchaseUnit ||
+                            item.purchaseRate || item.stockUnit || item.toolName
+                        );
+                    } else if (toolGroupId === 8) { // FLEXO DIE
+                        return !!(
+                            item.clientName || item.jobName || item.sizeL || item.sizeH ||
+                            item.upsAround || item.upsAcross || item.totalUps || item.productHSNName ||
+                            item.toolName || item.toolType || item.aroundGap || item.acrossGap ||
+                            item.unitSymbol || item.purchaseUnit || item.purchaseRate ||
+                            item.referenceToolNo || item.estimateRate || item.stockUnit
+                        );
+                    } else { // PLATES
+                        return !!(
+                            item.toolName || item.toolType || item.jobName || item.sizeL || item.sizeW ||
+                            item.purchaseUnit || item.purchaseRate || item.stockUnit || item.productHSNName
+                        );
+                    }
                 });
 
                 setToolData(tools);
@@ -649,8 +862,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
 
     // Clean tool data for API — extracts invalid numeric/bool values into rawValues
     const cleanToolDataForApi = useCallback((data: any[]) => {
-        const numericFields = new Set(['sizeL', 'sizeW', 'sizeH', 'purchaseRate', 'purchaseOrderQuantity', 'minimumStockQty']);
-        const intFields = new Set(['upsAround', 'upsAcross', 'totalUps', 'shelfLife']);
+        const numericFields = new Set(['sizeL', 'sizeW', 'sizeH', 'purchaseRate', 'purchaseOrderQuantity', 'minimumStockQty', 'circumferenceMM', 'circumferenceInch', 'bcm', 'lpi', 'aroundGap', 'acrossGap', 'estimateRate']);
+        const intFields = new Set(['upsAround', 'upsAcross', 'totalUps', 'shelfLife', 'noOfTeeth']);
         const boolFields = new Set(['isStandardItem', 'isRegularItem']);
 
         return data.map(item => {
@@ -832,34 +1045,136 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet(toolGroupName || 'Sheet1');
 
-        const exportColumns = [
-            'SizeL', 'SizeW', 'SizeH', 'UpsAround', 'UpsAcross', 'TotalUps',
-            'PurchaseUnit', 'PurchaseRate', 'ManufecturerItemCode', 'PurchaseOrderQuantity',
-            'ShelfLife', 'StockUnit', 'MinimumStockQty', 'IsStandardItem', 'IsRegularItem', 'ProductHSNName'
-        ];
+        // Define columns based on ToolGroupId
+        let exportColumns: string[];
+        if (toolGroupId === 3) { // DIE
+            exportColumns = [
+                'ClientName', 'JobName', 'SizeL', 'SizeW', 'SizeH',
+                'UpsAround', 'UpsAcross', 'TotalUps', 'ProductHSNName',
+                'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName', 'ToolRefCode'
+            ];
+        } else if (toolGroupId === 5) { // PRINTING CYLINDER
+            exportColumns = [
+                'SizeW', 'Manufacturer', 'NoOfTeeth', 'CircumferenceMM', 'CircumferenceInch',
+                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+            ];
+        } else if (toolGroupId === 6) { // ANILOX CYLINDER
+            exportColumns = [
+                'SizeW', 'Manufacturer', 'BCM', 'LPI',
+                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+            ];
+        } else if (toolGroupId === 7) { // EMBOSSING CYLINDER
+            exportColumns = [
+                'SizeW', 'Manufacturer', 'NoOfTeeth', 'CircumferenceMM', 'CircumferenceInch',
+                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+            ];
+        } else if (toolGroupId === 8) { // FLEXO DIE
+            exportColumns = [
+                'LedgerName', 'JobName', 'SizeL', 'SizeH', 'UpsAround', 'UpsAcross', 'TotalUps',
+                'ProductHSNName', 'ToolName', 'ToolType', 'AroundGap', 'AcrossGap',
+                'UnitSymbol', 'PurchaseUnit', 'PurchaseRate', 'ReferenceToolNo', 'EstimateRate', 'StockUnit'
+            ];
+        } else { // PLATES (default)
+            exportColumns = [
+                'ToolType', 'JobName', 'SizeL', 'SizeW', 'TotalUps',
+                'PurchaseRate', 'PurchaseUnit', 'StockUnit', 'ToolName', 'ProductHSNName'
+            ];
+        }
 
         worksheet.columns = exportColumns.map(col => ({ header: col, key: col, width: 20 }));
         worksheet.getRow(1).font = { bold: true };
 
         toolData.forEach((tool) => {
-            worksheet.addRow({
-                SizeL: tool.sizeL,
-                SizeW: tool.sizeW,
-                SizeH: tool.sizeH,
-                UpsAround: tool.upsAround,
-                UpsAcross: tool.upsAcross,
-                TotalUps: tool.totalUps,
-                PurchaseUnit: tool.purchaseUnit,
-                PurchaseRate: tool.purchaseRate,
-                ManufecturerItemCode: tool.manufacturerItemCode,
-                PurchaseOrderQuantity: tool.purchaseOrderQuantity,
-                ShelfLife: tool.shelfLife,
-                StockUnit: tool.stockUnit,
-                MinimumStockQty: tool.minimumStockQty,
-                IsStandardItem: tool.isStandardItem,
-                IsRegularItem: tool.isRegularItem,
-                ProductHSNName: tool.productHSNName,
-            });
+            if (toolGroupId === 3) { // DIE
+                worksheet.addRow({
+                    ClientName: tool.clientName,
+                    JobName: tool.jobName,
+                    SizeL: tool.sizeL,
+                    SizeW: tool.sizeW,
+                    SizeH: tool.sizeH,
+                    UpsAround: tool.upsAround,
+                    UpsAcross: tool.upsAcross,
+                    TotalUps: tool.totalUps,
+                    ProductHSNName: tool.productHSNName,
+                    PurchaseUnit: tool.purchaseUnit,
+                    PurchaseRate: tool.purchaseRate,
+                    StockUnit: tool.stockUnit,
+                    ToolName: tool.toolName,
+                    ToolRefCode: tool.toolRefCode,
+                });
+            } else if (toolGroupId === 5) { // PRINTING CYLINDER
+                worksheet.addRow({
+                    SizeW: tool.sizeW,
+                    Manufacturer: tool.manufacturer,
+                    NoOfTeeth: tool.noOfTeeth,
+                    CircumferenceMM: tool.circumferenceMM,
+                    CircumferenceInch: tool.circumferenceInch,
+                    ProductHSNName: tool.productHSNName,
+                    PurchaseUnit: tool.purchaseUnit,
+                    PurchaseRate: tool.purchaseRate,
+                    StockUnit: tool.stockUnit,
+                    ToolName: tool.toolName,
+                });
+            } else if (toolGroupId === 6) { // ANILOX CYLINDER
+                worksheet.addRow({
+                    SizeW: tool.sizeW,
+                    Manufacturer: tool.manufacturer,
+                    BCM: tool.bcm,
+                    LPI: tool.lpi,
+                    ProductHSNName: tool.productHSNName,
+                    PurchaseUnit: tool.purchaseUnit,
+                    PurchaseRate: tool.purchaseRate,
+                    StockUnit: tool.stockUnit,
+                    ToolName: tool.toolName,
+                });
+            } else if (toolGroupId === 7) { // EMBOSSING CYLINDER
+                worksheet.addRow({
+                    SizeW: tool.sizeW,
+                    Manufacturer: tool.manufacturer,
+                    NoOfTeeth: tool.noOfTeeth,
+                    CircumferenceMM: tool.circumferenceMM,
+                    CircumferenceInch: tool.circumferenceInch,
+                    ProductHSNName: tool.productHSNName,
+                    PurchaseUnit: tool.purchaseUnit,
+                    PurchaseRate: tool.purchaseRate,
+                    StockUnit: tool.stockUnit,
+                    ToolName: tool.toolName,
+                });
+            } else if (toolGroupId === 8) { // FLEXO DIE
+                worksheet.addRow({
+                    LedgerName: tool.clientName,
+                    JobName: tool.jobName,
+                    SizeL: tool.sizeL,
+                    SizeH: tool.sizeH,
+                    UpsAround: tool.upsAround,
+                    UpsAcross: tool.upsAcross,
+                    TotalUps: tool.totalUps,
+                    ProductHSNName: tool.productHSNName,
+                    ToolName: tool.toolName,
+                    ToolType: tool.toolType,
+                    AroundGap: tool.aroundGap,
+                    AcrossGap: tool.acrossGap,
+                    UnitSymbol: tool.unitSymbol,
+                    PurchaseUnit: tool.purchaseUnit,
+                    PurchaseRate: tool.purchaseRate,
+                    ReferenceToolNo: tool.referenceToolNo,
+                    EstimateRate: tool.estimateRate,
+                    StockUnit: tool.stockUnit,
+                });
+            } else { // PLATES (default)
+                worksheet.addRow({
+                    ToolType: tool.toolType,
+                    JobName: tool.jobName,
+                    SizeL: tool.sizeL,
+                    SizeW: tool.sizeW,
+                    TotalUps: tool.totalUps,
+                    PurchaseRate: tool.purchaseRate,
+                    PurchaseUnit: tool.purchaseUnit,
+                    StockUnit: tool.stockUnit,
+                    ToolName: tool.toolName,
+                    ProductHSNName: tool.productHSNName,
+                });
+            }
         });
 
         const buffer = await workbook.xlsx.writeBuffer();

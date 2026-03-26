@@ -10,20 +10,34 @@ public class ToolMasterDto
     public int? ToolGroupID { get; set; }
     public string? ToolGroupName { get; set; }
     public string? ToolType { get; set; }
+    public string? JobName { get; set; }
+    public string? ClientName { get; set; }
+    public string? ToolRefCode { get; set; }
     public int? ProductHSNID { get; set; }
     public string? ProductHSNName { get; set; }
     public string? HSNCode { get; set; }
 
-    // PLATES-specific fields
+    // Tool-specific fields (PLATES, DIE, PRINTING CYLINDER, FLEXO DIE, etc.)
     public decimal? SizeL { get; set; }
     public decimal? SizeW { get; set; }
     public decimal? SizeH { get; set; }
     public int? UpsAround { get; set; }
     public int? UpsAcross { get; set; }
     public int? TotalUps { get; set; }
+    public decimal? AroundGap { get; set; }
+    public decimal? AcrossGap { get; set; }
+    public string? UnitSymbol { get; set; }
+    public string? ReferenceToolNo { get; set; }
+    public decimal? EstimateRate { get; set; }
     public string? PurchaseUnit { get; set; }
     public decimal? PurchaseRate { get; set; }
+    public string? Manufacturer { get; set; }
     public string? ManufecturerItemCode { get; set; }
+    public int? NoOfTeeth { get; set; }
+    public decimal? CircumferenceMM { get; set; }
+    public decimal? CircumferenceInch { get; set; }
+    public decimal? BCM { get; set; }
+    public decimal? LPI { get; set; }
     public decimal? PurchaseOrderQuantity { get; set; }
     public int? ShelfLife { get; set; }
     public string? StockUnit { get; set; }
