@@ -62,10 +62,12 @@ const EMPTY_FORM: CompanySubscriptionDto = {
     statusDescription: '', subscriptionStatusMessage: '', address: '', country: 'India',
     state: '', city: '', gstin: '', email: '', mobile: '', loginAllowed: 1,
     fromDate: '', toDate: '', paymentDueDate: '', fYear: '',
+    isMessageActive: false, messageDurationValue: 0, messageDurationType: 'Seconds',
 };
 
 const APPLICATION_OPTIONS = ['estimoprime', 'multiunit', 'PrintudeERP'];
 const SUBSCRIPTION_STATUS_OPTIONS = ['Active', 'Expired'];
+const MESSAGE_DURATION_TYPE_OPTIONS = ['Seconds', 'Minutes', 'Hours', 'Days'];
 
 const formatDateForInput = (dateStr?: string): string => {
     if (!dateStr) return '';
@@ -319,6 +321,11 @@ const CompanySubscription: React.FC = () => {
         if (!formData.password.trim()) { showMessage('error', 'Validation', 'Password is required.'); return; }
         if (/\s/.test(formData.password)) { showMessage('error', 'Validation', 'Password must not contain spaces.'); return; }
 
+        if (formData.isMessageActive) {
+            if (!formData.messageDurationValue) { showMessage('error', 'Validation', 'Message Duration is required.'); return; }
+            if (!formData.messageDurationType) { showMessage('error', 'Validation', 'Message Duration Type is required.'); return; }
+        }
+
         setIsSaving(true);
         try {
             const payload: any = {
@@ -334,6 +341,9 @@ const CompanySubscription: React.FC = () => {
                 loginAllowed: formData.loginAllowed ?? 1, fromDate: formData.fromDate || null,
                 toDate: formData.toDate || null, paymentDueDate: formData.paymentDueDate || null,
                 fYear: formData.fYear || null,
+                isMessageActive: formData.isMessageActive || false,
+                messageDurationValue: formData.messageDurationValue || 0,
+                messageDurationType: formData.messageDurationType || null,
             };
             let response;
             if (isStep2Saved && step2SavedUserId) {
@@ -895,6 +905,12 @@ const CompanySubscription: React.FC = () => {
     const handleFormSubmit = async () => {
         if (!formData.companyName.trim()) { showMessage('error', 'Validation', 'Client Name is required.'); return; }
         if (!formData.companyUserID.trim()) { showMessage('error', 'Validation', 'Company Login Name is required.'); return; }
+        
+        if (formData.isMessageActive) {
+            if (!formData.messageDurationValue) { showMessage('error', 'Validation', 'Message Duration is required.'); return; }
+            if (!formData.messageDurationType) { showMessage('error', 'Validation', 'Message Duration Type is required.'); return; }
+        }
+
         setIsSaving(true);
         try {
             const payload: any = {
@@ -908,6 +924,9 @@ const CompanySubscription: React.FC = () => {
                 gstin: formData.gstin || null, email: formData.email || null, mobile: formData.mobile || null,
                 loginAllowed: formData.loginAllowed ?? 1, fromDate: formData.fromDate || null,
                 toDate: formData.toDate || null, paymentDueDate: formData.paymentDueDate || null, fYear: formData.fYear || null,
+                isMessageActive: formData.isMessageActive || false,
+                messageDurationValue: formData.messageDurationValue || 0,
+                messageDurationType: formData.messageDurationType || null,
             };
             payload.originalCompanyUserID = originalCompanyUserID;
             const response = await updateCompanySubscription(payload);
@@ -1220,6 +1239,15 @@ const CompanySubscription: React.FC = () => {
                                             <FormField label="From Date" name="fromDate" value={formatDateForInput(formData.fromDate)} onChange={handleFormChange} type="date" />
                                             <FormField label="To Date" name="toDate" value={formatDateForInput(formData.toDate)} onChange={handleFormChange} type="date" />
                                             <FormField label="Payment Due Date" name="paymentDueDate" value={formatDateForInput(formData.paymentDueDate)} onChange={handleFormChange} type="date" />
+                                            
+                                            <FormToggle label="Message Active" name="isMessageActive" checked={!!formData.isMessageActive} onChange={handleFormChange} />
+                                            {formData.isMessageActive && (
+                                                <>
+                                                    <FormField label="Message Duration *" name="messageDurationValue" value={String(formData.messageDurationValue ?? '')} onChange={handleFormChange} type="number" />
+                                                    <FormSelect label="Message Duration Type *" name="messageDurationType" value={formData.messageDurationType || ''} onChange={handleFormChange} options={MESSAGE_DURATION_TYPE_OPTIONS} />
+                                                </>
+                                            )}
+
                                             <FormField label="Status Description" name="statusDescription" value={formData.statusDescription || ''} onChange={handleFormChange} />
                                             <FormField label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} />
                                         </div>
@@ -1492,6 +1520,15 @@ const CompanySubscription: React.FC = () => {
                                                 <FormField label="From Date" name="fromDate" value={formatDateForInput(formData.fromDate)} onChange={handleFormChange} type="date" />
                                                 <FormField label="To Date" name="toDate" value={formatDateForInput(formData.toDate)} onChange={handleFormChange} type="date" />
                                                 <FormField label="Payment Due" name="paymentDueDate" value={formatDateForInput(formData.paymentDueDate)} onChange={handleFormChange} type="date" />
+                                                
+                                                <FormToggle label="Message Active" name="isMessageActive" checked={!!formData.isMessageActive} onChange={handleFormChange} />
+                                                {formData.isMessageActive && (
+                                                    <>
+                                                        <FormField label="Message Duration *" name="messageDurationValue" value={String(formData.messageDurationValue ?? '')} onChange={handleFormChange} type="number" />
+                                                        <FormSelect label="Message Duration Type *" name="messageDurationType" value={formData.messageDurationType || ''} onChange={handleFormChange} options={MESSAGE_DURATION_TYPE_OPTIONS} />
+                                                    </>
+                                                )}
+
                                                 <div className="md:col-span-2">
                                                     <FormTextArea label="Status Description" name="statusDescription" value={formData.statusDescription || ''} onChange={handleFormChange} rows={2} />
                                                 </div>
@@ -2062,6 +2099,30 @@ const FormSelect: React.FC<FormSelectProps> = ({ label, name, value, onChange, o
             <option value="">Select...</option>
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
+    </div>
+);
+
+interface FormToggleProps {
+    label: string; name: string; checked: boolean;
+    onChange: (e: any) => void;
+}
+const FormToggle: React.FC<FormToggleProps> = ({ label, name, checked, onChange }) => (
+    <div className="flex items-center justify-between h-9 px-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 transition-all duration-150">
+        <label className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide cursor-pointer" htmlFor={`toggle-${name}`}>{label}</label>
+        <button
+            id={`toggle-${name}`}
+            type="button"
+            onClick={() => onChange({ target: { name, value: !checked, type: 'checkbox', checked: !checked } } as any)}
+            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                checked ? 'bg-amber-500' : 'bg-gray-200 dark:bg-gray-700'
+            }`}
+        >
+            <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    checked ? 'translate-x-4' : 'translate-x-0'
+                }`}
+            />
+        </button>
     </div>
 );
 

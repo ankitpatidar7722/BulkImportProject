@@ -35,6 +35,9 @@ public class CompanySubscriptionDto
     public string? Email { get; set; }
     public string? Mobile { get; set; }
     public string? Address { get; set; }
+    public bool? IsMessageActive { get; set; }
+    public int? MessageDurationValue { get; set; }
+    public string? MessageDurationType { get; set; }
 }
 
 public class CompanySubscriptionListResponse
@@ -78,6 +81,9 @@ public class CompanySubscriptionSaveRequest
     public DateTime? ToDate { get; set; }
     public DateTime? PaymentDueDate { get; set; }
     public string? FYear { get; set; }
+    public bool? IsMessageActive { get; set; }
+    public int? MessageDurationValue { get; set; }
+    public string? MessageDurationType { get; set; }
 }
 
 public class NextClientCodeResponse

@@ -78,12 +78,14 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                     (CompanyUserID, Password, Conn_String, CompanyName, ApplicationName, ApplicationVersion,
                      SubscriptionStatus, StatusDescription, SubscriptionStatusMessage,
                      Address, Country, State, City, CompanyCode, CompanyUniqueCode, MaxCompanyUniqueCode,
-                     GSTIN, Email, Mobile, LoginAllowed, FromDate, ToDate, PaymentDueDate, FYear)
+                     GSTIN, Email, Mobile, LoginAllowed, FromDate, ToDate, PaymentDueDate, FYear,
+                     IsMessageActive, MessageDurationValue, MessageDurationType)
                 VALUES
                     (@CompanyUserID, @Password, @Conn_String, @CompanyName, @ApplicationName, @ApplicationVersion,
                      @SubscriptionStatus, @StatusDescription, @SubscriptionStatusMessage,
                      @Address, @Country, @State, @City, @CompanyCode, @CompanyUniqueCode, @MaxCompanyUniqueCode,
-                     @GSTIN, @Email, @Mobile, @LoginAllowed, @FromDate, @ToDate, @PaymentDueDate, @FYear)";
+                     @GSTIN, @Email, @Mobile, @LoginAllowed, @FromDate, @ToDate, @PaymentDueDate, @FYear,
+                     @IsMessageActive, @MessageDurationValue, @MessageDurationType)";
 
             await conn.ExecuteAsync(query, request);
 
@@ -130,8 +132,13 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                     FromDate = @FromDate,
                     ToDate = @ToDate,
                     PaymentDueDate = @PaymentDueDate,
-                    FYear = @FYear
+                    FYear = @FYear,
+                    IsMessageActive = @IsMessageActive,
+                    MessageDurationValue = @MessageDurationValue,
+                    MessageDurationType = @MessageDurationType
                 WHERE CompanyUserID = @OriginalKey";
+
+            Console.WriteLine($"[CompanySubscription] Update Request for {request.CompanyUserID}: MessageActive={request.IsMessageActive}, Duration={request.MessageDurationValue}, Type={request.MessageDurationType}");
 
             var affected = await conn.ExecuteAsync(query, new
             {
@@ -158,6 +165,9 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 request.ToDate,
                 request.PaymentDueDate,
                 request.FYear,
+                request.IsMessageActive,
+                request.MessageDurationValue,
+                request.MessageDurationType,
                 OriginalKey = keyToUpdate
             });
 

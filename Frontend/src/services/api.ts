@@ -1265,6 +1265,9 @@ export interface CompanySubscriptionDto {
     email?: string;
     mobile?: string;
     address?: string;
+    isMessageActive?: boolean;
+    messageDurationValue?: number;
+    messageDurationType?: string;
 }
 
 export interface CompanySubscriptionSaveRequest extends CompanySubscriptionDto {
