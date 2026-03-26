@@ -965,8 +965,8 @@ const CompanySubscription: React.FC = () => {
             <MessageFormatPopup
                 visible={showFormatMessagePopup}
                 onClose={() => setShowFormatMessagePopup(false)}
-                onLoadMessage={(content) => {
-                    setFormData(prev => ({ ...prev, subscriptionStatusMessage: content }));
+                onLoadMessage={(title, content) => {
+                    setFormData(prev => ({ ...prev, statusDescription: title, subscriptionStatusMessage: content }));
                     setShowFormatMessagePopup(false);
                 }}
             />
@@ -1451,8 +1451,7 @@ const CompanySubscription: React.FC = () => {
             {showForm && (
                 <>
                     <style>{`@keyframes editModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-                        onClick={() => setShowForm(false)}>
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
                         <div className="w-full max-w-6xl mx-4 max-h-[92vh] flex flex-col bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
                             onClick={e => e.stopPropagation()}
                             style={{ animation: 'editModalIn 0.2s ease-out' }}>

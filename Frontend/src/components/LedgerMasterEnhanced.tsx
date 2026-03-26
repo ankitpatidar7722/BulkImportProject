@@ -28,6 +28,7 @@ import {
     getClients
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useLoader } from '../context/LoaderContext';
 
 // AG Grid Imports
 import { AgGridReact } from 'ag-grid-react';
@@ -50,9 +51,15 @@ interface LedgerMasterEnhancedProps {
 const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroupId, ledgerGroupName }) => {
     const { isDark } = useTheme();
     const { showMessage, ModalRenderer } = useMessageModal();
+    const { showLoader, hideLoader } = useLoader();
 
     const [ledgerData, setLedgerData] = useState<LedgerMasterDto[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        if (isLoading) showLoader();
+        else hideLoader();
+    }, [isLoading]);
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [validationResult, setValidationResult] = useState<LedgerValidationResultDto | null>(null);
     const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');

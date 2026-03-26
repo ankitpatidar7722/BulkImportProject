@@ -673,35 +673,56 @@ public class ToolStockService : IToolStockService
     }
 
     // ─── Load Stock: fetch existing tool stock data from DB ────────────────────
+    // Returns actual batch-wise closing stock (ReceiptQuantity - IssueQuantity > 0)
     public async Task<List<ToolStockEnrichedRow>> GetStockDataAsync(int toolGroupId)
     {
         await EnsureOpenAsync();
 
         var rows = await _connection.QueryAsync<ToolStockEnrichedRow>(
             @"SELECT
-                tg.ToolGroupName,
-                t.ToolName,
-                d.ToolID,
-                d.ToolGroupID,
-                d.ReceiptQuantity,
-                d.PurchaseRate,
-                d.BatchNo,
-                d.StockUnit,
-                wm.WarehouseName,
-                wm.BinName,
+                MAX(tg.ToolGroupName) AS ToolGroupName,
+                MAX(TM.ToolName) AS ToolName,
+                ISNULL(TM.ToolID, 0) AS ToolID,
+                ISNULL(TM.ToolGroupID, 0) AS ToolGroupID,
+                ROUND(
+                    ISNULL(SUM(ISNULL(TTD.ReceiptQuantity, 0)), 0)
+                  - ISNULL(SUM(ISNULL(TTD.IssueQuantity, 0)), 0), 2
+                ) AS ReceiptQuantity,
+                MAX(ISNULL(TTD.PurchaseRate, 0)) AS PurchaseRate,
+                MAX(NULLIF(TTD.BatchNo, '')) AS BatchNo,
+                MAX(NULLIF(TM.StockUnit, '')) AS StockUnit,
+                MAX(NULLIF(WM.WarehouseName, '')) AS WarehouseName,
+                MAX(NULLIF(WM.BinName, '')) AS BinName,
                 CAST(1 AS BIT) AS IsValid
-              FROM ToolTransactionDetail d
-              INNER JOIN ToolMaster t ON d.ToolID = t.ToolID
-              LEFT JOIN ToolGroupMaster tg ON d.ToolGroupID = tg.ToolGroupID
-              LEFT JOIN WarehouseMaster wm ON d.WarehouseID = wm.WarehouseID
-              INNER JOIN ToolTransactionMain m ON d.TransactionID = m.TransactionID
-              WHERE d.CompanyID = 2
-                AND d.ToolGroupID = @ToolGroupId
-                AND ISNULL(m.IsDeletedTransaction, 0) = 0
-                AND m.VoucherPrefix = 'PPH'
-              ORDER BY d.TransactionDetailID DESC",
+              FROM ToolMaster AS TM
+              INNER JOIN ToolTransactionDetail AS TTD
+                ON TTD.ToolID = TM.ToolID
+                AND TTD.CompanyID = TM.CompanyID
+                AND ISNULL(TTD.IsDeletedTransaction, 0) = 0
+                AND (ISNULL(TTD.ReceiptQuantity, 0) > 0 OR ISNULL(TTD.IssueQuantity, 0) > 0)
+              INNER JOIN ToolTransactionMain AS TTM
+                ON TTM.TransactionID = TTD.TransactionID
+                AND TTM.CompanyID = TTD.CompanyID
+                AND TTM.VoucherID NOT IN (-8, -9, -11)
+              INNER JOIN WarehouseMaster AS WM
+                ON WM.WarehouseID = TTD.WarehouseID
+                AND WM.CompanyID = TTD.CompanyID
+              LEFT JOIN ToolGroupMaster AS tg
+                ON tg.ToolGroupID = TM.ToolGroupID
+              WHERE TTD.CompanyID = 2
+                AND TM.ToolGroupID = @ToolGroupId
+                AND ISNULL(TM.IsDeletedTransaction, 0) = 0
+              GROUP BY
+                ISNULL(TM.ToolID, 0),
+                ISNULL(TM.ToolGroupID, 0),
+                ISNULL(TTD.ParentTransactionID, 0),
+                ISNULL(TTD.WarehouseID, 0)
+              HAVING ROUND(
+                ISNULL(SUM(ISNULL(TTD.ReceiptQuantity, 0)), 0)
+              - ISNULL(SUM(ISNULL(TTD.IssueQuantity, 0)), 0), 2) > 0
+              ORDER BY ISNULL(TTD.ParentTransactionID, 0)",
             new { ToolGroupId = toolGroupId },
-            commandTimeout: 60);
+            commandTimeout: 120);
 
         return rows.ToList();
     }

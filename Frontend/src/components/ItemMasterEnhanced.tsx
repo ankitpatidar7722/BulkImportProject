@@ -26,6 +26,7 @@ import {
     softDeleteItem
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useLoader } from '../context/LoaderContext';
 
 // AG Grid Imports
 import { AgGridReact } from 'ag-grid-react';
@@ -44,9 +45,16 @@ interface ItemMasterEnhancedProps {
 const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, itemGroupName }) => {
     const { isDark } = useTheme();
     const { showMessage, ModalRenderer } = useMessageModal();
+    const { showLoader, hideLoader } = useLoader();
 
     const [itemData, setItemData] = useState<ItemMasterDto[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+
+    // Sync local isLoading with global loader overlay
+    useEffect(() => {
+        if (isLoading) showLoader();
+        else hideLoader();
+    }, [isLoading]);
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [validationResult, setValidationResult] = useState<ItemValidationResultDto | null>(null);
     const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');

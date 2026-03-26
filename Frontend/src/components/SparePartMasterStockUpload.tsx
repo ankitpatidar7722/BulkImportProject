@@ -6,6 +6,7 @@ import { AllCommunityModule, ModuleRegistry, ColDef, GridApi, RowClassRules, IRo
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { useTheme } from '../context/ThemeContext';
+import { useLoader } from '../context/LoaderContext';
 import {
     enrichSparePartStock, importSparePartStock, validateSparePartStock, loadSparePartStockData,
     getSparePartStockWarehouses, getSparePartStockBins,
@@ -21,11 +22,17 @@ interface SparePartMasterStockUploadProps {
 
 const SparePartMasterStockUpload: React.FC<SparePartMasterStockUploadProps> = ({ onHasDataChange }) => {
     const { isDark } = useTheme();
+    const { showLoader, hideLoader } = useLoader();
 
     // ─── State ───────────────────────────────────────────────────────────────
     const [gridData, setGridData] = useState<SparePartStockEnrichedRow[]>([]);
     const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');
     const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        if (isLoading) showLoader();
+        else hideLoader();
+    }, [isLoading]);
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [gridApi, setGridApi] = useState<GridApi | null>(null);
 

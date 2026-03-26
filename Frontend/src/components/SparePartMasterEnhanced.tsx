@@ -24,6 +24,7 @@ import {
     getUnits
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
+import { useLoader } from '../context/LoaderContext';
 
 // AG Grid Imports
 import { AgGridReact } from 'ag-grid-react';
@@ -37,9 +38,15 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 const SparePartMasterEnhanced: React.FC = () => {
     const { isDark } = useTheme();
     const { showMessage, ModalRenderer } = useMessageModal();
+    const { showLoader, hideLoader } = useLoader();
 
     const [sparePartData, setSparePartData] = useState<SparePartMasterDto[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        if (isLoading) showLoader();
+        else hideLoader();
+    }, [isLoading]);
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [validationResult, setValidationResult] = useState<SparePartValidationResultDto | null>(null);
     const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');

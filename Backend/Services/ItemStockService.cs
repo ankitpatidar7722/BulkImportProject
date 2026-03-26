@@ -1064,32 +1064,58 @@ public class ItemStockService : IItemStockService
     }
 
     // ─── Load Stock: fetch existing stock data from DB ────────────────────────
+    // Returns actual batch-wise closing stock (ReceiptQuantity - IssueQuantity - RejectedQuantity > 0)
     public async Task<List<ItemStockEnrichedRow>> GetStockDataAsync(int itemGroupId)
     {
         await EnsureOpenAsync();
 
         var rows = await _connection.QueryAsync<ItemStockEnrichedRow>(
             @"SELECT
-                im.ItemCode,
-                d.ItemID,
-                d.ReceiptQuantity,
-                d.LandedRate,
-                d.BatchNo,
-                d.StockUnit,
-                wm.WarehouseName,
-                wm.BinName,
+                IM.ItemCode,
+                ISNULL(IM.ItemID, 0) AS ItemID,
+                ROUND(
+                    ISNULL(SUM(ISNULL(ITD.ReceiptQuantity, 0)), 0)
+                  - ISNULL(SUM(ISNULL(ITD.IssueQuantity, 0)), 0)
+                  - ISNULL(SUM(ISNULL(ITD.RejectedQuantity, 0)), 0), 2
+                ) AS ReceiptQuantity,
+                MAX(ISNULL(ITD.LandedRate, 0)) AS LandedRate,
+                MAX(NULLIF(ITD.BatchNo, '')) AS BatchNo,
+                MAX(NULLIF(IM.StockUnit, '')) AS StockUnit,
+                MAX(NULLIF(WM.WarehouseName, '')) AS WarehouseName,
+                MAX(NULLIF(WM.BinName, '')) AS BinName,
                 CAST(1 AS BIT) AS IsValid
-              FROM ItemTransactionDetail d
-              INNER JOIN ItemMaster im ON d.ItemID = im.ItemID
-              LEFT JOIN WarehouseMaster wm ON d.WarehouseID = wm.WarehouseID
-              INNER JOIN ItemTransactionMain m ON d.TransactionID = m.TransactionID
-              WHERE d.ItemGroupID = @GroupId
-                AND d.CompanyID = 2
-                AND ISNULL(m.IsDeletedTransaction, 0) = 0
-                AND m.VoucherPrefix = 'PHY'
-              ORDER BY d.TransactionDetailID DESC",
+              FROM ItemMaster AS IM
+              INNER JOIN ItemTransactionDetail AS ITD
+                ON ITD.ItemID = IM.ItemID
+                AND ITD.CompanyID = IM.CompanyID
+                AND ISNULL(ITD.IsDeletedTransaction, 0) = 0
+                AND (ISNULL(ITD.ReceiptQuantity, 0) > 0 OR ISNULL(ITD.IssueQuantity, 0) > 0)
+              INNER JOIN ItemTransactionMain AS ITM
+                ON ITM.TransactionID = ITD.TransactionID
+                AND ITM.CompanyID = ITD.CompanyID
+                AND ITM.VoucherID NOT IN (-8, -9, -11)
+              INNER JOIN WarehouseMaster AS WM
+                ON WM.WarehouseID = ITD.WarehouseID
+                AND WM.CompanyID = ITD.CompanyID
+              INNER JOIN ItemTransactionBatchDetail AS IBD
+                ON IBD.BatchID = ITD.BatchID
+                AND IBD.CompanyID = ITD.CompanyID
+              WHERE ITD.CompanyID = 2
+                AND IM.ItemGroupID = @GroupId
+                AND ISNULL(IM.IsDeletedTransaction, 0) = 0
+              GROUP BY
+                ISNULL(IM.ItemID, 0),
+                IM.ItemCode,
+                ISNULL(ITD.ParentTransactionID, 0),
+                ISNULL(ITD.BatchID, 0),
+                ISNULL(ITD.WarehouseID, 0)
+              HAVING ROUND(
+                ISNULL(SUM(ISNULL(ITD.ReceiptQuantity, 0)), 0)
+              - ISNULL(SUM(ISNULL(ITD.IssueQuantity, 0)), 0)
+              - ISNULL(SUM(ISNULL(ITD.RejectedQuantity, 0)), 0), 2) > 0
+              ORDER BY ISNULL(ITD.ParentTransactionID, 0)",
             new { GroupId = itemGroupId },
-            commandTimeout: 60);
+            commandTimeout: 120);
 
         return rows.ToList();
     }

@@ -20,7 +20,7 @@ import {
     HSNRowValidation,
     ValidationStatus
 } from '../services/api';
-
+import { useLoader } from '../context/LoaderContext';
 
 // AG Grid Imports
 import { AgGridReact } from 'ag-grid-react';
@@ -37,10 +37,16 @@ interface HSNMasterEnhancedProps {
 
 const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     const { showMessage, ModalRenderer } = useMessageModal();
+    const { showLoader, hideLoader } = useLoader();
 
     const [hsnData, setHsnData] = useState<HSNMasterDto[]>([]);
     const [itemGroups, setItemGroups] = useState<string[]>([]); // Added state for Item Groups
     const [isLoading, setIsLoading] = useState(false);
+
+    useEffect(() => {
+        if (isLoading) showLoader();
+        else hideLoader();
+    }, [isLoading]);
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [validationResult, setValidationResult] = useState<HSNValidationResultDto | null>(null);
     const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');

@@ -540,30 +540,49 @@ public class SparePartMasterStockService : ISparePartMasterStockService
     }
 
     // ─── Load Stock: fetch existing spare part stock data from DB ────────────
+    // Returns actual batch-wise closing stock (ReceiptQuantity - IssueQuantity > 0)
     public async Task<List<SparePartStockEnrichedRow>> GetStockDataAsync()
     {
         await EnsureOpenAsync();
 
         var rows = await _connection.QueryAsync<SparePartStockEnrichedRow>(
             @"SELECT
-                sp.SparePartName,
-                d.SpareID AS SpareID,
-                d.ReceiptQuantity,
-                d.PurchaseRate,
-                d.BatchNo,
-                d.StockUnit,
-                wm.WarehouseName,
-                wm.BinName,
+                MAX(SPM.SparePartName) AS SparePartName,
+                ISNULL(SPM.SparePartID, 0) AS SpareID,
+                ROUND(
+                    ISNULL(SUM(ISNULL(STD.ReceiptQuantity, 0)), 0)
+                  - ISNULL(SUM(ISNULL(STD.IssueQuantity, 0)), 0), 2
+                ) AS ReceiptQuantity,
+                MAX(ISNULL(STD.PurchaseRate, 0)) AS PurchaseRate,
+                MAX(NULLIF(STD.BatchNo, '')) AS BatchNo,
+                MAX(NULLIF(SPM.Unit, '')) AS StockUnit,
+                MAX(NULLIF(WM.WarehouseName, '')) AS WarehouseName,
+                MAX(NULLIF(WM.BinName, '')) AS BinName,
                 CAST(1 AS BIT) AS IsValid
-              FROM SpareTransactionDetail d
-              INNER JOIN SparePartMaster sp ON d.SpareID = sp.SparePartID
-              LEFT JOIN WarehouseMaster wm ON d.WarehouseID = wm.WarehouseID
-              INNER JOIN SpareTransactionMain m ON d.TransactionID = m.TransactionID
-              WHERE d.CompanyID = 2
-                AND ISNULL(m.IsDeletedTransaction, 0) = 0
-                AND m.VoucherPrefix = 'PHY'
-              ORDER BY d.TransactionDetailID DESC",
-            commandTimeout: 60);
+              FROM SparePartMaster AS SPM
+              INNER JOIN SpareTransactionDetail AS STD
+                ON STD.SpareID = SPM.SparePartID
+                AND STD.CompanyID = SPM.CompanyID
+                AND ISNULL(STD.IsDeletedTransaction, 0) = 0
+                AND (ISNULL(STD.ReceiptQuantity, 0) > 0 OR ISNULL(STD.IssueQuantity, 0) > 0)
+              INNER JOIN SpareTransactionMain AS STM
+                ON STM.TransactionID = STD.TransactionID
+                AND STM.CompanyID = STD.CompanyID
+                AND STM.VoucherID NOT IN (-8, -9, -11)
+              INNER JOIN WarehouseMaster AS WM
+                ON WM.WarehouseID = STD.WarehouseID
+                AND WM.CompanyID = STD.CompanyID
+              WHERE STD.CompanyID = 2
+                AND ISNULL(SPM.IsDeletedTransaction, 0) = 0
+              GROUP BY
+                ISNULL(SPM.SparePartID, 0),
+                ISNULL(STD.ParentTransactionID, 0),
+                ISNULL(STD.WarehouseID, 0)
+              HAVING ROUND(
+                ISNULL(SUM(ISNULL(STD.ReceiptQuantity, 0)), 0)
+              - ISNULL(SUM(ISNULL(STD.IssueQuantity, 0)), 0), 2) > 0
+              ORDER BY ISNULL(STD.ParentTransactionID, 0)",
+            commandTimeout: 120);
 
         return rows.ToList();
     }
