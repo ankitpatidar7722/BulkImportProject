@@ -1066,14 +1066,12 @@ public class ItemService : IItemService
         foreach (System.Data.DataColumn col in masterTable.Columns)
             bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
 
-        // Capture the server time just before the bulk copy so the ID retrieval is exact
-        // Subtract 2 seconds to account for datetime precision differences between local and production SQL Server
-        var bulkStartTime = await _connection.ExecuteScalarAsync<DateTime>("SELECT DATEADD(SECOND, -2, GETDATE())");
-
         await bulkCopy.WriteToServerAsync(masterTable);
 
-        // ─── 4. Retrieve newly inserted ItemIDs (match by ItemCode + timestamp) ──
-        // SQL Server has a parameter limit of 2100, so batch the queries
+        // ─── 4. Retrieve newly inserted ItemIDs (match by ItemCode) ──────────
+        // ItemCode is unique per group (prefix + incrementing number), so no timestamp filter needed.
+        // NOTE: The old timestamp filter failed in production because the IIS app server clock
+        // and SQL Server clock were out of sync (different machines).
         var itemCodes = masterRows.Select(r => r.ItemCode).ToList();
         var insertedItems = new Dictionary<string, int>();
 
@@ -1084,9 +1082,8 @@ public class ItemService : IItemService
             var batchResults = await _connection.QueryAsync<(string ItemCode, int ItemID)>(
                 @"SELECT ItemCode, ItemID FROM ItemMaster
                   WHERE ItemCode IN @Codes
-                    AND IsDeletedTransaction = 0
-                    AND CreatedDate >= @BulkStartTime",
-                new { Codes = batch, BulkStartTime = bulkStartTime });
+                    AND IsDeletedTransaction = 0",
+                new { Codes = batch });
 
             foreach (var item in batchResults)
                 insertedItems[item.ItemCode] = item.ItemID;

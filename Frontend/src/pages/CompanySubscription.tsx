@@ -41,6 +41,7 @@ import {
     ModuleGroupModuleRow,
 } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
+import MessageFormatPopup from '../components/MessageFormatPopup';
 
 import DataGrid, {
     Column,
@@ -118,6 +119,9 @@ const CompanySubscription: React.FC = () => {
     const [moduleOriginal, setModuleOriginal] = useState<ModuleSettingsRow[]>([]);
     const [isModuleLoading, setIsModuleLoading] = useState(false);
     const [isModuleSaving, setIsModuleSaving] = useState(false);
+
+    // ─── Format Message State ───
+    const [showFormatMessagePopup, setShowFormatMessagePopup] = useState(false);
 
     // ─── Copy As State ───
     const [showCopyModal, setShowCopyModal] = useState(false);
@@ -958,6 +962,14 @@ const CompanySubscription: React.FC = () => {
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-[#020617] flex flex-col">
             {ModalRenderer}
+            <MessageFormatPopup
+                visible={showFormatMessagePopup}
+                onClose={() => setShowFormatMessagePopup(false)}
+                onLoadMessage={(content) => {
+                    setFormData(prev => ({ ...prev, subscriptionStatusMessage: content }));
+                    setShowFormatMessagePopup(false);
+                }}
+            />
 
             {/* Page Header - Sticky & Responsive */}
             <div className="sticky top-0 z-20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white/80 dark:bg-[#0F172A]/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 px-6 py-4 mb-6 transition-all duration-300 -mx-4 md:-mx-6 lg:-mx-8">
@@ -1249,7 +1261,18 @@ const CompanySubscription: React.FC = () => {
                                             )}
 
                                             <FormField label="Status Description" name="statusDescription" value={formData.statusDescription || ''} onChange={handleFormChange} />
-                                            <FormField label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} />
+                                            <div className="col-span-2 flex items-end gap-2">
+                                                <div className="flex-1">
+                                                    <FormField label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} />
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowFormatMessagePopup(true)}
+                                                    className="flex items-center gap-1.5 h-9 px-3 text-[12px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all whitespace-nowrap"
+                                                >
+                                                    Format Message
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -1533,7 +1556,18 @@ const CompanySubscription: React.FC = () => {
                                                     <FormTextArea label="Status Description" name="statusDescription" value={formData.statusDescription || ''} onChange={handleFormChange} rows={2} />
                                                 </div>
                                                 <div className="md:col-span-2">
-                                                    <FormTextArea label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} rows={2} />
+                                                    <div className="flex items-end gap-2">
+                                                        <div className="flex-1">
+                                                            <FormTextArea label="ERP Message" name="subscriptionStatusMessage" value={formData.subscriptionStatusMessage || ''} onChange={handleFormChange} rows={2} />
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowFormatMessagePopup(true)}
+                                                            className="flex items-center gap-1.5 h-9 px-3 mb-[1px] text-[12px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-all whitespace-nowrap"
+                                                        >
+                                                            Format Message
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

@@ -11,6 +11,12 @@ var builder = WebApplication.CreateBuilder(args);
 // Commented out for IIS deployment - IIS will manage the URL
 // builder.WebHost.UseUrls("http://localhost:5050");
 
+// Increase max request body size to 100 MB for large Excel imports
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 104857600; // 100 MB
+});
+
 // Add services to the container.
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -106,6 +112,7 @@ builder.Services.AddScoped<IModuleAuthorityService, ModuleAuthorityService>();
 builder.Services.AddScoped<ISparePartMasterStockService, SparePartMasterStockService>();
 builder.Services.AddScoped<IToolStockService, ToolStockService>();
 builder.Services.AddScoped<ICompanySubscriptionService, CompanySubscriptionService>();
+builder.Services.AddScoped<IMessageFormatService, MessageFormatService>();
 
 // Configure EPPlus license
 OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;

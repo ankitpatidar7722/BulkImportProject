@@ -1962,3 +1962,51 @@ export const loadToolStockData = async (toolGroupId: number): Promise<ToolStockE
     return response.data;
 };
 
+// ==================== MESSAGE FORMAT MASTER API ====================
+
+export interface MessageFormatDto {
+    messageID: number;
+    messageTitle: string;
+    messageContent: string;
+    isActive: boolean;
+}
+
+export interface MessageFormatListResponse {
+    success: boolean;
+    message: string;
+    data: MessageFormatDto[];
+}
+
+export interface MessageFormatResponse {
+    success: boolean;
+    message: string;
+    data?: MessageFormatDto;
+}
+
+export interface MessageFormatSaveRequest {
+    messageID?: number;
+    messageTitle: string;
+    messageContent: string;
+    isActive?: boolean;
+}
+
+export const getMessageFormats = async (): Promise<MessageFormatListResponse> => {
+    const response = await api.get('/messageformat');
+    return response.data;
+};
+
+export const createMessageFormat = async (data: MessageFormatSaveRequest): Promise<MessageFormatResponse> => {
+    const response = await api.post('/messageformat', data);
+    return response.data;
+};
+
+export const updateMessageFormat = async (data: MessageFormatSaveRequest): Promise<MessageFormatResponse> => {
+    const response = await api.put('/messageformat', data);
+    return response.data;
+};
+
+export const deleteMessageFormat = async (messageId: number): Promise<MessageFormatResponse> => {
+    const response = await api.delete(`/messageformat/${messageId}`);
+    return response.data;
+};
+
