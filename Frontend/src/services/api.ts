@@ -6,6 +6,18 @@ const api = axios.create({
     baseURL: API_BASE_URL,
 });
 
+// ─── Global Loader hooks (set by LoaderProvider) ──────────────────────────
+let _showLoader: ((text?: string) => void) | null = null;
+let _hideLoader: (() => void) | null = null;
+
+export const setLoaderHooks = (
+    show: (text?: string) => void,
+    hide: () => void
+) => {
+    _showLoader = show;
+    _hideLoader = hide;
+};
+
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem('authToken');
     const companyToken = localStorage.getItem('companyToken');
@@ -14,12 +26,21 @@ api.interceptors.request.use((config) => {
     if (activeToken) {
         config.headers.Authorization = `Bearer ${activeToken}`;
     }
+
+    // Show loader for every API call
+    if (_showLoader) _showLoader();
+
     return config;
 });
 
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        if (_hideLoader) _hideLoader();
+        return response;
+    },
     (error) => {
+        if (_hideLoader) _hideLoader();
+
         if (error.response?.status === 401) {
             // Clear all auth data from localStorage
             localStorage.removeItem('authToken');
