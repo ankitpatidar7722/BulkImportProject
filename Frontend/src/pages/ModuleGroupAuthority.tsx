@@ -26,7 +26,7 @@ const ModuleGroupAuthority: React.FC = () => {
     const { showMessage, ModalRenderer } = useMessageModal();
 
     // ─── State ───
-    const [groupAppName, setGroupAppName] = useState<string>('estimoprime');
+    const [groupAppName, setGroupAppName] = useState<string>('');
     const [moduleGroups, setModuleGroups] = useState<string[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<string>('');
     const [groupModules, setGroupModules] = useState<ModuleGroupModuleRow[]>([]);
@@ -46,6 +46,11 @@ const ModuleGroupAuthority: React.FC = () => {
 
     // ─── Handlers ───
     const loadModuleGroups = useCallback(async (appName: string) => {
+        if (!appName) {
+            setModuleGroups([]);
+            setSelectedGroup('');
+            return;
+        }
         try {
             const res = await getModuleGroups(appName);
             if (res.success) {
@@ -332,6 +337,7 @@ const ModuleGroupAuthority: React.FC = () => {
                                     onChange={(e) => setGroupAppName(e.target.value)}
                                     className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 outline-none transition-all cursor-pointer"
                                 >
+                                    <option value="" hidden disabled>Select Application Name</option>
                                     <option value="estimoprime">Estimoprime</option>
                                     <option value="PrintudeERP">PrintudeERP</option>
                                     <option value="MultiUnit">MultiUnit</option>
@@ -347,8 +353,9 @@ const ModuleGroupAuthority: React.FC = () => {
                                     value={selectedGroup}
                                     onChange={(e) => setSelectedGroup(e.target.value)}
                                     className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 outline-none transition-all cursor-pointer"
-                                    disabled={moduleGroups.length === 0}
+                                    disabled={!groupAppName || moduleGroups.length === 0}
                                 >
+                                    <option value="" hidden disabled>Select Module Group</option>
                                     {moduleGroups.map(g => (
                                         <option key={g} value={g}>{g}</option>
                                     ))}
