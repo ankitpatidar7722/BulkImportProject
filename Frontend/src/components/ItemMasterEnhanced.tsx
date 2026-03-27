@@ -1363,21 +1363,14 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         e.preventDefault();
         setIsLoading(true);
         try {
-            let deletedCount = 0;
-            try {
-                const result = await clearAllItemData(
-                    clearCredentials.username,
-                    clearCredentials.password,
-                    clearCredentials.reason,
-                    itemGroupId
-                );
-                deletedCount = result.deletedCount || 0;
-            } catch (clearError: any) {
-                if (clearError?.response?.status === 401 || clearError?.response?.status === 403) {
-                    throw clearError;
-                }
-                deletedCount = 0;
-            }
+            const result = await clearAllItemData(
+                clearCredentials.username,
+                clearCredentials.password,
+                clearCredentials.reason,
+                itemGroupId
+            );
+
+            const deletedCount = result.deletedCount || 0;
 
             if (deletedCount > 0 && clearActionType === 'clearOnly') {
                 setClearSuccessInfo({ rowCount: deletedCount, groupName: `${itemGroupName} Item Group` });
@@ -1388,8 +1381,6 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             setValidationResult(null);
             setMode('idle');
 
-            setIsLoading(false);
-
             if (clearActionType === 'freshUpload' && fileInputRef.current) {
                 fileInputRef.current.value = '';
                 fileInputRef.current.click();
@@ -1397,10 +1388,12 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
             handleClearCancel();
         } catch (error: any) {
-            if (error?.response?.status === 401) {
-                showError('❌ Invalid credentials');
+            if (error?.response?.status === 401 || error?.response?.status === 403) {
+                showError('❌ Invalid credentials. Please check your username and password.');
+                // Don't clear the modal - let user try again
             } else {
-                showError('Failed to clear data');
+                showError('❌ Failed to clear data. Please try again.');
+                handleClearCancel();
             }
         } finally {
             setIsLoading(false);
@@ -2812,6 +2805,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         paginationPageSizeSelector={[1000, 2000, 5000]}
                         tooltipShowDelay={300}
                         tooltipInteraction={true}
+                        enableCellTextSelection={true}
                         overlayNoRowsTemplate='<span class="text-gray-500 dark:text-gray-400 text-lg">No records found</span>'
                     />
                 </div>

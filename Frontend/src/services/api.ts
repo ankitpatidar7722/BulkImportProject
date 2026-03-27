@@ -4,6 +4,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5050
 
 const api = axios.create({
     baseURL: API_BASE_URL,
+    timeout: 300000, // 5 minutes for large bulk operations
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
 });
 
 // ─── Global Loader hooks (set by LoaderProvider) ──────────────────────────
@@ -42,15 +45,20 @@ api.interceptors.response.use(
         if (_hideLoader) _hideLoader();
 
         if (error.response?.status === 401) {
-            // Clear all auth data from localStorage
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('companyToken');
-            localStorage.removeItem('bulkimport_auth');
+            // Check if this request should skip auth redirect (e.g., clear-all-data with wrong credentials)
+            const skipRedirect = error.config?.headers?.['X-Skip-Auth-Redirect'] === 'true';
 
-            // Dispatch custom event for AuthContext to listen
-            window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+            if (!skipRedirect) {
+                // Clear all auth data from localStorage
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('companyToken');
+                localStorage.removeItem('bulkimport_auth');
 
-            console.warn('Unauthorized access. Session expired - redirecting to login.');
+                // Dispatch custom event for AuthContext to listen
+                window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+
+                console.warn('Unauthorized access. Session expired - redirecting to login.');
+            }
         }
         return Promise.reject(error);
     }
@@ -400,6 +408,10 @@ export const clearAllLedgerData = async (ledgerGroupId: number, username: string
         username,
         password,
         reason
+    }, {
+        headers: {
+            'X-Skip-Auth-Redirect': 'true'
+        }
     });
     return response.data;
 };
@@ -809,6 +821,10 @@ export const clearAllSparePartData = async (username: string, password: string, 
         username,
         password,
         reason
+    }, {
+        headers: {
+            'X-Skip-Auth-Redirect': 'true'
+        }
     });
     return response.data;
 };
@@ -946,6 +962,10 @@ export const clearAllItemData = async (username: string, password: string, reaso
         password,
         reason,
         itemGroupId
+    }, {
+        headers: {
+            'X-Skip-Auth-Redirect': 'true'
+        }
     });
     return response.data;
 };
@@ -1061,6 +1081,10 @@ export const clearAllToolData = async (username: string, password: string, reaso
         password,
         reason,
         toolGroupId
+    }, {
+        headers: {
+            'X-Skip-Auth-Redirect': 'true'
+        }
     });
     return response.data;
 };
@@ -2028,6 +2052,87 @@ export const updateMessageFormat = async (data: MessageFormatSaveRequest): Promi
 
 export const deleteMessageFormat = async (messageId: number): Promise<MessageFormatResponse> => {
     const response = await api.delete(`/messageformat/${messageId}`);
+    return response.data;
+};
+
+// ==================== ACTIVITY LOG ====================
+
+export interface ActivityLogDto {
+    activityLogID: number;
+    webUserId?: number;
+    webUserName: string;
+    loginType: string;
+    actionType: string;
+    moduleName: string;
+    entityName?: string;
+    entityID?: number;
+    actionDescription: string;
+    oldValue?: string;
+    newValue?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    createdDate: string;
+    isSuccess: boolean;
+    errorMessage?: string;
+}
+
+export interface ActivityLogFilterRequest {
+    webUserId?: number;
+    webUserName?: string;
+    actionType?: string;
+    entityName?: string;
+    entityID?: number;
+    startDate?: string;
+    endDate?: string;
+    pageNumber?: number;
+    pageSize?: number;
+}
+
+export interface ActivityLogResponse {
+    logs: ActivityLogDto[];
+    totalCount: number;
+    pageNumber: number;
+    pageSize: number;
+    totalPages: number;
+}
+
+export interface ActivityLogSummary {
+    totalActivities: number;
+    todayActivities: number;
+    thisWeekActivities: number;
+    failedActivities: number;
+    topActions: ActionTypeCount[];
+    topUsers: UserActivityCount[];
+}
+
+export interface ActionTypeCount {
+    actionType: string;
+    count: number;
+}
+
+export interface UserActivityCount {
+    webUserId?: number;
+    webUserName: string;
+    count: number;
+}
+
+export const getActivityLogs = async (filter: ActivityLogFilterRequest): Promise<ActivityLogResponse> => {
+    const response = await api.post('/activitylog/search', filter);
+    return response.data;
+};
+
+export const getActivityLogById = async (id: number): Promise<ActivityLogDto> => {
+    const response = await api.get(`/activitylog/${id}`);
+    return response.data;
+};
+
+export const getEntityActivityLogs = async (entityName: string, entityId: number): Promise<ActivityLogDto[]> => {
+    const response = await api.get(`/activitylog/entity/${entityName}/${entityId}`);
+    return response.data;
+};
+
+export const getActivitySummary = async (): Promise<ActivityLogSummary> => {
+    const response = await api.get('/activitylog/summary');
     return response.data;
 };
 

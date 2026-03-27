@@ -617,15 +617,19 @@ public class ItemStockService : IItemStockService
         {
             await EnsureOpenAsync();
 
-            // ─── Validate credentials against UserMaster ─────────────────────────
+            // ─── Validate credentials - Use same password encoding as login ──────
+            var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
+
             var userCheckQuery = @"
                 SELECT COUNT(1)
                 FROM UserMaster
-                WHERE UserName = @Username AND ISNULL(Password, '') = @Password";
+                WHERE UserName = @Username
+                  AND ISNULL(Password, '') = @Password
+                  AND ISNULL(IsBlocked, 0) = 0";
 
             var isValidUser = await _connection.ExecuteScalarAsync<bool>(
                 userCheckQuery,
-                new { Username = username, Password = password ?? string.Empty }
+                new { Username = username, Password = encodedPassword }
             );
 
             if (!isValidUser)
@@ -828,15 +832,19 @@ public class ItemStockService : IItemStockService
         {
             await EnsureOpenAsync();
 
-            // ─── Validate credentials against UserMaster ─────────────────────────
+            // ─── Validate credentials - Use same password encoding as login ──────
+            var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
+
             var userCheckQuery = @"
                 SELECT COUNT(1)
                 FROM UserMaster
-                WHERE UserName = @Username AND ISNULL(Password, '') = @Password";
+                WHERE UserName = @Username
+                  AND ISNULL(Password, '') = @Password
+                  AND ISNULL(IsBlocked, 0) = 0";
 
             var isValidUser = await _connection.ExecuteScalarAsync<bool>(
                 userCheckQuery,
-                new { Username = username, Password = password ?? string.Empty }
+                new { Username = username, Password = encodedPassword }
             );
 
             if (!isValidUser)

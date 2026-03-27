@@ -1187,6 +1187,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                         paginationPageSizeSelector={[1000, 2000, 5000]}
                         tooltipShowDelay={300}
                         tooltipInteraction={true}
+                        enableCellTextSelection={true}
                         overlayNoRowsTemplate='<span class="text-gray-500 dark:text-gray-400 text-lg">No records found</span>'
                     />
                 </div>

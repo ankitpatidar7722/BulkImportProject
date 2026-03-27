@@ -41,19 +41,28 @@ const DropdownCellRenderer: React.FC<any> = (params) => {
     const value = params.value;
     const isEmpty = value === null || value === undefined || value === '';
 
+    // Determine if the cell is currently editable
+    let isEditable = false;
+    if (params.colDef?.editable !== undefined) {
+        isEditable =
+            typeof params.colDef.editable === 'function'
+                ? params.colDef.editable(params)
+                : params.colDef.editable;
+    }
+
     return (
         <div
             onClick={handleClick}
-            title={isEmpty ? 'Click to select' : String(value)}
+            title={isEmpty ? '' : String(value)}
             style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 width: '100%',
                 height: '100%',
-                cursor: 'pointer',
+                cursor: isEditable ? 'pointer' : 'default',
                 paddingRight: '2px',
-                userSelect: 'none',
+                userSelect: 'text',
                 gap: '4px',
             }}
         >
@@ -64,23 +73,25 @@ const DropdownCellRenderer: React.FC<any> = (params) => {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    color: isEmpty ? '#9ca3af' : 'inherit',
-                    fontStyle: isEmpty ? 'italic' : 'normal',
+                    color: 'inherit',
                     fontSize: '13px',
+                    userSelect: 'text',
                 }}
             >
-                {isEmpty ? 'Select...' : String(value)}
+                {isEmpty ? '' : String(value)}
             </span>
 
-            {/* Always-visible dropdown chevron */}
-            <ChevronDown
-                size={13}
-                style={{
-                    flexShrink: 0,
-                    color: '#6b7280',
-                    opacity: 0.8,
-                }}
-            />
+            {/* Dropdown chevron only if editable */}
+            {isEditable && (
+                <ChevronDown
+                    size={13}
+                    style={{
+                        flexShrink: 0,
+                        color: '#6b7280',
+                        opacity: 0.8,
+                    }}
+                />
+            )}
         </div>
     );
 };

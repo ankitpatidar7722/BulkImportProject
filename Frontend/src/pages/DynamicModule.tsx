@@ -64,7 +64,8 @@ const DynamicModule: React.FC = () => {
     const handleSave = async () => {
         setSaving(true);
         try {
-            const payload: ModuleAuthoritySaveDto[] = modules.map(m => ({
+            const changedModules = modules.filter(m => m._status !== m.status);
+            const payload: ModuleAuthoritySaveDto[] = changedModules.map(m => ({
                 moduleHeadName: m.moduleHeadName,
                 moduleDisplayName: m.moduleDisplayName,
                 status: m._status

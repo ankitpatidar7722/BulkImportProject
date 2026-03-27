@@ -9,7 +9,8 @@
       "Bash(powershell -ExecutionPolicy Bypass -File publish-iis.ps1:*)",
       "Bash(dotnet publish:*)",
       "Bash(dotnet clean:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

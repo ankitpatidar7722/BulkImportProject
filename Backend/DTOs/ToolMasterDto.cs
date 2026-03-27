@@ -69,10 +69,8 @@ public class ToolRowValidation
 
 public class ImportToolsRequest
 {
-    [Required]
     public List<ToolMasterDto> Tools { get; set; } = new();
 
-    [Required]
     public int ToolGroupId { get; set; }
 }
 

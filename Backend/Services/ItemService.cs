@@ -49,8 +49,8 @@ public class ItemService : IItemService
                     ItemGroupID         = Int32("ItemGroupID"),
                     ItemGroupName       = Str("ItemGroupName"),
                     ProductHSNID        = Int32("ProductHSNID"),
-                    HSNGroup            = Str("HSNGroup") ?? Str("ProductHSNName"),
-                    ProductHSNName      = Str("ProductHSNName") ?? Str("HSNGroup"),
+                    HSNGroup            = Str("DisplayName") ?? Str("HSNGroup") ?? Str("ProductHSNName"),
+                    ProductHSNName      = Str("DisplayName") ?? Str("ProductHSNName") ?? Str("HSNGroup"),
                     HSNCode             = Str("HSNCode"),
                     StockUnit           = Str("StockUnit"),
                     PurchaseUnit        = Str("PurchaseUnit"),
@@ -503,24 +503,40 @@ public class ItemService : IItemService
                            string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(manufA, manufB, StringComparison.OrdinalIgnoreCase);
                 }
-                else if (itemGroupId == 13) // ROLL: Quality + GSM + Manufacturer + SizeW
+                else if (itemGroupId == 13) // ROLL: ItemType + Quality + Manufacturer + ManufacturerItemCode + SizeW + GSM + ReleaseGSM + AdhesiveGSM
                 {
+                    var itemTypeA = a.ItemType?.Trim() ?? "";
+                    var itemTypeB = b.ItemType?.Trim() ?? "";
+
                     var qualityA = a.Quality?.Trim() ?? "";
                     var qualityB = b.Quality?.Trim() ?? "";
-
-                    var gsmA = a.GSM?.ToString() ?? "";
-                    var gsmB = b.GSM?.ToString() ?? "";
 
                     var manufA = a.Manufecturer?.Trim() ?? "";
                     var manufB = b.Manufecturer?.Trim() ?? "";
 
+                    var manufItemCodeA = a.ManufecturerItemCode?.Trim() ?? "";
+                    var manufItemCodeB = b.ManufecturerItemCode?.Trim() ?? "";
+
                     var sizeWA = a.SizeW?.ToString() ?? "";
                     var sizeWB = b.SizeW?.ToString() ?? "";
 
-                    return string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
-                           string.Equals(gsmA, gsmB, StringComparison.OrdinalIgnoreCase) &&
+                    var gsmA = a.GSM?.ToString() ?? "";
+                    var gsmB = b.GSM?.ToString() ?? "";
+
+                    var releaseGSMA = a.ReleaseGSM?.ToString() ?? "";
+                    var releaseGSMB = b.ReleaseGSM?.ToString() ?? "";
+
+                    var adhesiveGSMA = a.AdhesiveGSM?.ToString() ?? "";
+                    var adhesiveGSMB = b.AdhesiveGSM?.ToString() ?? "";
+
+                    return string.Equals(itemTypeA, itemTypeB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(manufA, manufB, StringComparison.OrdinalIgnoreCase) &&
-                           string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase);
+                           string.Equals(manufItemCodeA, manufItemCodeB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(gsmA, gsmB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(releaseGSMA, releaseGSMB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(adhesiveGSMA, adhesiveGSMB, StringComparison.OrdinalIgnoreCase);
                 }
                 else // PAPER (default): Quality + GSM + Manufacturer + Finish + ItemSize
                 {
@@ -1246,13 +1262,17 @@ public class ItemService : IItemService
     {
         if (_connection.State != System.Data.ConnectionState.Open) await _connection.OpenAsync();
 
-        // 1. Validate Credentials
-        var userCheckQuery = @"
-            SELECT COUNT(1) 
-            FROM UserMaster 
-            WHERE UserName = @Username AND ISNULL(Password, '') = @Password";
+        // 1. Validate Credentials - Use same password encoding as login
+        var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
 
-        var isValidUser = await _connection.ExecuteScalarAsync<bool>(userCheckQuery, new { Username = username, Password = password ?? string.Empty });
+        var userCheckQuery = @"
+            SELECT COUNT(1)
+            FROM UserMaster
+            WHERE UserName = @Username
+              AND ISNULL(Password, '') = @Password
+              AND ISNULL(IsBlocked, 0) = 0";
+
+        var isValidUser = await _connection.ExecuteScalarAsync<bool>(userCheckQuery, new { Username = username, Password = encodedPassword });
 
         if (!isValidUser)
         {

@@ -8,16 +8,87 @@ namespace Backend.Services;
 public class CompanySubscriptionService : ICompanySubscriptionService
 {
     private readonly IConfiguration _config;
+    private readonly IActivityLogService _activityLogService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public CompanySubscriptionService(IConfiguration config)
+    public CompanySubscriptionService(
+        IConfiguration config,
+        IActivityLogService activityLogService,
+        IHttpContextAccessor httpContextAccessor)
     {
         _config = config;
+        _activityLogService = activityLogService;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     private SqlConnection GetIndusConnection()
     {
         var connString = _config.GetConnectionString("IndusConnection");
         return new SqlConnection(connString);
+    }
+
+    /// <summary>
+    /// Helper method to log activity
+    /// </summary>
+    private async Task LogActivityAsync(
+        string actionType,
+        string actionDescription,
+        string? entityName = null,
+        int? entityID = null,
+        string? oldValue = null,
+        string? newValue = null,
+        bool isSuccess = true,
+        string? errorMessage = null)
+    {
+        try
+        {
+            var httpContext = _httpContextAccessor.HttpContext;
+
+            // Try to get username from ClaimTypes.Name (standard claim) or "userName" claim
+            var userName = httpContext?.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                        ?? httpContext?.User?.FindFirst("userName")?.Value
+                        ?? "Unknown";
+
+            var ipAddress = httpContext?.Connection?.RemoteIpAddress?.ToString();
+            var userAgent = httpContext?.Request?.Headers["User-Agent"].ToString();
+
+            // Get WebUserId from CompanyWebUser table
+            int? webUserId = null;
+            try
+            {
+                using var indusConn = GetIndusConnection();
+                webUserId = await indusConn.ExecuteScalarAsync<int?>(
+                    "SELECT WebUserId FROM CompanyWebUser WHERE WebUserName = @UserName",
+                    new { UserName = userName });
+            }
+            catch
+            {
+                // If we can't get WebUserId, just log with username
+            }
+
+            var request = new CreateActivityLogRequest
+            {
+                WebUserId = webUserId,
+                WebUserName = userName,
+                ActionType = actionType,
+                EntityName = entityName,
+                EntityID = entityID,
+                ActionDescription = actionDescription,
+                OldValue = oldValue,
+                NewValue = newValue,
+                IPAddress = ipAddress,
+                UserAgent = userAgent,
+                IsSuccess = isSuccess,
+                ErrorMessage = errorMessage
+            };
+
+            await _activityLogService.LogActivityAsync(request);
+        }
+        catch (Exception ex)
+        {
+            // Log but don't throw - logging failures shouldn't break the main operation
+            Console.WriteLine($"[ActivityLog] Failed to log activity: {ex.Message}");
+        }
     }
 
     public async Task<CompanySubscriptionListResponse> GetAllAsync()
@@ -30,6 +101,12 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             var data = (await conn.QueryAsync<CompanySubscriptionDto>(query)).ToList();
 
             Console.WriteLine($"[CompanySubscription] GetAll returned {data.Count} rows");
+
+            // Log activity
+            await LogActivityAsync(
+                actionType: "View",
+                actionDescription: $"Viewed company subscription list ({data.Count} records)"
+            );
 
             return new CompanySubscriptionListResponse { Success = true, Data = data };
         }
@@ -91,6 +168,20 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             Console.WriteLine($"[CompanySubscription] Created CompanyUserID={request.CompanyUserID}, Company={request.CompanyName}");
 
+            // Log activity
+            await LogActivityAsync(
+                actionType: "Create",
+                actionDescription: $"Created new company subscription: {request.CompanyName} (ID: {request.CompanyUserID})",
+                entityName: "Subscription",
+                newValue: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    request.CompanyUserID,
+                    request.CompanyName,
+                    request.ApplicationName,
+                    request.SubscriptionStatus
+                })
+            );
+
             return await GetByKeyAsync(request.CompanyUserID);
         }
         catch (Exception ex)
@@ -107,6 +198,10 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             using var conn = GetIndusConnection();
 
             var keyToUpdate = request.OriginalCompanyUserID ?? request.CompanyUserID;
+
+            // Get old values for logging
+            var oldDataQuery = "SELECT * FROM Indus_Company_Authentication_For_Web_Modules WHERE CompanyUserID = @CompanyUserID";
+            var oldData = await conn.QueryFirstOrDefaultAsync<CompanySubscriptionDto>(oldDataQuery, new { CompanyUserID = keyToUpdate });
 
             var query = @"
                 UPDATE Indus_Company_Authentication_For_Web_Modules SET
@@ -176,6 +271,74 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             Console.WriteLine($"[CompanySubscription] Updated CompanyUserID={request.CompanyUserID}, Company={request.CompanyName}");
 
+            // Detect which fields changed
+            var changedFields = new List<string>();
+            if (oldData != null)
+            {
+                if (oldData.CompanyUserID != request.CompanyUserID) changedFields.Add("Company User ID");
+                if (oldData.Password != request.Password) changedFields.Add("Password");
+                if (oldData.Conn_String != request.Conn_String) changedFields.Add("Connection String");
+                if (oldData.CompanyName != request.CompanyName) changedFields.Add("Company Name");
+                if (oldData.ApplicationName != request.ApplicationName) changedFields.Add("Application Name");
+                if (oldData.ApplicationVersion != request.ApplicationVersion) changedFields.Add("Application Version");
+                if (oldData.SubscriptionStatus != request.SubscriptionStatus) changedFields.Add("Subscription Status");
+                if (oldData.StatusDescription != request.StatusDescription) changedFields.Add("Status Description");
+                if (oldData.SubscriptionStatusMessage != request.SubscriptionStatusMessage) changedFields.Add("Subscription Status Message");
+                if (oldData.Address != request.Address) changedFields.Add("Address");
+                if (oldData.Country != request.Country) changedFields.Add("Country");
+                if (oldData.State != request.State) changedFields.Add("State");
+                if (oldData.City != request.City) changedFields.Add("City");
+                if (oldData.CompanyCode != request.CompanyCode) changedFields.Add("Company Code");
+                if (oldData.CompanyUniqueCode != request.CompanyUniqueCode) changedFields.Add("Company Unique Code");
+                if (oldData.GSTIN != request.GSTIN) changedFields.Add("GSTIN");
+                if (oldData.Email != request.Email) changedFields.Add("Email");
+                if (oldData.Mobile != request.Mobile) changedFields.Add("Mobile");
+                if (oldData.LoginAllowed != request.LoginAllowed) changedFields.Add("Login Allowed");
+                if (oldData.FromDate != request.FromDate) changedFields.Add("From Date");
+                if (oldData.ToDate != request.ToDate) changedFields.Add("To Date");
+                if (oldData.PaymentDueDate != request.PaymentDueDate) changedFields.Add("Payment Due Date");
+                if (oldData.FYear != request.FYear) changedFields.Add("Financial Year");
+                if (oldData.IsMessageActive != request.IsMessageActive) changedFields.Add("Message Active");
+                if (oldData.MessageDurationValue != request.MessageDurationValue) changedFields.Add("Message Duration Value");
+                if (oldData.MessageDurationType != request.MessageDurationType) changedFields.Add("Message Duration Type");
+            }
+
+            // Build description with changed fields
+            var fieldsChanged = changedFields.Count > 0
+                ? $"Fields updated: {string.Join(", ", changedFields)}"
+                : "No changes detected";
+
+            var actionDesc = $"Updated company subscription: {request.CompanyName} (ID: {request.CompanyUserID}) - {fieldsChanged}";
+
+            // Log activity with old and new values
+            await LogActivityAsync(
+                actionType: "Update",
+                actionDescription: actionDesc,
+                entityName: "Subscription",
+                oldValue: oldData != null ? System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    oldData.CompanyUserID,
+                    oldData.CompanyName,
+                    oldData.SubscriptionStatus,
+                    oldData.IsMessageActive,
+                    oldData.MessageDurationValue,
+                    oldData.Email,
+                    oldData.Mobile,
+                    oldData.Address
+                }) : null,
+                newValue: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    request.CompanyUserID,
+                    request.CompanyName,
+                    request.SubscriptionStatus,
+                    request.IsMessageActive,
+                    request.MessageDurationValue,
+                    request.Email,
+                    request.Mobile,
+                    request.Address
+                })
+            );
+
             return await GetByKeyAsync(request.CompanyUserID);
         }
         catch (Exception ex)
@@ -190,6 +353,11 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         try
         {
             using var conn = GetIndusConnection();
+
+            // Get data before deleting for logging
+            var oldDataQuery = "SELECT * FROM Indus_Company_Authentication_For_Web_Modules WHERE CompanyUserID = @CompanyUserID";
+            var oldData = await conn.QueryFirstOrDefaultAsync<CompanySubscriptionDto>(oldDataQuery, new { CompanyUserID = companyUserID });
+
             var query = "DELETE FROM Indus_Company_Authentication_For_Web_Modules WHERE CompanyUserID = @CompanyUserID";
             var affected = await conn.ExecuteAsync(query, new { CompanyUserID = companyUserID });
 
@@ -197,6 +365,19 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 return new CompanySubscriptionResponse { Success = false, Message = "Record not found." };
 
             Console.WriteLine($"[CompanySubscription] Deleted CompanyUserID={companyUserID}");
+
+            // Log activity
+            await LogActivityAsync(
+                actionType: "Delete",
+                actionDescription: $"Deleted company subscription: {oldData?.CompanyName ?? companyUserID} (ID: {companyUserID})",
+                entityName: "Subscription",
+                oldValue: oldData != null ? System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    oldData.CompanyUserID,
+                    oldData.CompanyName,
+                    oldData.ApplicationName
+                }) : null
+            );
 
             return new CompanySubscriptionResponse { Success = true, Message = "Record deleted successfully." };
         }
@@ -453,6 +634,20 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             // Build connection string for the new DB
             var connString = $"Password={DbPassword};Persist Security Info=True;User ID=indus;Initial Catalog={newDbName};Data Source={targetServer}";
+
+            // Log activity
+            await LogActivityAsync(
+                actionType: "Setup Database",
+                actionDescription: $"Setup database '{newDbName}' for client '{request.ClientName}' on server '{targetServer}' using backup '{request.BackupDatabaseName}'",
+                entityName: "Database",
+                newValue: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    request.DatabaseName,
+                    request.Server,
+                    request.ApplicationName,
+                    request.ClientName
+                })
+            );
 
             return new SetupDatabaseResponse
             {
@@ -1040,6 +1235,19 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
                 transaction.Commit();
                 Console.WriteLine($"[CopyModules] Copied {copiedCount} modules (+ UserModuleAuthentication) to target {request.TargetCompanyUserID}");
+
+                // Log activity
+                await LogActivityAsync(
+                    actionType: "Copy Modules",
+                    actionDescription: $"Copied {copiedCount} modules to client {request.TargetCompanyUserID}",
+                    entityName: "Modules",
+                    newValue: System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        request.TargetCompanyUserID,
+                        ModulesCopied = copiedCount
+                    })
+                );
+
                 return new CopyModulesResponse
                 {
                     Success = true,
@@ -1097,6 +1305,13 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 return new CompleteSetupResponse { Success = false, Message = "Subscription record not found." };
 
             Console.WriteLine($"[CompleteSetup] SUCCESS for CompanyUserID={sub.CompanyUserID}");
+
+            // Log activity
+            await LogActivityAsync(
+                actionType: "Complete Setup",
+                actionDescription: $"Completed setup for CompanyUserID: {sub.CompanyUserID}",
+                entityName: "Setup"
+            );
 
             return new CompleteSetupResponse
             {

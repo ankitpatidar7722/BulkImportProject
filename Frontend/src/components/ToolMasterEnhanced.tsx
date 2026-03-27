@@ -472,20 +472,20 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             editable: () => mode === 'preview' || mode === 'validated',
             sortable: true, filter: true, resizable: true, minWidth: 50,
             tooltipValueGetter: (params: any) => {
-                const rowIndex = toolData.indexOf(params.data);
-                if (rowIndex === -1) return null;
+                const rowIndex = params.data?._rowIndex;
+                if (rowIndex === undefined || rowIndex === null) return null;
                 const rowValidation = validationMap.get(rowIndex);
                 if (!rowValidation) return null;
                 const cellVal = findToolCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
-                if (cellVal) return cellVal.validationMessage;
+                if (cellVal) return null; // Removed validation message tooltip as requested
                 if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
                     return rowValidation.errorMessage || 'Duplicate row detected';
                 }
                 return null;
             },
             cellStyle: (params: any): Record<string, string> | null => {
-                const rowIndex = toolData.indexOf(params.data);
-                if (rowIndex === -1) return null;
+                const rowIndex = params.data?._rowIndex;
+                if (rowIndex === undefined || rowIndex === null) return null;
 
                 const colors = {
                     duplicate: isDark ? 'rgba(220, 38, 38, 0.2)' : '#fee2e2',
@@ -515,18 +515,18 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 return null;
             }
         };
-    }, [mode, validationMap, isDark, toolData, findToolCellValidation]);
+    }, [mode, validationMap, isDark, findToolCellValidation]);
 
     const onCellValueChanged = useCallback((params: any) => {
         const { colDef, newValue, data } = params;
-        const rowIndex = toolData.indexOf(data);
-        if (rowIndex === -1) return;
+        const rowIndex = data?._rowIndex;
+        if (rowIndex === undefined || rowIndex === null) return;
         setToolData(prevData => {
             const newData = [...prevData];
             newData[rowIndex] = { ...newData[rowIndex], [colDef.field as keyof ToolMasterDto]: newValue };
             return newData;
         });
-    }, [toolData]);
+    }, []);
 
     const onSelectionChanged = useCallback((event: any) => {
         const selectedNodes = event.api.getSelectedNodes();
@@ -536,17 +536,17 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
     const rowClassRules = useMemo<RowClassRules>(() => ({
         'bg-red-50 dark:bg-red-900/10': (params) => {
             if (validationMap.size === 0) return false;
-            const rowIndex = toolData.indexOf(params.data);
-            if (rowIndex === -1) return false;
+            const rowIndex = params.data?._rowIndex;
+            if (rowIndex === undefined || rowIndex === null) return false;
             return validationMap.get(rowIndex)?.rowStatus === ValidationStatus.Duplicate;
         },
         'font-medium': (params) => {
             if (validationMap.size === 0) return false;
-            const rowIndex = toolData.indexOf(params.data);
-            if (rowIndex === -1) return false;
+            const rowIndex = params.data?._rowIndex;
+            if (rowIndex === undefined || rowIndex === null) return false;
             return validationMap.get(rowIndex)?.rowStatus === ValidationStatus.Duplicate;
         }
-    }), [validationMap, toolData]);
+    }), [validationMap]);
 
     const onGridReady = (params: any) => { gridApiRef.current = params.api; };
 
@@ -554,8 +554,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
 
     const doesExternalFilterPass = useCallback((node: IRowNode) => {
         if (!validationResult || filterType === 'all') return true;
-        const rowIndex = toolData.indexOf(node.data);
-        if (rowIndex === -1) return true;
+        const rowIndex = node.data?._rowIndex;
+        if (rowIndex === undefined || rowIndex === null) return true;
         const rowValidation = validationMap.get(rowIndex);
         if (!rowValidation) return false;
         switch (filterType) {
@@ -567,11 +567,11 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             case 'invalid': return rowValidation.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
             default: return true;
         }
-    }, [validationResult, validationMap, filterType, toolData]);
+    }, [validationResult, validationMap, filterType]);
 
     useEffect(() => {
         if (gridApiRef.current) gridApiRef.current.redrawRows();
-    }, [validationResult, toolData, validationMap]);
+    }, [validationResult]);
 
     useEffect(() => {
         if (gridApiRef.current) gridApiRef.current.onFilterChanged();
@@ -591,6 +591,11 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         setIsLoading(true);
         try {
             const data = await getAllTools(toolGroupId);
+            // Auto-convert PurchaseRate 0 → 1 and assign _rowIndex for O(1) lookups
+            data.forEach((t: any, idx: number) => {
+                if (t.purchaseRate === 0) t.purchaseRate = 1;
+                t._rowIndex = idx;
+            });
             setToolData(data);
             setMode(data.length > 0 ? 'loaded' : 'idle');
             setValidationResult(null);
@@ -856,6 +861,12 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                     }
                 });
 
+                // Auto-convert PurchaseRate 0 → 1 and assign _rowIndex for O(1) lookups
+                tools.forEach((t: any, idx: number) => {
+                    if (t.purchaseRate === 0) t.purchaseRate = 1;
+                    t._rowIndex = idx;
+                });
+
                 setToolData(tools);
                 setMode('preview');
                 showMessage('success', 'File Loaded', `Successfully loaded ${tools.length} row(s) from the Excel file. Please click "Check Validation" before importing.`);
@@ -870,7 +881,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
     // Clean tool data for API — extracts invalid numeric/bool values into rawValues
     const cleanToolDataForApi = useCallback((data: any[]) => {
         const numericFields = new Set(['sizeL', 'sizeW', 'sizeH', 'purchaseRate', 'purchaseOrderQuantity', 'minimumStockQty', 'circumferenceMM', 'circumferenceInch', 'bcm', 'lpi', 'aroundGap', 'acrossGap', 'estimateRate']);
-        const intFields = new Set(['upsAround', 'upsAcross', 'totalUps', 'shelfLife', 'noOfTeeth']);
+        const intFields = new Set(['upsAround', 'upsAcross', 'totalUps', 'shelfLife', 'noOfTeeth', 'toolGroupID']);
         const boolFields = new Set(['isStandardItem', 'isRegularItem']);
 
         return data.map(item => {
@@ -878,6 +889,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             const rawValues: Record<string, string> = {};
 
             Object.keys(item).forEach(key => {
+                if (key === '_rowIndex') return; // Skip internal index field
                 const value = item[key];
                 if (value === undefined || value === null || value === '') return;
 
@@ -968,7 +980,12 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 setShowValidationModal(true);
             }
         } catch (error: any) {
-            showError(error?.response?.data?.error || 'Validation failed');
+            const msg = error?.response?.data?.error
+                || error?.response?.data?.message
+                || error?.response?.data?.title
+                || error?.message
+                || 'Validation failed';
+            showError(msg);
         } finally {
             setIsLoading(false);
         }
@@ -1451,6 +1468,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             rowData={toolData}
                             columnDefs={columnDefs}
                             defaultColDef={defaultColDef}
+                            getRowId={(params: any) => String(params.data._rowIndex)}
                             onGridReady={onGridReady}
                             rowSelection="multiple"
                             onSelectionChanged={onSelectionChanged}

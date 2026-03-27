@@ -470,13 +470,17 @@ public class SparePartService : ISparePartService
     {
         if (_connection.State != System.Data.ConnectionState.Open) await _connection.OpenAsync();
 
-        // 1. Validate Credentials
-        var userCheckQuery = @"
-            SELECT COUNT(1) 
-            FROM UserMaster 
-            WHERE UserName = @Username AND ISNULL(Password, '') = @Password";
+        // 1. Validate Credentials - Use same password encoding as login
+        var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
 
-        var isValidUser = await _connection.ExecuteScalarAsync<bool>(userCheckQuery, new { Username = username, Password = password });
+        var userCheckQuery = @"
+            SELECT COUNT(1)
+            FROM UserMaster
+            WHERE UserName = @Username
+              AND ISNULL(Password, '') = @Password
+              AND ISNULL(IsBlocked, 0) = 0";
+
+        var isValidUser = await _connection.ExecuteScalarAsync<bool>(userCheckQuery, new { Username = username, Password = encodedPassword });
 
         if (!isValidUser)
         {

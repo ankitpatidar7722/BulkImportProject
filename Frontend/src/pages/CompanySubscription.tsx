@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw,
     Database, Server, ChevronRight, ArrowLeft, CheckCircle2, Building2,
-    GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers, AlertTriangle
+    GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers, AlertTriangle,
+    Activity
 } from 'lucide-react';
 import {
     getCompanySubscriptions,
@@ -42,6 +43,7 @@ import {
 } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
 import MessageFormatPopup from '../components/MessageFormatPopup';
+import ActivityLogViewer from '../components/ActivityLogViewer';
 
 import DataGrid, {
     Column,
@@ -112,7 +114,7 @@ const CompanySubscription: React.FC = () => {
     const [deleteAuthPassword, setDeleteAuthPassword] = useState('');
     const [deleteAuthReason, setDeleteAuthReason] = useState('');
     const [isDeletingRecord, setIsDeletingRecord] = useState(false);
-    const [editTab, setEditTab] = useState<1 | 2 | 3>(1);
+    const [editTab, setEditTab] = useState<1 | 2 | 3 | 4>(1);
 
     // ─── Module Settings State ───
     const [moduleData, setModuleData] = useState<ModuleSettingsRow[]>([]);
@@ -1478,6 +1480,7 @@ const CompanySubscription: React.FC = () => {
                                     { id: 1 as const, label: 'Company Detail', icon: <CreditCard className="w-3.5 h-3.5" /> },
                                     { id: 2 as const, label: 'Module Settings', icon: <Settings className="w-3.5 h-3.5" /> },
                                     { id: 3 as const, label: 'Module Group Authority', icon: <Layers className="w-3.5 h-3.5" /> },
+                                    { id: 4 as const, label: 'Activity Log', icon: <Activity className="w-3.5 h-3.5" /> },
                                 ]).map(tab => (
                                     <button key={tab.id} onClick={() => setEditTab(tab.id)}
                                         className={`flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-all duration-150 ${editTab === tab.id
@@ -1663,7 +1666,6 @@ const CompanySubscription: React.FC = () => {
                                                     className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 outline-none transition-all cursor-pointer"
                                                     disabled={moduleGroups.length === 0}
                                                 >
-                                                    <option value="">Select Module Group</option>
                                                     {moduleGroups.map(g => (
                                                         <option key={g} value={g}>{g}</option>
                                                     ))}
@@ -1719,6 +1721,13 @@ const CompanySubscription: React.FC = () => {
                                                 <Column dataField="moduleDisplayName" caption="Module Display Name" />
                                             </DataGrid>
                                         )}
+                                    </div>
+                                )}
+
+                                {/* Tab 4: Activity Log */}
+                                {editTab === 4 && (
+                                    <div className="space-y-3">
+                                        <ActivityLogViewer />
                                     </div>
                                 )}
 
@@ -2129,7 +2138,6 @@ const FormSelect: React.FC<FormSelectProps> = ({ label, name, value, onChange, o
     <div className="space-y-1">
         <label className={labelCls}>{label}</label>
         <select name={name} value={value} onChange={onChange} className={`${inputCls} cursor-pointer`}>
-            <option value="">Select...</option>
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
     </div>

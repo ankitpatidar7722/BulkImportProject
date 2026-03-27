@@ -186,7 +186,8 @@ public class ModuleService : IModuleService
 
     public async Task<int> CreateModuleAsync(ModuleDto module)
     {
-        var query = @"
+        // Insert into ModuleMaster and get the new ModuleID
+        var insertQuery = @"
             INSERT INTO ModuleMaster (
                 ModuleName, ModuleHeadName, ModuleDisplayName,
                 ModuleHeadDisplayName, ModuleHeadDisplayOrder, ModuleDisplayOrder, SetGroupIndex, CompanyID
@@ -196,7 +197,29 @@ public class ModuleService : IModuleService
             );
             SELECT CAST(SCOPE_IDENTITY() as int);";
 
-        return await _connection.ExecuteScalarAsync<int>(query, module);
+        var newModuleId = await _connection.ExecuteScalarAsync<int>(insertQuery, module);
+
+        // Get admin UserID for UserModuleAuthentication entry
+        var adminUserId = await _connection.ExecuteScalarAsync<int?>(
+            "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin' AND ISNULL(IsBlocked, 0) = 0");
+
+        if (adminUserId.HasValue)
+        {
+            // Insert into UserModuleAuthentication with full permissions for admin user
+            var authQuery = @"
+                INSERT INTO UserModuleAuthentication
+                (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy)
+                VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, 2, 0, @UserID)";
+
+            await _connection.ExecuteAsync(authQuery, new
+            {
+                UserID = adminUserId.Value,
+                ModuleID = newModuleId,
+                ModuleName = module.ModuleName
+            });
+        }
+
+        return newModuleId;
     }
 
     public async Task<bool> UpdateModuleAsync(ModuleDto module)
@@ -325,7 +348,7 @@ public class ModuleService : IModuleService
                 "SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction = 0 ORDER BY CompanyID DESC");
 
             var userId = await _connection.QueryFirstOrDefaultAsync<int>(
-                "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin' AND IsDeletedTransaction = 0");
+                "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin' AND ISNULL(IsBlocked, 0) = 0");
 
             var now = DateTime.Now;
             var fYear = $"{now.Year - 1}-{now.Year}";

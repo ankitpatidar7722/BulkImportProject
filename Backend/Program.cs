@@ -11,14 +11,21 @@ var builder = WebApplication.CreateBuilder(args);
 // Commented out for IIS deployment - IIS will manage the URL
 // builder.WebHost.UseUrls("http://localhost:5050");
 
-// Increase max request body size to 100 MB for large Excel imports
+// Increase max request body size to 500 MB for large bulk imports
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = 104857600; // 100 MB
+    options.Limits.MaxRequestBodySize = 524288000; // 500 MB
 });
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        options.JsonSerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString |
+                                                      System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -113,6 +120,7 @@ builder.Services.AddScoped<ISparePartMasterStockService, SparePartMasterStockSer
 builder.Services.AddScoped<IToolStockService, ToolStockService>();
 builder.Services.AddScoped<ICompanySubscriptionService, CompanySubscriptionService>();
 builder.Services.AddScoped<IMessageFormatService, MessageFormatService>();
+builder.Services.AddScoped<IActivityLogService, ActivityLogService>();
 
 // Configure EPPlus license
 OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;

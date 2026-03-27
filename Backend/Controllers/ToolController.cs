@@ -93,32 +93,9 @@ public class ToolController : ControllerBase
     }
 
     [HttpPost("validate")]
-    public async Task<IActionResult> ValidateTools([FromBody] System.Text.Json.JsonElement payload)
+    [DisableRequestSizeLimit]
+    public async Task<IActionResult> ValidateTools([FromBody] ImportToolsRequest request)
     {
-        ImportToolsRequest request;
-        try
-        {
-            var rawPayload = payload.GetRawText();
-            try
-            {
-                var preview = rawPayload.Length > 1000 ? rawPayload.Substring(0, 1000) + "..." : rawPayload;
-                System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] TOOL VALIDATE Payload: {preview}\n");
-            }
-            catch { }
-
-            var options = new System.Text.Json.JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString |
-                                System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
-            };
-            request = System.Text.Json.JsonSerializer.Deserialize<ImportToolsRequest>(rawPayload, options);
-        }
-        catch (System.Text.Json.JsonException jex)
-        {
-            return BadRequest(new { message = "Invalid JSON format", error = jex.Message, path = jex.Path, line = jex.LineNumber });
-        }
-
         if (request == null || request.Tools == null || request.Tools.Count == 0)
             return BadRequest(new { message = "No tools provided" });
 
@@ -137,27 +114,9 @@ public class ToolController : ControllerBase
     }
 
     [HttpPost("import")]
-    public async Task<IActionResult> ImportTools([FromBody] System.Text.Json.JsonElement payload)
+    [DisableRequestSizeLimit]
+    public async Task<IActionResult> ImportTools([FromBody] ImportToolsRequest request)
     {
-        ImportToolsRequest request;
-        try
-        {
-            var rawPayload = payload.GetRawText();
-            try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Tool Import Raw Payload: {rawPayload.Substring(0, Math.Min(500, rawPayload.Length))}...\n"); } catch { }
-
-            var options = new System.Text.Json.JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString |
-                                System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
-            };
-            request = System.Text.Json.JsonSerializer.Deserialize<ImportToolsRequest>(rawPayload, options);
-        }
-        catch (System.Text.Json.JsonException jex)
-        {
-            return BadRequest(new { message = "Invalid JSON format", error = jex.Message });
-        }
-
         if (request == null || request.Tools == null || request.Tools.Count == 0)
             return BadRequest(new { message = "No tools provided" });
 
@@ -182,7 +141,6 @@ public class ToolController : ControllerBase
         }
         catch (Exception ex)
         {
-            try { System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Tool Import Exception: {ex.Message}\nStack: {ex.StackTrace}\n"); } catch { }
             return StatusCode(500, new { error = ex.Message });
         }
     }

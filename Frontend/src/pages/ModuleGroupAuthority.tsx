@@ -349,7 +349,6 @@ const ModuleGroupAuthority: React.FC = () => {
                                     className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 outline-none transition-all cursor-pointer"
                                     disabled={moduleGroups.length === 0}
                                 >
-                                    <option value="">Select Module Group</option>
                                     {moduleGroups.map(g => (
                                         <option key={g} value={g}>{g}</option>
                                     ))}

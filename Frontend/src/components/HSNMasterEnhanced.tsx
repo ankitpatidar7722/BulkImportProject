@@ -186,7 +186,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                     width: '100%',
                     height: '100%',
                     cursor: isEditable ? 'pointer' : 'default',
-                    userSelect: 'none',
+                    userSelect: 'text',
                     gap: '4px',
                 }}
             >
@@ -196,12 +196,12 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
-                        color: isEmpty ? '#9ca3af' : 'inherit',
-                        fontStyle: isEmpty ? 'italic' : 'normal',
+                        color: 'inherit',
                         fontSize: '13px',
+                        userSelect: 'text',
                     }}
                 >
-                    {isEmpty ? (isEditable ? 'Select...' : '') : String(value)}
+                    {isEmpty ? '' : String(value)}
                 </span>
 
                 {isEditable && (
@@ -1018,6 +1018,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         paginationPageSize={1000}
                         paginationPageSizeSelector={[1000, 2000, 5000]}
                         suppressRowClickSelection={true}
+                        enableCellTextSelection={true}
                         isExternalFilterPresent={isExternalFilterPresent}
                         doesExternalFilterPass={doesExternalFilterPass}
                         overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No records found</div>`}

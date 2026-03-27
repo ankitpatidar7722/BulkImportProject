@@ -6,6 +6,7 @@ import HSNMasterEnhanced from '../components/HSNMasterEnhanced';
 import SparePartMasterEnhanced from '../components/SparePartMasterEnhanced';
 import ItemMasterEnhanced from '../components/ItemMasterEnhanced';
 import ToolMasterEnhanced from '../components/ToolMasterEnhanced';
+import SearchableSelect from '../components/SearchableSelect';
 import {
     getModules,
     previewExcel,
@@ -247,10 +248,10 @@ const ImportMaster: React.FC = () => {
                         setShowSubModuleDropdown(true);
                     }
                 } else if (!needsSubModuleSelection && subs.length > 0) {
-                    // Auto-select the first sub-module for non-master modules
-                    setSelectedSubModule(subs[0].moduleId.toString());
-                    setIsFileUploadEnabled(true); // Enable file upload
-                    setShowSubModuleDropdown(true); // Show dropdown with auto-selected value
+                    // Reset sub-module selection and wait for user choice
+                    setSelectedSubModule('');
+                    setIsFileUploadEnabled(false); 
+                    setShowSubModuleDropdown(true); 
                 } else if (!needsSubModuleSelection && subs.length === 0) {
                     // No sub-modules exist, hide dropdown and enable file upload directly
                     setShowSubModuleDropdown(false);
@@ -609,23 +610,19 @@ const ImportMaster: React.FC = () => {
             <div className="bg-white dark:bg-[#0f172a] rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 mb-4">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                     {/* Module Selection */}
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            Module Name
-                        </label>
-                        <select
-                            className="w-full px-3 py-1.5 bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm text-gray-900 dark:text-white"
-                            value={selectedModule}
-                            onChange={handleModuleChange}
-                        >
-                            <option value="">Select Module</option>
-                            {modules.map((module) => (
-                                <option key={module.moduleId} value={module.moduleId}>
-                                    {module.moduleDisplayName || module.moduleName}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+                    <SearchableSelect
+                        label="Module Name"
+                        value={selectedModule}
+                        onChange={(value) => {
+                            const e = { target: { value: value.toString() } };
+                            handleModuleChange(e as any);
+                        }}
+                        options={modules.map(m => ({
+                            value: m.moduleId.toString(),
+                            label: m.moduleDisplayName || m.moduleName
+                        }))}
+                        placeholder="Select Module Name"
+                    />
 
                     {/* Conditional: Ledger Group,Item Group, or Sub-module Selection */}
                     {isLedgerMode ? (
@@ -638,7 +635,7 @@ const ImportMaster: React.FC = () => {
                                 value={selectedLedgerGroup}
                                 onChange={handleLedgerGroupChange}
                             >
-                                <option value="0">Select Ledger Group</option>
+                                <option value={0} disabled hidden>Select Ledger Group</option>
                                 {subModules.map((sub) => (
                                     <option key={sub.moduleId} value={sub.moduleId}>
                                         {sub.moduleDisplayName || sub.moduleName}
@@ -663,7 +660,7 @@ const ImportMaster: React.FC = () => {
                                     }
                                 }}
                             >
-                                <option value="0">Select Item Group</option>
+                                <option value={0} disabled hidden>Select Item Group</option>
                                 {itemGroups.map((group) => (
                                     <option key={group.itemGroupID} value={group.itemGroupID}>
                                         {group.itemGroupName}
@@ -688,7 +685,7 @@ const ImportMaster: React.FC = () => {
                                     }
                                 }}
                             >
-                                <option value="0">Select Tool Group</option>
+                                <option value={0} disabled hidden>Select Tool Group</option>
                                 {toolGroups.map((group) => (
                                     <option key={group.toolGroupID} value={group.toolGroupID}>
                                         {group.toolGroupName}
@@ -715,7 +712,7 @@ const ImportMaster: React.FC = () => {
                                 }}
                                 disabled={!selectedModule || subModules.length === 0}
                             >
-                                <option value="">Select Sub-module</option>
+                                <option value="" disabled hidden>Select Sub-module</option>
                                 {subModules.map((sub) => (
                                     <option key={sub.moduleId} value={sub.moduleId}>
                                         {sub.moduleDisplayName || sub.moduleName}

@@ -76,21 +76,32 @@ public class ModuleAuthorityService : IModuleAuthorityService
     {
         int inserted = 0, enabled = 0, disabled = 0;
 
+        // 1. Fetch all existing local modules at once for faster lookups
+        var loginModules = (await _connection.QueryAsync<dynamic>(
+            "SELECT ModuleId, ModuleHeadName, ModuleDisplayName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster"
+        )).ToList();
+
+        var loginLookup = new Dictionary<string, (int ModuleId, bool IsDeletedTransaction)>();
+        foreach (var lm in loginModules)
+        {
+            string key = $"{lm.ModuleHeadName}|{lm.ModuleDisplayName}";
+            if (!loginLookup.ContainsKey(key))
+                loginLookup[key] = ((int)lm.ModuleId, (bool)lm.IsDeletedTransaction);
+        }
+
         await using var sourceConn = new SqlConnection(SourceConnStr);
 
+        // 2. Process changes
         foreach (var mod in modules)
         {
-            // Check if module exists in login DB
-            var loginRow = await _connection.QueryFirstOrDefaultAsync<dynamic>(
-                @"SELECT ModuleId, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster
-                  WHERE ModuleHeadName = @ModuleHeadName AND ModuleDisplayName = @ModuleDisplayName",
-                new { mod.ModuleHeadName, mod.ModuleDisplayName });
+            string key = $"{mod.ModuleHeadName}|{mod.ModuleDisplayName}";
+            bool existsLocally = loginLookup.TryGetValue(key, out var loginInfo);
 
             if (mod.Status) // Checkbox ticked
             {
-                if (loginRow == null)
+                if (!existsLocally)
                 {
-                    // Case A: Insert from source DB (copy all columns except ModuleId)
+                    // Case A: Insert from source DB
                     var sourceRow = await sourceConn.QueryFirstOrDefaultAsync<dynamic>(
                         @"SELECT * FROM ModuleMaster
                           WHERE ModuleHeadName = @ModuleHeadName
@@ -101,7 +112,6 @@ public class ModuleAuthorityService : IModuleAuthorityService
                     if (sourceRow != null)
                     {
                         var srcDict = (IDictionary<string, object>)sourceRow;
-                        // Remove ModuleId so it auto-generates in login DB
                         srcDict.Remove("ModuleId");
                         srcDict.Remove("ModuleID");
 
@@ -114,23 +124,23 @@ public class ModuleAuthorityService : IModuleAuthorityService
                         inserted++;
                     }
                 }
-                else if ((bool)loginRow.IsDeletedTransaction)
+                else if (loginInfo.IsDeletedTransaction)
                 {
                     // Case B: Module exists but disabled -> enable it
                     await _connection.ExecuteAsync(
                         "UPDATE ModuleMaster SET IsDeletedTransaction = 0 WHERE ModuleId = @ModuleId",
-                        new { ModuleId = (int)loginRow.ModuleId });
+                        new { ModuleId = loginInfo.ModuleId });
                     enabled++;
                 }
             }
             else // Checkbox unticked
             {
-                if (loginRow != null && !(bool)loginRow.IsDeletedTransaction)
+                if (existsLocally && !loginInfo.IsDeletedTransaction)
                 {
                     // Case C: Disable module
                     await _connection.ExecuteAsync(
                         "UPDATE ModuleMaster SET IsDeletedTransaction = 1 WHERE ModuleId = @ModuleId",
-                        new { ModuleId = (int)loginRow.ModuleId });
+                        new { ModuleId = loginInfo.ModuleId });
                     disabled++;
                 }
             }

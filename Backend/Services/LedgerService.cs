@@ -1048,16 +1048,18 @@ public class LedgerService : ILedgerService
     public async Task<int> ClearAllLedgerDataAsync(int ledgerGroupId, string username, string password, string reason)
     {
         if (_connection.State != System.Data.ConnectionState.Open) await _connection.OpenAsync();
-        
-        // 1. Validate Credentials
-        // Note: Assuming UserMaster table has UserName and Password columns. 
-        // In a production environment, passwords should be hashed.
-        var userCheckQuery = @"
-            SELECT COUNT(1) 
-            FROM UserMaster 
-            WHERE UserName = @Username AND ISNULL(Password, '') = @Password";
 
-        var isValidUser = await _connection.ExecuteScalarAsync<bool>(userCheckQuery, new { Username = username, Password = password });
+        // 1. Validate Credentials - Use same password encoding as login
+        var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
+
+        var userCheckQuery = @"
+            SELECT COUNT(1)
+            FROM UserMaster
+            WHERE UserName = @Username
+              AND ISNULL(Password, '') = @Password
+              AND ISNULL(IsBlocked, 0) = 0";
+
+        var isValidUser = await _connection.ExecuteScalarAsync<bool>(userCheckQuery, new { Username = username, Password = encodedPassword });
 
         if (!isValidUser)
         {

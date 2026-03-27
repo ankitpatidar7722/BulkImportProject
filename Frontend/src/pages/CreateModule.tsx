@@ -341,11 +341,15 @@ const CreateModule: React.FC = () => {
         if (!form.moduleName.trim()) {
             newErrors.moduleName = 'Module Name is required.';
         }
-        if (form.moduleHeadDisplayOrder && isNaN(parseInt(form.moduleHeadDisplayOrder))) {
-            newErrors.moduleHeadDisplayOrder = 'Must be a valid number.';
-        }
-        if (form.setGroupIndex && isNaN(parseInt(form.setGroupIndex))) {
+        if (!form.setGroupIndex) {
+            newErrors.setGroupIndex = 'Group Index is required.';
+        } else if (isNaN(parseInt(form.setGroupIndex))) {
             newErrors.setGroupIndex = 'Must be a valid number.';
+        }
+        if (!form.moduleHeadDisplayOrder) {
+            newErrors.moduleHeadDisplayOrder = 'Display Order is required.';
+        } else if (isNaN(parseInt(form.moduleHeadDisplayOrder))) {
+            newErrors.moduleHeadDisplayOrder = 'Must be a valid number.';
         }
 
         setErrors(newErrors);
@@ -599,6 +603,7 @@ const CreateModule: React.FC = () => {
                             <FormField
                                 id="moduleHeadDisplayOrder"
                                 label="Module Head Display Order"
+                                required
                                 error={errors.moduleHeadDisplayOrder}
                                 hint="Auto-set to MAX + 1. If taken, existing entries shift by +1."
                             >
@@ -636,6 +641,7 @@ const CreateModule: React.FC = () => {
                             <FormField
                                 id="setGroupIndex"
                                 label="Set Group Index"
+                                required
                                 error={errors.setGroupIndex}
                                 readOnly={isSetGroupLocked}
                                 hint={isSetGroupLocked

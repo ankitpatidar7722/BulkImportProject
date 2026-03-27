@@ -166,7 +166,7 @@ const StockUpload: React.FC = () => {
                         onChange={handleSubModuleChange}
                         disabled={isLoading || itemGroups.length === 0}
                     >
-                        <option value="">Select Item Group</option>
+                        <option value="" disabled hidden>Select Sub Module</option>
                         {itemGroups.map((group) => (
                             <option key={group.itemGroupID} value={group.itemGroupID}>
                                 {group.itemGroupName}
@@ -189,7 +189,7 @@ const StockUpload: React.FC = () => {
                         onChange={handleSubModuleChange}
                         disabled={isLoading || toolGroups.length === 0}
                     >
-                        <option value="">Select Tool Group</option>
+                        <option value="" disabled hidden>Select Sub Module</option>
                         {toolGroups.map((group) => (
                             <option key={group.toolGroupID} value={group.toolGroupID}>
                                 {group.toolGroupName}
@@ -245,7 +245,7 @@ const StockUpload: React.FC = () => {
                             value={selectedModule}
                             onChange={handleModuleChange}
                         >
-                            <option value="">Select Module</option>
+                            <option value="" disabled hidden>Select Module Name</option>
                             <option value="ItemMasters">Item Masters</option>
                             <option value="ToolMaster">Tool Master</option>
                             <option value="SparePartMaster">Spare Part Master</option>
