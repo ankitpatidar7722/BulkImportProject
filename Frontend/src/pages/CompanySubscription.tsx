@@ -3,7 +3,7 @@ import {
     CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw,
     Database, Server, ChevronRight, ArrowLeft, CheckCircle2, Building2,
     GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers, AlertTriangle,
-    Activity, Download
+    Download
 } from 'lucide-react';
 import {
     getCompanySubscriptions,
