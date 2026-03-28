@@ -915,8 +915,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 'PaperGroup', 'Quality', 'GSM', 'Manufecturer', 'Finish', 'ManufecturerItemCode',
                 'Caliper', 'SizeW', 'SizeL', 'PurchaseUnit', 'PurchaseRate',
                 'ShelfLife', 'EstimationUnit', 'EstimationRate', 'StockUnit',
-                'MinimumStockQty', 'IsStandardItem', 'IsRegularItem', 'PackingType',
-                'UnitPerPacking', 'WtPerPacking', 'ItemSize', 'ItemName',
+                'MinimumStockQty', 'IsStandardItem', 'IsRegularItem', 'StockRefCode',
+                'PackingType', 'UnitPerPacking', 'WtPerPacking', 'ItemSize', 'ItemName',
                 'ProductHSNName', 'CertificationType'
             ];
         } else if (itemGroupName === 'REEL') {
@@ -1020,6 +1020,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     MinimumStockQty: item.minimumStockQty,
                     IsStandardItem: item.isStandardItem,
                     IsRegularItem: item.isRegularItem,
+                    StockRefCode: item.stockRefCode,
                     PackingType: item.packingType,
                     UnitPerPacking: item.unitPerPacking,
                     WtPerPacking: item.wtPerPacking,
@@ -1518,6 +1519,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     field: 'itemSize', headerName: 'ItemSize', editable: false, width: 140,
                     cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
                 },
+                { field: 'stockRefCode', headerName: 'StockRefCode', editable: isEditable, width: 150 },
                 { field: 'itemName', headerName: 'ItemName', editable: isEditable, width: 250 },
                 {
                     field: 'productHSNName', headerName: 'ProductHSNName', editable: isEditable, width: 200,

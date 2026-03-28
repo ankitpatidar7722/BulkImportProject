@@ -13,7 +13,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { getActivityLogs, getActivitySummary, ActivityLogDto, ActivityLogFilterRequest, ActivityLogSummary } from '../services/api';
+import { getActivityLogs, getActivitySummary, getActivityLogUsernames, ActivityLogDto, ActivityLogFilterRequest, ActivityLogSummary } from '../services/api';
 import { format } from 'date-fns';
 
 interface ActivityLogViewerProps {
@@ -27,6 +27,7 @@ const ActivityLogViewer: React.FC<ActivityLogViewerProps> = ({ entityName, entit
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [usernames, setUsernames] = useState<string[]>([]);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -36,11 +37,10 @@ const ActivityLogViewer: React.FC<ActivityLogViewerProps> = ({ entityName, entit
 
   // Filters
   const [filters, setFilters] = useState<ActivityLogFilterRequest>({
-    webUserId: undefined,
     webUserName: '',
     actionType: '',
-    startDate: '',
-    endDate: '',
+    startDate: undefined,
+    endDate: undefined,
     pageNumber: 1,
     pageSize: pageSize
   });
@@ -48,7 +48,17 @@ const ActivityLogViewer: React.FC<ActivityLogViewerProps> = ({ entityName, entit
   useEffect(() => {
     loadLogs();
     loadSummary();
+    loadUsernames();
   }, [currentPage]);
+
+  const loadUsernames = async () => {
+    try {
+      const data = await getActivityLogUsernames();
+      setUsernames(data);
+    } catch (err) {
+      console.error('Failed to load usernames:', err);
+    }
+  };
 
   const loadLogs = async () => {
     setLoading(true);
@@ -83,8 +93,8 @@ const ActivityLogViewer: React.FC<ActivityLogViewerProps> = ({ entityName, entit
   };
 
   const handleFilterChange = (field: keyof ActivityLogFilterRequest, value: string) => {
-    if (field === 'webUserId') {
-      setFilters(prev => ({ ...prev, [field]: value ? parseInt(value) : undefined }));
+    if (field === 'startDate' || field === 'endDate') {
+      setFilters(prev => ({ ...prev, [field]: value || undefined }));
     } else {
       setFilters(prev => ({ ...prev, [field]: value }));
     }
@@ -97,11 +107,10 @@ const ActivityLogViewer: React.FC<ActivityLogViewerProps> = ({ entityName, entit
 
   const clearFilters = () => {
     setFilters({
-      webUserId: undefined,
       webUserName: '',
       actionType: '',
-      startDate: '',
-      endDate: '',
+      startDate: undefined,
+      endDate: undefined,
       pageNumber: 1,
       pageSize: pageSize
     });
@@ -110,10 +119,9 @@ const ActivityLogViewer: React.FC<ActivityLogViewerProps> = ({ entityName, entit
   };
 
   const exportToCSV = () => {
-    const headers = ['Date & Time', 'User ID', 'User Name', 'Action', 'Description', 'Status'];
+    const headers = ['Date & Time', 'User Name', 'Action', 'Description', 'Status'];
     const rows = logs.map(log => [
       format(new Date(log.createdDate), 'yyyy-MM-dd HH:mm:ss'),
-      log.webUserId?.toString() || 'N/A',
       log.webUserName,
       log.actionType,
       log.actionDescription,
@@ -229,31 +237,23 @@ const ActivityLogViewer: React.FC<ActivityLogViewerProps> = ({ entityName, entit
         {/* Filters Panel */}
         {showFilters && (
           <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  User ID
-                </label>
-                <input
-                  type="number"
-                  value={filters.webUserId || ''}
-                  onChange={(e) => handleFilterChange('webUserId', e.target.value)}
-                  placeholder="User ID..."
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                />
-              </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   User Name
                 </label>
-                <input
-                  type="text"
+                <select
                   value={filters.webUserName}
                   onChange={(e) => handleFilterChange('webUserName', e.target.value)}
-                  placeholder="Filter by name..."
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                />
+                >
+                  <option value="">All Users</option>
+                  {usernames.map((username) => (
+                    <option key={username} value={username}>
+                      {username}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -366,7 +366,7 @@ const ActivityLogViewer: React.FC<ActivityLogViewerProps> = ({ entityName, entit
                           </span>
                           <span className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
                             <User className="w-3 h-3" />
-                            {log.webUserId ? `${log.webUserName} (ID: ${log.webUserId})` : log.webUserName}
+                            {log.webUserName}
                           </span>
                         </div>
                         <p className="text-sm text-gray-900 dark:text-white font-medium">

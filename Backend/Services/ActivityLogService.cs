@@ -226,4 +226,19 @@ public class ActivityLogService : IActivityLogService
 
         return deletedCount;
     }
+
+    public async Task<List<string>> GetUsernamesAsync()
+    {
+        using var connection = new SqlConnection(_indusConnectionString);
+        await connection.OpenAsync();
+
+        var sql = @"
+            SELECT DISTINCT WebUsername
+            FROM CompanyWebUser
+            WHERE WebUsername IS NOT NULL
+            ORDER BY WebUsername";
+
+        var usernames = await connection.QueryAsync<string>(sql);
+        return usernames.ToList();
+    }
 }

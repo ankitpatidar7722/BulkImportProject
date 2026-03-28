@@ -1,3 +1,4 @@
+using Backend.DTOs;
 using Backend.Services;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -121,6 +122,10 @@ builder.Services.AddScoped<IToolStockService, ToolStockService>();
 builder.Services.AddScoped<ICompanySubscriptionService, CompanySubscriptionService>();
 builder.Services.AddScoped<IMessageFormatService, MessageFormatService>();
 builder.Services.AddScoped<IActivityLogService, ActivityLogService>();
+builder.Services.AddScoped<IDatabaseBackupRestoreService, DatabaseBackupRestoreService>();
+
+// Configure BackupRestore settings
+builder.Services.Configure<BackupRestoreConfig>(builder.Configuration.GetSection("BackupRestore"));
 
 // Configure EPPlus license
 OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;

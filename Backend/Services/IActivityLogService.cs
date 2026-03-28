@@ -33,4 +33,9 @@ public interface IActivityLogService
     /// Delete old activity logs (for maintenance)
     /// </summary>
     Task<int> DeleteOldLogsAsync(int daysToKeep);
+
+    /// <summary>
+    /// Get unique usernames from CompanyWebUser for filter dropdown
+    /// </summary>
+    Task<List<string>> GetUsernamesAsync();
 }

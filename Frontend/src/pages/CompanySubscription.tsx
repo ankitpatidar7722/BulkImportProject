@@ -3,7 +3,7 @@ import {
     CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw,
     Database, Server, ChevronRight, ArrowLeft, CheckCircle2, Building2,
     GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers, AlertTriangle,
-    Activity
+    Activity, Download
 } from 'lucide-react';
 import {
     getCompanySubscriptions,
@@ -29,6 +29,8 @@ import {
     applyModuleGroupToClient,
     checkModulesExist,
     getCompanySubscriptionByKey,
+    backupAndTransfer,
+    getBackupRestoreStatus,
     CompanySubscriptionDto,
     SetupDatabaseRequest,
     SetupDatabaseResponse,
@@ -40,10 +42,10 @@ import {
     ModuleSettingsRow,
     ClientDropdownItem,
     ModuleGroupModuleRow,
+    OperationStatusResponse,
 } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
 import MessageFormatPopup from '../components/MessageFormatPopup';
-import ActivityLogViewer from '../components/ActivityLogViewer';
 
 import DataGrid, {
     Column,
@@ -114,7 +116,7 @@ const CompanySubscription: React.FC = () => {
     const [deleteAuthPassword, setDeleteAuthPassword] = useState('');
     const [deleteAuthReason, setDeleteAuthReason] = useState('');
     const [isDeletingRecord, setIsDeletingRecord] = useState(false);
-    const [editTab, setEditTab] = useState<1 | 2 | 3 | 4>(1);
+    const [editTab, setEditTab] = useState<1 | 2 | 3>(1);
 
     // ─── Module Settings State ───
     const [moduleData, setModuleData] = useState<ModuleSettingsRow[]>([]);
@@ -163,6 +165,13 @@ const CompanySubscription: React.FC = () => {
     const [backupDatabaseList, setBackupDatabaseList] = useState<string[]>([]);
     const [isSettingUpDb, setIsSettingUpDb] = useState(false);
     const [setupResult, setSetupResult] = useState<SetupDatabaseResponse | null>(null);
+
+    // HTTP Transfer State (for cross-network database transfers)
+    const [useHttpTransfer, setUseHttpTransfer] = useState(false);
+    const [destServerUrl, setDestServerUrl] = useState('');
+    const [transferApiKey, setTransferApiKey] = useState('');
+    const [backupOperationId, setBackupOperationId] = useState('');
+    const [backupStatus, setBackupStatus] = useState<OperationStatusResponse | null>(null);
 
     // Step 3: Company Master
     const [companyMaster, setCompanyMaster] = useState<CompanyMasterRequest>({
@@ -232,6 +241,53 @@ const CompanySubscription: React.FC = () => {
         }
     }, [wizardAppName]);
 
+    // Poll backup/restore operation status
+    useEffect(() => {
+        if (!backupOperationId) return;
+
+        const pollInterval = setInterval(async () => {
+            try {
+                const status = await getBackupRestoreStatus(backupOperationId);
+                setBackupStatus(status);
+
+                if (status.isComplete) {
+                    clearInterval(pollInterval);
+                    setIsSettingUpDb(false);
+
+                    if (status.success) {
+                        showMessage('success', 'Database Transfer Complete',
+                            'Database has been successfully backed up, transferred, and restored.');
+
+                        // Set setup result to proceed to next step
+                        setSetupResult({
+                            success: true,
+                            message: status.message,
+                            connectionString: '', // Will be set from the response
+                            databaseName: wizardDbName,
+                            server: wizardServer,
+                            applicationName: wizardAppName,
+                            clientName: wizardClientName
+                        });
+
+                        // Move to next step
+                        setWizardStep(2);
+                        setMaxWizardStep(2);
+                    } else {
+                        showMessage('error', 'Transfer Failed', status.error || 'Database transfer failed.');
+                    }
+
+                    // Clear operation ID
+                    setBackupOperationId('');
+                    setBackupStatus(null);
+                }
+            } catch (err) {
+                console.error('Status poll error:', err);
+            }
+        }, 2000); // Poll every 2 seconds
+
+        return () => clearInterval(pollInterval);
+    }, [backupOperationId, wizardDbName, wizardServer, wizardAppName, wizardClientName]);
+
     // ─── Wizard Handlers ───
 
     const handleCreate = async () => {
@@ -270,6 +326,18 @@ const CompanySubscription: React.FC = () => {
         if (!wizardDbName.trim()) { showMessage('error', 'Validation', 'Database Name is required.'); return; }
         if (!wizardBackupDatabase) { showMessage('error', 'Validation', 'Please select a Backup Database Name.'); return; }
 
+        // Validate HTTP transfer fields if enabled
+        if (useHttpTransfer) {
+            if (!destServerUrl.trim()) {
+                showMessage('error', 'Validation', 'Destination Server URL is required for HTTP transfer.');
+                return;
+            }
+            if (!transferApiKey.trim()) {
+                showMessage('error', 'Validation', 'API Key is required for HTTP transfer.');
+                return;
+            }
+        }
+
         if (setupResult && setupResult.databaseName === wizardDbName.trim()) {
             setWizardStep(2);
             setMaxWizardStep(Math.max(maxWizardStep, 2) as WizardStepNum);
@@ -277,33 +345,61 @@ const CompanySubscription: React.FC = () => {
         }
 
         setIsSettingUpDb(true);
+        setBackupStatus(null); // Reset status
+
         try {
-            const req: SetupDatabaseRequest = {
-                server: wizardServer, applicationName: wizardAppName,
-                backupType: wizardBackupType,
-                clientName: wizardClientName.trim(), databaseName: wizardDbName.trim(),
-                backupDatabaseName: wizardBackupDatabase,
-            };
-            const result = await setupDatabase(req);
-            if (result.success) {
-                setSetupResult(result);
-                setFormData(prev => ({
-                    ...EMPTY_FORM,
-                    companyUniqueCode: prev.companyUniqueCode,
-                    maxCompanyUniqueCode: prev.maxCompanyUniqueCode,
-                    conn_String: result.connectionString,
-                    applicationName: result.applicationName,
-                    companyName: result.clientName,
-                }));
-                setWizardStep(2);
-                setMaxWizardStep(Math.max(maxWizardStep, 2) as WizardStepNum);
-                showMessage('success', 'Database Created', result.message);
+            if (useHttpTransfer) {
+                // Use new HTTP-based backup & restore
+                const sourceConnStr = `Data Source=${wizardServer};Initial Catalog=master;User ID=indus;Password=Param@99811;TrustServerCertificate=True`;
+                const destConnStr = `Data Source=${destServerUrl.replace('http://', '').replace('https://', '').split(':')[0]};Initial Catalog=master;User ID=indus;Password=Param@99811;TrustServerCertificate=True`;
+
+                const result = await backupAndTransfer({
+                    sourceConnectionString: sourceConnStr,
+                    destinationConnectionString: destConnStr,
+                    destinationServerUrl: destServerUrl,
+                    databaseName: wizardDbName.trim(),
+                    backupDatabaseName: wizardBackupDatabase,
+                    allowOverwrite: false,
+                    apiKey: transferApiKey
+                });
+
+                if (result.success) {
+                    setBackupOperationId(result.operationId);
+                    showMessage('success', 'Transfer Started', 'Database backup and transfer operation has started. Please wait...');
+                    // Note: isSettingUpDb will be set to false in the polling useEffect when complete
+                } else {
+                    showMessage('error', 'Transfer Failed', result.message);
+                    setIsSettingUpDb(false);
+                }
             } else {
-                showMessage('error', 'Setup Failed', result.message);
+                // Use existing UNC-based approach
+                const req: SetupDatabaseRequest = {
+                    server: wizardServer, applicationName: wizardAppName,
+                    backupType: wizardBackupType,
+                    clientName: wizardClientName.trim(), databaseName: wizardDbName.trim(),
+                    backupDatabaseName: wizardBackupDatabase,
+                };
+                const result = await setupDatabase(req);
+                if (result.success) {
+                    setSetupResult(result);
+                    setFormData(prev => ({
+                        ...EMPTY_FORM,
+                        companyUniqueCode: prev.companyUniqueCode,
+                        maxCompanyUniqueCode: prev.maxCompanyUniqueCode,
+                        conn_String: result.connectionString,
+                        applicationName: result.applicationName,
+                        companyName: result.clientName,
+                    }));
+                    setWizardStep(2);
+                    setMaxWizardStep(Math.max(maxWizardStep, 2) as WizardStepNum);
+                    showMessage('success', 'Database Created', result.message);
+                } else {
+                    showMessage('error', 'Setup Failed', result.message);
+                }
+                setIsSettingUpDb(false);
             }
         } catch (error: any) {
             showMessage('error', 'Setup Failed', error?.response?.data?.message || 'Database setup failed.');
-        } finally {
             setIsSettingUpDb(false);
         }
     };
@@ -755,6 +851,38 @@ const CompanySubscription: React.FC = () => {
         }
     };
 
+    // Download compressed backup
+    const handleDownloadBackup = (row: CompanySubscriptionDto) => {
+        if (!row.conn_String) {
+            showMessage('error', 'Error', 'Connection string not available for this subscription.');
+            return;
+        }
+
+        // Extract server from connection string
+        const match = row.conn_String.match(/Data Source=([^;]+)/i);
+        if (!match) {
+            showMessage('error', 'Error', 'Could not extract server from connection string.');
+            return;
+        }
+
+        const server = match[1];
+        const dbNameMatch = row.conn_String.match(/Initial Catalog=([^;]+)/i);
+        const databaseName = dbNameMatch ? dbNameMatch[1] : row.companyName.replace(/\s+/g, '');
+
+        // Trigger download via browser
+        const downloadUrl = `/api/DatabaseBackupRestore/download-backup?server=${encodeURIComponent(server)}&databaseName=${encodeURIComponent(databaseName)}`;
+
+        showMessage('info', 'Download Started', `Creating compressed backup for ${databaseName}. This may take a few minutes...`);
+
+        // Create a hidden link and trigger click
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = `${databaseName}_backup.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     // Load module groups when application changes (Tab 3)
     useEffect(() => {
         if (editTab === 3) {
@@ -1065,6 +1193,24 @@ const CompanySubscription: React.FC = () => {
                     <Column dataField="mobile" caption="Mobile" />
                     <Column dataField="statusDescription" caption="Status Description" />
                     <Column dataField="subscriptionStatusMessage" caption="ERP Message" />
+
+                    {/* Actions Column - Download Backup */}
+                    <Column caption="Actions" width={120} alignment="center" allowFiltering={false} allowSorting={false} allowGrouping={false}
+                        cellRender={(cellData: any) => (
+                            <div className="flex items-center justify-center gap-2">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDownloadBackup(cellData.data);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors"
+                                    title="Download Compressed Backup (.zip)"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span>Backup</span>
+                                </button>
+                            </div>
+                        )} />
                 </DataGrid>
             </div>
 
@@ -1189,6 +1335,90 @@ const CompanySubscription: React.FC = () => {
                                                 <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
                                                     <strong>Preview:</strong> Database <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardDbName}</code> on <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardServer || '(select server)'}</code> restored from <code className="bg-indigo-100 dark:bg-indigo-800/50 px-1.5 py-0.5 rounded text-[11px] font-mono">{wizardBackupDatabase || '(select backup DB)'}</code>.
                                                 </p>
+                                            </div>
+                                        )}
+
+                                        {/* HTTP Transfer Option (for cross-network servers) */}
+                                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <input
+                                                    type="checkbox"
+                                                    id="useHttpTransfer"
+                                                    checked={useHttpTransfer}
+                                                    onChange={(e) => setUseHttpTransfer(e.target.checked)}
+                                                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                                                />
+                                                <label htmlFor="useHttpTransfer" className="text-xs font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                                                    Use HTTP Transfer (for cross-network servers)
+                                                </label>
+                                            </div>
+
+                                            {useHttpTransfer && (
+                                                <div className="space-y-2 ml-6 pb-2">
+                                                    <div className="bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-lg px-2.5 py-2 mb-3">
+                                                        <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                                                            <strong>Note:</strong> HTTP transfer is used when UNC/SMB (Port 445) is blocked. The database backup will be streamed via HTTP to the destination server.
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-2">
+                                                        <div className="space-y-1">
+                                                            <label className={labelCls}>Destination Server URL *</label>
+                                                            <input
+                                                                type="text"
+                                                                value={destServerUrl}
+                                                                onChange={e => setDestServerUrl(e.target.value)}
+                                                                placeholder="http://15.206.241.195:5050"
+                                                                className={inputCls}
+                                                            />
+                                                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                                                Example: http://15.206.241.195:5050
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="space-y-1">
+                                                            <label className={labelCls}>API Key *</label>
+                                                            <input
+                                                                type="password"
+                                                                value={transferApiKey}
+                                                                onChange={e => setTransferApiKey(e.target.value)}
+                                                                placeholder="Enter API key for server authentication"
+                                                                className={inputCls}
+                                                            />
+                                                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                                                Configured in appsettings.json on both servers
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Progress Indicator */}
+                                        {backupStatus && !backupStatus.isComplete && (
+                                            <div className="mt-3 bg-blue-50/60 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800/40 rounded-lg p-3">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
+                                                    <span className="text-xs font-medium text-blue-700 dark:text-blue-300">{backupStatus.stage}</span>
+                                                </div>
+
+                                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
+                                                    <div
+                                                        className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all duration-300"
+                                                        style={{ width: `${backupStatus.percentComplete}%` }}
+                                                    />
+                                                </div>
+
+                                                <div className="flex items-center justify-between text-[10px] text-blue-600 dark:text-blue-400">
+                                                    <span>{backupStatus.message}</span>
+                                                    <span className="font-medium">{backupStatus.percentComplete}%</span>
+                                                </div>
+
+                                                {backupStatus.totalBytes > 0 && (
+                                                    <div className="mt-1 text-[10px] text-blue-500 dark:text-blue-400">
+                                                        {(backupStatus.bytesTransferred / 1024 / 1024).toFixed(2)} MB / {(backupStatus.totalBytes / 1024 / 1024).toFixed(2)} MB
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1480,7 +1710,6 @@ const CompanySubscription: React.FC = () => {
                                     { id: 1 as const, label: 'Company Detail', icon: <CreditCard className="w-3.5 h-3.5" /> },
                                     { id: 2 as const, label: 'Module Settings', icon: <Settings className="w-3.5 h-3.5" /> },
                                     { id: 3 as const, label: 'Module Group Authority', icon: <Layers className="w-3.5 h-3.5" /> },
-                                    { id: 4 as const, label: 'Activity Log', icon: <Activity className="w-3.5 h-3.5" /> },
                                 ]).map(tab => (
                                     <button key={tab.id} onClick={() => setEditTab(tab.id)}
                                         className={`flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-all duration-150 ${editTab === tab.id
@@ -1721,13 +1950,6 @@ const CompanySubscription: React.FC = () => {
                                                 <Column dataField="moduleDisplayName" caption="Module Display Name" />
                                             </DataGrid>
                                         )}
-                                    </div>
-                                )}
-
-                                {/* Tab 4: Activity Log */}
-                                {editTab === 4 && (
-                                    <div className="space-y-3">
-                                        <ActivityLogViewer />
                                     </div>
                                 )}
 

@@ -147,4 +147,22 @@ public class ActivityLogController : ControllerBase
             return StatusCode(500, new { message = "Error deleting old logs", error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Get unique usernames from CompanyWebUser for filter dropdown
+    /// </summary>
+    [HttpGet("usernames")]
+    public async Task<IActionResult> GetUsernames()
+    {
+        try
+        {
+            var usernames = await _activityLogService.GetUsernamesAsync();
+            return Ok(usernames);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching usernames");
+            return StatusCode(500, new { message = "Error fetching usernames", error = ex.Message });
+        }
+    }
 }

@@ -1723,6 +1723,66 @@ export const deleteModuleGroup = async (data: DeleteModuleGroupRequest): Promise
     return response.data;
 };
 
+// ==================== DATABASE BACKUP & RESTORE ====================
+
+export interface BackupAndTransferRequest {
+    sourceConnectionString: string;
+    destinationConnectionString: string;
+    destinationServerUrl: string | null; // null = same server
+    databaseName: string;
+    backupDatabaseName: string;
+    allowOverwrite: boolean;
+    apiKey?: string; // For cross-server auth
+}
+
+export interface BackupAndTransferResponse {
+    success: boolean;
+    message: string;
+    operationId: string;
+}
+
+export interface RestoreRequest {
+    connectionString: string;
+    backupFilePath: string;
+    databaseName: string;
+    allowOverwrite: boolean;
+}
+
+export interface RestoreResponse {
+    success: boolean;
+    message: string;
+    databaseName?: string;
+}
+
+export interface OperationStatusResponse {
+    operationId: string;
+    stage: string; // "Backing up", "Transferring", "Restoring", "Complete", etc.
+    percentComplete: number; // 0-100
+    message: string;
+    isComplete: boolean;
+    success: boolean;
+    error?: string;
+    bytesTransferred: number;
+    totalBytes: number;
+    startedAt: string;
+    completedAt?: string;
+}
+
+export const backupAndTransfer = async (request: BackupAndTransferRequest): Promise<BackupAndTransferResponse> => {
+    const response = await api.post('/DatabaseBackupRestore/backup-and-transfer', request);
+    return response.data;
+};
+
+export const restoreDatabase = async (request: RestoreRequest): Promise<RestoreResponse> => {
+    const response = await api.post('/DatabaseBackupRestore/restore', request);
+    return response.data;
+};
+
+export const getBackupRestoreStatus = async (operationId: string): Promise<OperationStatusResponse> => {
+    const response = await api.get(`/DatabaseBackupRestore/status/${operationId}`);
+    return response.data;
+};
+
 // ==========================================
 // RECORD COUNT CHECK HELPERS
 // Used by "Clear All Data" to decide whether to show "No Data found" popup
@@ -2133,6 +2193,11 @@ export const getEntityActivityLogs = async (entityName: string, entityId: number
 
 export const getActivitySummary = async (): Promise<ActivityLogSummary> => {
     const response = await api.get('/activitylog/summary');
+    return response.data;
+};
+
+export const getActivityLogUsernames = async (): Promise<string[]> => {
+    const response = await api.get('/activitylog/usernames');
     return response.data;
 };
 

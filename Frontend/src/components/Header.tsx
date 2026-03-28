@@ -1,7 +1,8 @@
 import React from 'react';
-import { Moon, Sun, User, Menu, Building2, LogOut, Settings, UserCircle } from 'lucide-react';
+import { Moon, Sun, User, Menu, Building2, LogOut, Settings, UserCircle, Activity } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
+import ActivityLogViewer from './ActivityLogViewer';
 
 interface HeaderProps {
     onMenuClick: () => void;
@@ -13,6 +14,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     const { companyName, userName, logout } = useAuth();
     const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
     const [showUserMenu, setShowUserMenu] = React.useState(false);
+    const [showActivityLog, setShowActivityLog] = React.useState(false);
     const userMenuRef = React.useRef<HTMLDivElement>(null);
 
     // Close dropdown when clicking outside
@@ -102,6 +104,16 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                                     <Settings className="w-4 h-4" />
                                     Settings
                                 </button>
+                                <button
+                                    onClick={() => {
+                                        setShowActivityLog(true);
+                                        setShowUserMenu(false);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                >
+                                    <Activity className="w-4 h-4" />
+                                    Activity Log
+                                </button>
                                 <div className="my-1 border-t border-gray-200 dark:border-gray-700"></div>
                                 <button
                                     onClick={() => setShowLogoutConfirm(true)}
@@ -152,6 +164,39 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                     </div>
                 )
             }
+
+            {/* Activity Log Modal */}
+            {showActivityLog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-6xl border border-gray-200 dark:border-gray-700 transform transition-all scale-100 max-h-[90vh] overflow-hidden flex flex-col">
+                        {/* Modal Header */}
+                        <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-orange-500 to-orange-600 rounded-t-xl flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-lg bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                                    <Activity className="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-white">Activity Log</h3>
+                                    <p className="text-sm text-orange-100">View all system activities</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowActivityLog(false)}
+                                className="text-white hover:bg-white/20 rounded-lg p-2 transition-colors"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="flex-1 overflow-auto p-6">
+                            <ActivityLogViewer />
+                        </div>
+                    </div>
+                </div>
+            )}
         </header>
     );
 };
