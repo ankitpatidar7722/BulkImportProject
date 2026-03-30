@@ -36,27 +36,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Restore session from localStorage on page load / refresh
-        const authToken = localStorage.getItem('authToken');
-        const companyToken = localStorage.getItem('companyToken');
-        const storedCompanyName = localStorage.getItem('companyName');
-        const storedUserName = localStorage.getItem('userName');
-        const storedFYear = localStorage.getItem('fYear');
-        const storedLoginType = localStorage.getItem('loginType') as LoginType;
+        // Check for session restoration preference
+        const enableAutoLogin = localStorage.getItem('enableAutoLogin') === 'true';
 
-        if (authToken && storedUserName) {
-            // User is fully authenticated (Step 2)
-            setCompanyName(storedCompanyName || '');
-            setUserName(storedUserName);
-            setFYear(storedFYear || '');
-            setLoginType(storedLoginType || 'customer');
-            setLoginStep(2);
-        } else if (companyToken && storedCompanyName) {
-            // Company login completed, awaiting user login (Step 1)
-            setCompanyName(storedCompanyName);
-            setLoginStep(1);
+        if (enableAutoLogin) {
+            // Restore session from localStorage on page load / refresh (ONLY if enabled)
+            const authToken = localStorage.getItem('authToken');
+            const companyToken = localStorage.getItem('companyToken');
+            const storedCompanyName = localStorage.getItem('companyName');
+            const storedUserName = localStorage.getItem('userName');
+            const storedFYear = localStorage.getItem('fYear');
+            const storedLoginType = localStorage.getItem('loginType') as LoginType;
+
+            if (authToken && storedUserName) {
+                // User is fully authenticated (Step 2)
+                setCompanyName(storedCompanyName || '');
+                setUserName(storedUserName);
+                setFYear(storedFYear || '');
+                setLoginType(storedLoginType || 'customer');
+                setLoginStep(2);
+            } else if (companyToken && storedCompanyName) {
+                // Company login completed, awaiting user login (Step 1)
+                setCompanyName(storedCompanyName);
+                setLoginStep(1);
+            } else {
+                // No authentication, start from CompanyLogin (Step 0)
+                setLoginStep(0);
+            }
         } else {
-            // No authentication, start from CompanyLogin (Step 0)
+            // Auto-login disabled: Clear old sessions and start fresh
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('companyToken');
+            localStorage.removeItem('companyName');
+            localStorage.removeItem('userName');
+            localStorage.removeItem('fYear');
+            localStorage.removeItem('loginType');
             setLoginStep(0);
         }
 
@@ -70,7 +84,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCompanyName('');
             setUserName('');
             setFYear('');
-            window.location.href = '/';
+            window.location.href = '/login';
         };
 
         window.addEventListener('auth:unauthorized', handleUnauthorized);
@@ -132,7 +146,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCompanyName('');
         setUserName('');
         setFYear('');
-        window.location.href = '/';
+        window.location.href = '/login';
     };
 
     return (

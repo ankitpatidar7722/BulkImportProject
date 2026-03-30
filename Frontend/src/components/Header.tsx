@@ -11,7 +11,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     const { isDark, toggleTheme } = useTheme();
-    const { companyName, userName, logout } = useAuth();
+    const { companyName, userName, logout, loginType } = useAuth();
     const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
     const [showUserMenu, setShowUserMenu] = React.useState(false);
     const [showActivityLog, setShowActivityLog] = React.useState(false);
@@ -104,16 +104,21 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                                     <Settings className="w-4 h-4" />
                                     Settings
                                 </button>
-                                <button
-                                    onClick={() => {
-                                        setShowActivityLog(true);
-                                        setShowUserMenu(false);
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                                >
-                                    <Activity className="w-4 h-4" />
-                                    Activity Log
-                                </button>
+
+                                {/* Activity Log - Only show for Indus login */}
+                                {loginType === 'indus' && (
+                                    <button
+                                        onClick={() => {
+                                            setShowActivityLog(true);
+                                            setShowUserMenu(false);
+                                        }}
+                                        className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                    >
+                                        <Activity className="w-4 h-4" />
+                                        Activity Log
+                                    </button>
+                                )}
+
                                 <div className="my-1 border-t border-gray-200 dark:border-gray-700"></div>
                                 <button
                                     onClick={() => setShowLogoutConfirm(true)}
