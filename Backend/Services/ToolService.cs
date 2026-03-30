@@ -195,6 +195,31 @@ public class ToolService : IToolService
         return rowsAffected > 0;
     }
 
+    // Helper method to generate duplicate key based on Tool Group
+    private string GenerateDuplicateKey(ToolMasterDto tool, int toolGroupId)
+    {
+        return toolGroupId switch
+        {
+            3 => // DIE: ToolName + SizeL + SizeW + TotalUps
+                $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeL?.ToString() ?? ""}|{tool.SizeW?.ToString() ?? ""}|{tool.TotalUps?.ToString() ?? ""}",
+
+            5 => // PRINTING CYLINDER: ToolName + SizeW + Manufacturer + NoOfTeeth
+                $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeW?.ToString() ?? ""}|{(tool.Manufacturer?.Trim() ?? "").ToLowerInvariant()}|{tool.NoOfTeeth?.ToString() ?? ""}",
+
+            6 => // ANILOX CYLINDER: SizeW + Manufacturer + BCM + LPI + ToolName
+                $"{tool.SizeW?.ToString() ?? ""}|{(tool.Manufacturer?.Trim() ?? "").ToLowerInvariant()}|{tool.BCM?.ToString() ?? ""}|{tool.LPI?.ToString() ?? ""}|{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}",
+
+            7 => // EMBOSSING CYLINDER: ToolName + SizeW + Manufacturer + NoOfTeeth
+                $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeW?.ToString() ?? ""}|{(tool.Manufacturer?.Trim() ?? "").ToLowerInvariant()}|{tool.NoOfTeeth?.ToString() ?? ""}",
+
+            8 => // FLEXO DIE: ToolName + SizeL + SizeH + TotalUps
+                $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeL?.ToString() ?? ""}|{tool.SizeH?.ToString() ?? ""}|{tool.TotalUps?.ToString() ?? ""}",
+
+            _ => // PLATES and default: ToolName + SizeL + SizeW + TotalUps
+                $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeL?.ToString() ?? ""}|{tool.SizeW?.ToString() ?? ""}|{tool.TotalUps?.ToString() ?? ""}"
+        };
+    }
+
     public async Task<ToolValidationResultDto> ValidateToolsAsync(List<ToolMasterDto> tools, int toolGroupId)
     {
         var result = new ToolValidationResultDto
@@ -205,8 +230,7 @@ public class ToolService : IToolService
         // Get existing tools from database for duplicate check — build HashSet for O(1) lookup
         var existingTools = await GetAllToolsAsync(toolGroupId);
         var existingToolKeys = new HashSet<string>(
-            existingTools.Select(e =>
-                $"{(e.ToolName?.Trim() ?? "").ToLowerInvariant()}|{e.SizeL?.ToString() ?? ""}|{e.SizeW?.ToString() ?? ""}|{e.TotalUps?.ToString() ?? ""}")
+            existingTools.Select(e => GenerateDuplicateKey(e, toolGroupId))
         );
         var batchToolKeys = new HashSet<string>();
 
@@ -367,8 +391,8 @@ public class ToolService : IToolService
                 }
             }
 
-            // 2. Check for duplicates (RED) - ToolName + SizeL + SizeW + TotalUps combination (O(1) HashSet lookup)
-            var toolKey = $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeL?.ToString() ?? ""}|{tool.SizeW?.ToString() ?? ""}|{tool.TotalUps?.ToString() ?? ""}";
+            // 2. Check for duplicates (RED) - Using tool group specific combination (O(1) HashSet lookup)
+            var toolKey = GenerateDuplicateKey(tool, toolGroupId);
             var isDuplicate = existingToolKeys.Contains(toolKey);
             var duplicateInBatch = !batchToolKeys.Add(toolKey); // Add returns false if already exists
 
@@ -616,6 +640,12 @@ public class ToolService : IToolService
         masterTable.Columns.Add("UpsL",                typeof(object));
         masterTable.Columns.Add("UpsW",                typeof(object));
         masterTable.Columns.Add("TotalUps",            typeof(object));
+        masterTable.Columns.Add("Manufecturer",        typeof(string));
+        masterTable.Columns.Add("NoOfTeeth",           typeof(object));
+        masterTable.Columns.Add("CircumferenceMM",     typeof(object));
+        masterTable.Columns.Add("CircumferenceInch",   typeof(object));
+        masterTable.Columns.Add("BCM",                 typeof(object));
+        masterTable.Columns.Add("LPI",                 typeof(object));
         masterTable.Columns.Add("PurchaseUnit",        typeof(string));
         masterTable.Columns.Add("PurchaseRate",        typeof(object));
         masterTable.Columns.Add("EstimationUnit",      typeof(string));
@@ -640,6 +670,8 @@ public class ToolService : IToolService
                 1,
                 N(tool.SizeL), N(tool.SizeW), N(tool.SizeH),
                 N(tool.UpsAround), N(tool.UpsAcross), N(r.TotalUps),
+                N(tool.Manufacturer), N(tool.NoOfTeeth), N(tool.CircumferenceMM), N(tool.CircumferenceInch),
+                N(tool.BCM), N(tool.LPI),
                 N(tool.PurchaseUnit), N(tool.PurchaseRate),
                 N(tool.PurchaseUnit), N(tool.EstimateRate ?? tool.PurchaseRate),
                 N(tool.StockUnit),

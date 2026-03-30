@@ -609,6 +609,7 @@ public class LedgerService : ILedgerService
 
         bool isEmployee  = ledgerType.ToLower().Contains("employee");
         bool isConsignee = ledgerType.ToLower().Contains("consignee");
+        bool isClient    = ledgerType.ToLower().Contains("client");
 
         // ── 2. Max ledger number ──────────────────────────────────────────────────────────
         var maxLedgerNo = await _connection.ExecuteScalarAsync<int?>(
@@ -709,6 +710,7 @@ public class LedgerService : ILedgerService
         masterTable.Columns.Add("DateOfBirth",            typeof(DateTime));
         masterTable.Columns.Add("Designation",            typeof(string));
         masterTable.Columns.Add("RefClientID",            typeof(int));
+        masterTable.Columns.Add("IsClientApproval",       typeof(bool));
 
         // ── 4a. Query ACTUAL DB column sizes so truncation never occurs ──────────────────────
         var colSizeQuery = @"
@@ -848,7 +850,8 @@ public class LedgerService : ILedgerService
                     TS(ledgerType,                                  ColMax("LedgerType", 100)),
                     ledger.DateOfBirth.HasValue ? (object)ledger.DateOfBirth.Value : DBN,
                     T(ledger.Designation,                          ColMax("Designation", 100)),
-                    clientId.HasValue ? (object)clientId.Value : DBN
+                    clientId.HasValue ? (object)clientId.Value : DBN,
+                    isClient
                 );
                 rowMeta.Add((ledgerCode, ledger, salesRepId, deptId, clientId, supplyType, gstApp, legalName));
             }
@@ -881,7 +884,7 @@ public class LedgerService : ILedgerService
                 "Distance","DeliveredQtyTolerance","IsDeletedTransaction","CompanyID","UserID","FYear",
                 "CreatedDate","CreatedBy","ISLedgerActive","LegalName","MailingAddress",
                 "CurrencyCode","DepartmentID","LedgerRefCode","InventoryEffect","MaintainBillWise",
-                "IsTaxType","LedgerType","DateOfBirth","Designation","RefClientID"
+                "IsTaxType","LedgerType","DateOfBirth","Designation","RefClientID","IsClientApproval"
             };
             foreach (var col in cols)
                 bulkCopy.ColumnMappings.Add(col, col);
@@ -983,6 +986,7 @@ public class LedgerService : ILedgerService
                     ("SupplyTypeCode",        supplyType,                          20),
                     ("RefCode",               ledger.RefCode,                      21),
                     ("DeliveredQtyTolerance", ledger.DeliveredQtyTolerance?.ToString(), 22),
+                    ("RefSalesRepresentativeID", salesRepId?.ToString(),          25),
                     ("GSTRegistrationType",   ledger.GSTRegistrationType,          24),
                     ("ISLedgerActive",        "True",                              0)
                 };

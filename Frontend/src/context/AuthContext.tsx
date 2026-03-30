@@ -112,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('authToken', response.token);
             localStorage.setItem('userName', response.userName);
             localStorage.setItem('fYear', response.fYear);
+            localStorage.setItem('enableAutoLogin', 'true'); // Enable session persistence
 
             setUserName(response.userName);
             setFYear(response.fYear);
@@ -128,6 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('userName', response.webUserName);
             localStorage.setItem('loginType', 'indus');
             localStorage.setItem('companyName', 'Indus');
+            localStorage.setItem('enableAutoLogin', 'true'); // Enable session persistence
 
             setUserName(response.webUserName);
             setCompanyName('Indus');
