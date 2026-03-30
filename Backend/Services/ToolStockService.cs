@@ -99,8 +99,8 @@ public class ToolStockService : IToolStockService
                 ToolName = row.ToolName?.Trim(),
                 ReceiptQuantity = row.ReceiptQuantity,
                 PurchaseRate = row.PurchaseRate,
-                WarehouseName = row.WarehouseName,
-                BinName = row.BinName
+                WarehouseName = row.WarehouseName?.Trim(),
+                BinName = row.BinName?.Trim()
             };
 
             if (string.IsNullOrWhiteSpace(row.ToolGroupName))
@@ -285,7 +285,7 @@ public class ToolStockService : IToolStockService
 
                 if (!string.IsNullOrWhiteSpace(row.WarehouseName))
                 {
-                    string whKey = $"{row.WarehouseName}|{row.BinName ?? ""}";
+                    string whKey = $"{row.WarehouseName?.Trim()}|{row.BinName?.Trim() ?? ""}";
                     if (whMap.TryGetValue(whKey, out int whId))
                         row.WarehouseID = whId;
                 }

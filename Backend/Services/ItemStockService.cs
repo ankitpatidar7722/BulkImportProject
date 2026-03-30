@@ -77,8 +77,8 @@ public class ItemStockService : IItemStockService
                 ItemCode = row.ItemCode?.Trim(),
                 ReceiptQuantity = row.ReceiptQuantity,
                 LandedRate = row.LandedRate,
-                WarehouseName = row.WarehouseName,
-                BinName = row.BinName
+                WarehouseName = row.WarehouseName?.Trim(),
+                BinName = row.BinName?.Trim()
             };
 
             if (string.IsNullOrWhiteSpace(row.ItemCode))
@@ -208,7 +208,7 @@ public class ItemStockService : IItemStockService
                 // Resolve WarehouseID
                 if (!string.IsNullOrWhiteSpace(row.WarehouseName))
                 {
-                    string whKey = $"{row.WarehouseName}|{row.BinName ?? ""}";
+                    string whKey = $"{row.WarehouseName?.Trim()}|{row.BinName?.Trim() ?? ""}";
                     if (whMap.TryGetValue(whKey, out int whId))
                         row.WarehouseID = whId;
                 }

@@ -217,6 +217,23 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             setGridData(enrichResult.rows);
             setMode('preview');
 
+            // Pre-load bins for all unique warehouses in the data
+            const uniqueWarehouses = [...new Set(enrichResult.rows
+                .map(r => r.warehouseName)
+                .filter(Boolean)
+            )] as string[];
+
+            for (const whName of uniqueWarehouses) {
+                if (!binsCache[whName]) {
+                    try {
+                        const bins = await getToolStockBins(whName);
+                        setBinsCache(prev => ({ ...prev, [whName]: bins }));
+                    } catch {
+                        // Ignore errors
+                    }
+                }
+            }
+
         } catch (error: any) {
             setValidationModalContent({
                 title: 'Upload Error',
@@ -468,6 +485,23 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             if (data.length === 0) {
                 setValidationModalContent({ title: 'No Data', messages: ['No tool stock records found.'] });
                 setShowValidationModal(true);
+            } else {
+                // Pre-load bins for all unique warehouses in the data
+                const uniqueWarehouses = [...new Set(data
+                    .map(r => r.warehouseName)
+                    .filter(Boolean)
+                )] as string[];
+
+                for (const whName of uniqueWarehouses) {
+                    if (!binsCache[whName]) {
+                        try {
+                            const bins = await getToolStockBins(whName);
+                            setBinsCache(prev => ({ ...prev, [whName]: bins }));
+                        } catch {
+                            // Ignore errors
+                        }
+                    }
+                }
             }
         } catch (error: any) {
             setValidationModalContent({
@@ -546,6 +580,22 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
 
     const onCellValueChanged = useCallback(async (params: any) => {
         const { colDef, data, newValue } = params;
+
+        // Update the gridData state with the new value
+        setGridData(prevData => {
+            const newData = [...prevData];
+            const rowIndex = newData.indexOf(data);
+            if (rowIndex !== -1) {
+                newData[rowIndex] = { ...data };
+            }
+            return newData;
+        });
+
+        // Clear validation when data changes
+        setValidationResult(null);
+        setMode('preview');
+
+        // Special handling for warehouse changes
         if (colDef.field === 'warehouseName') {
             data.binName = '';
             if (newValue) {

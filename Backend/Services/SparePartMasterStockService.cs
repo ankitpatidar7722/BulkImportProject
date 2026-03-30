@@ -75,8 +75,8 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                 SparePartName = row.SparePartName?.Trim(),
                 ReceiptQuantity = row.ReceiptQuantity,
                 PurchaseRate = row.PurchaseRate,
-                WarehouseName = row.WarehouseName,
-                BinName = row.BinName
+                WarehouseName = row.WarehouseName?.Trim(),
+                BinName = row.BinName?.Trim()
             };
 
             if (string.IsNullOrWhiteSpace(row.SparePartName))
@@ -203,7 +203,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
                 if (!string.IsNullOrWhiteSpace(row.WarehouseName))
                 {
-                    string whKey = $"{row.WarehouseName}|{row.BinName ?? ""}";
+                    string whKey = $"{row.WarehouseName?.Trim()}|{row.BinName?.Trim() ?? ""}";
                     if (whMap.TryGetValue(whKey, out int whId))
                         row.WarehouseID = whId;
                 }
