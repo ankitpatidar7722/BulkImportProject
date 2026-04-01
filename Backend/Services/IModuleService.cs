@@ -15,6 +15,7 @@ public interface IModuleService
     Task<IEnumerable<dynamic>> GetDebugModuleData();
 
     // Create Module Form helpers
+    Task<List<ModuleDto>> GetIndusModulesAsync();
     Task<List<string>> GetIndusModuleNamesAsync();
     Task<IndusModuleInfoDto?> GetIndusModuleInfoAsync(string moduleName);
     Task<ModuleSystemDefaultsDto> GetSystemDefaultsAsync();

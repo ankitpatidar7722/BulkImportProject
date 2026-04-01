@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-    getIndusModuleNames,
+    getIndusModules,
     getIndusModuleInfo,
     getModuleSystemDefaults,
     checkModuleExists,
@@ -147,11 +147,25 @@ const CreateModule: React.FC = () => {
     const [errors, setErrors] = useState<FieldErrors>({});
     const [isSetGroupLocked, setIsSetGroupLocked] = useState(isEditMode && form.setGroupIndex !== '');
 
-    // Module name dropdown
-    const [moduleNames, setModuleNames] = useState<string[]>([]);
-    const [searchText, setSearchText] = useState(form.moduleName || '');
-    const [dropdownOpen, setDropdownOpen] = useState(false);
-    const [moduleNamesLoading, setModuleNamesLoading] = useState(false);
+    // Indus Modules Data
+    const [allIndusModules, setAllIndusModules] = useState<ModuleDto[]>([]);
+    const [moduleHeads, setModuleHeads] = useState<string[]>([]);
+    
+    // Search & Visibility states
+    const [headSearch, setHeadSearch] = useState(form.moduleHeadName || '');
+    const [nameSearch, setNameSearch] = useState(form.moduleName || '');
+    const [displaySearch, setDisplaySearch] = useState(form.moduleDisplayName || '');
+    
+    const [headDropdownOpen, setHeadDropdownOpen] = useState(false);
+    const [nameDropdownOpen, setNameDropdownOpen] = useState(false);
+    const [displayDropdownOpen, setDisplayDropdownOpen] = useState(false);
+    
+    const [dataLoading, setDataLoading] = useState(false);
+    
+    // Refs for outside click handling
+    const headDropdownRef = useRef<HTMLDivElement>(null);
+    const nameDropdownRef = useRef<HTMLDivElement>(null);
+    const displayDropdownRef = useRef<HTMLDivElement>(null);
 
     // Loading states
     const [autoFillLoading, setAutoFillLoading] = useState(false);
@@ -160,36 +174,41 @@ const CreateModule: React.FC = () => {
     // Validation debounce refs
     const moduleNameCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const orderCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // ── On mount: load Indus module names + system defaults ──────────
+    // ── On mount: load Indus modules + system defaults ───────────
     useEffect(() => {
-        loadIndusModuleNames();
+        loadIndusData();
         if (!isEditMode) {
             loadSystemDefaults();
         }
     }, [isEditMode]);
 
-    // Close dropdown on outside click
+    // Close dropdowns on outside click
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-                setDropdownOpen(false);
-            }
+            const target = e.target as Node;
+            if (headDropdownRef.current && !headDropdownRef.current.contains(target)) setHeadDropdownOpen(false);
+            if (nameDropdownRef.current && !nameDropdownRef.current.contains(target)) setNameDropdownOpen(false);
+            if (displayDropdownRef.current && !displayDropdownRef.current.contains(target)) setDisplayDropdownOpen(false);
         };
         document.addEventListener('mousedown', handleClick);
         return () => document.removeEventListener('mousedown', handleClick);
     }, []);
 
-    const loadIndusModuleNames = async () => {
-        setModuleNamesLoading(true);
+    const loadIndusData = async () => {
+        setDataLoading(true);
         try {
-            const names = await getIndusModuleNames();
-            setModuleNames(names);
+            const modules = await getIndusModules();
+            setAllIndusModules(modules);
+            
+            // Extract unique lists
+            const uniqueHeads = Array.from(new Set(modules.map(m => m.moduleHeadName).filter(Boolean))) as string[];
+            
+            setModuleHeads(uniqueHeads.sort());
         } catch {
             // silent – user can still type manually
         } finally {
-            setModuleNamesLoading(false);
+            setDataLoading(false);
         }
     };
 
@@ -212,15 +231,39 @@ const CreateModule: React.FC = () => {
         }
     };
 
-    // ── Smart auto-fill when module name is selected ─────────────────
+    // ── Selection Handlers ───────────────────────────────────────────
+    const handleHeadSelect = (head: string) => {
+        setHeadSearch(head);
+        setHeadDropdownOpen(false);
+        
+        // Find if there's information we can auto-fill
+        const firstMatch = allIndusModules.find(m => m.moduleHeadName === head);
+        
+        setForm(prev => ({
+            ...prev,
+            moduleHeadName: head,
+            moduleHeadDisplayName: firstMatch?.moduleHeadDisplayName || head,
+            // If the head has changed, we might want to clear name/display if they don't match
+            moduleName: prev.moduleHeadName === head ? prev.moduleName : '',
+            moduleDisplayName: prev.moduleHeadName === head ? prev.moduleDisplayName : '',
+        }));
+        
+        if (prevNameSearchRef.current !== head) {
+            setNameSearch('');
+            setDisplaySearch('');
+        }
+    };
+
+    const prevNameSearchRef = useRef('');
+
     const handleModuleNameSelect = async (name: string) => {
-        setSearchText(name);
-        setDropdownOpen(false);
-        setForm(prev => ({ ...prev, moduleName: name }));
+        setNameSearch(name);
+        setNameDropdownOpen(false);
         setErrors(prev => ({ ...prev, moduleName: undefined }));
 
         setAutoFillLoading(true);
         try {
+            // Fetch detailed info (including display order suggestion from current DB)
             const info = await getIndusModuleInfo(name);
             const suggestedOrder = info.suggestedHeadDisplayOrder ?? 1;
 
@@ -235,22 +278,41 @@ const CreateModule: React.FC = () => {
                 moduleDisplayOrder: String(suggestedOrder),
             }));
 
+            setHeadSearch(info.moduleHeadName ?? '');
+            setDisplaySearch(info.moduleDisplayName ?? '');
             setIsSetGroupLocked(info.setGroupIndex != null);
 
-            // Real-time check: does this module already exist?
+            // Check if exists in current DB
             triggerModuleExistsCheck(name);
         } catch {
-            // Info not found – clear auto-fill fields
-            setForm(prev => ({
-                ...prev,
-                moduleName: name,
-                moduleDisplayName: '',
-                moduleHeadName: '',
-                moduleHeadDisplayName: '',
-            }));
-            setIsSetGroupLocked(false);
+            // Fallback: use data from current list if API fails
+            const localMatch = allIndusModules.find(m => m.moduleName === name);
+            if (localMatch) {
+                setForm(prev => ({
+                    ...prev,
+                    moduleName: localMatch.moduleName || '',
+                    moduleDisplayName: localMatch.moduleDisplayName || '',
+                    moduleHeadName: localMatch.moduleHeadName || '',
+                    moduleHeadDisplayName: localMatch.moduleHeadDisplayName || '',
+                }));
+                setHeadSearch(localMatch.moduleHeadName || '');
+                setDisplaySearch(localMatch.moduleDisplayName || '');
+            }
         } finally {
             setAutoFillLoading(false);
+        }
+    };
+
+    const handleDisplaySelect = (display: string) => {
+        setDisplaySearch(display);
+        setDisplayDropdownOpen(false);
+        
+        const match = allIndusModules.find(m => m.moduleDisplayName === display);
+        if (match) {
+            // Selecting display name fills module name and head name
+            handleModuleNameSelect(match.moduleName || '');
+        } else {
+            setForm(prev => ({ ...prev, moduleDisplayName: display }));
         }
     };
 
@@ -321,18 +383,46 @@ const CreateModule: React.FC = () => {
 
             // Trigger module name check on manual entry
             if (field === 'moduleName') {
-                setSearchText(value);
+                setNameSearch(value);
                 triggerModuleExistsCheck(value);
             }
+            if (field === 'moduleHeadName') setHeadSearch(value);
+            if (field === 'moduleDisplayName') setDisplaySearch(value);
 
             return updated;
         });
     };
 
     // ── Filtered suggestions ─────────────────────────────────────────
-    const filteredNames = moduleNames.filter(n =>
-        n.toLowerCase().includes(searchText.toLowerCase())
+    // 1. Head Names (filtered by Head search)
+    const filteredHeads = moduleHeads.filter(h =>
+        h.toLowerCase().includes(headSearch.toLowerCase())
     ).slice(0, 50);
+
+    // 2. Module Names (filtered by current Head + Name search)
+    const filteredNames = allIndusModules
+        .filter(m => {
+            const headMatch = !form.moduleHeadName || m.moduleHeadName === form.moduleHeadName;
+            const searchMatch = m.moduleName.toLowerCase().includes(nameSearch.toLowerCase());
+            return headMatch && searchMatch;
+        })
+        .map(m => m.moduleName)
+        .filter((v, i, a) => a.indexOf(v) === i) // Unique names
+        .slice(0, 50);
+
+    // 3. Display Names (filtered by current Head + current Module Name + Display search)
+    const filteredDisplays = allIndusModules
+        .filter(m => {
+            const headMatch = !form.moduleHeadName || m.moduleHeadName === form.moduleHeadName;
+            const nameMatch = !form.moduleName || m.moduleName === form.moduleName;
+            const searchMatch = (m.moduleDisplayName || '').toLowerCase().includes(displaySearch.toLowerCase());
+            return headMatch && nameMatch && searchMatch;
+        })
+        .map(m => m.moduleDisplayName)
+        .filter(Boolean) as string[];
+    
+    // Make display names unique
+    const uniqueFilteredDisplays = Array.from(new Set(filteredDisplays)).slice(0, 50);
 
     // ── Validation ───────────────────────────────────────────────────
     const validate = (): boolean => {
@@ -424,7 +514,9 @@ const CreateModule: React.FC = () => {
             userID: prev.userID,
             fYear: prev.fYear,
         }));
-        setSearchText('');
+        setHeadSearch('');
+        setNameSearch('');
+        setDisplaySearch('');
         setErrors({});
         setIsSetGroupLocked(false);
     };
@@ -473,73 +565,47 @@ const CreateModule: React.FC = () => {
                         subtitle="Core identity fields — select a module to auto-fill related details"
                     >
                         <FieldGroup>
-                            {/* Module Name Dropdown */}
-                            <FormField
-                                id="moduleName"
-                                label="Module Name"
-                                required
-                                error={errors.moduleName}
-                                hint="Search and select from IndusEnterpriseDemo"
-                            >
-                                <div className="cm-search-dropdown" ref={dropdownRef}>
+                            {/* Module Head Name Dropdown */}
+                            <FormField id="moduleHeadName" label="Module Head Name" hint="Select the primary category">
+                                <div className="cm-search-dropdown" ref={headDropdownRef}>
                                     <div className="cm-search-input-wrap">
                                         <svg className="cm-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+                                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                                         </svg>
                                         <input
-                                            id="moduleName"
+                                            id="moduleHeadName"
                                             type="text"
-                                            className={`cm-input cm-search-input ${errors.moduleName ? 'cm-input--error' : ''}`}
-                                            placeholder="Select Module..."
-                                            value={searchText}
+                                            className="cm-input cm-search-input"
+                                            placeholder="Select Head Name..."
+                                            value={headSearch}
                                             onChange={e => {
-                                                setSearchText(e.target.value);
-                                                setDropdownOpen(true);
-                                                handleChange('moduleName', e.target.value);
+                                                setHeadSearch(e.target.value);
+                                                setHeadDropdownOpen(true);
+                                                handleChange('moduleHeadName', e.target.value);
                                             }}
-                                            onFocus={() => setDropdownOpen(true)}
+                                            onFocus={() => setHeadDropdownOpen(true)}
                                             autoComplete="off"
                                         />
-                                        {autoFillLoading && (
-                                            <svg className="cm-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <path d="M21 12a9 9 0 11-9-9" />
-                                            </svg>
-                                        )}
                                         <svg
-                                            className={`cm-chevron ${dropdownOpen ? 'cm-chevron--open' : ''}`}
+                                            className={`cm-chevron ${headDropdownOpen ? 'cm-chevron--open' : ''}`}
                                             width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-                                            onClick={() => setDropdownOpen(v => !v)}
+                                            onClick={() => setHeadDropdownOpen(v => !v)}
                                         >
                                             <path d="M6 9l6 6 6-6" />
                                         </svg>
                                     </div>
 
-                                    {dropdownOpen && (
+                                    {headDropdownOpen && (
                                         <div className="cm-dropdown-list" role="listbox">
-                                            {moduleNamesLoading ? (
-                                                <div className="cm-dropdown-status">
-                                                    <svg className="cm-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-9-9" /></svg>
-                                                    Loading modules…
-                                                </div>
-                                            ) : filteredNames.length === 0 ? (
-                                                <div className="cm-dropdown-status">No matches found</div>
+                                            {dataLoading ? (
+                                                <div className="cm-dropdown-status"><svg className="cm-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12a9 9 0 11-9-9" /></svg> Loading...</div>
+                                            ) : filteredHeads.length === 0 ? (
+                                                <div className="cm-dropdown-status">No matches</div>
                                             ) : (
-                                                filteredNames.map(name => (
-                                                    <button
-                                                        key={name}
-                                                        role="option"
-                                                        className={`cm-dropdown-item ${form.moduleName === name ? 'cm-dropdown-item--active' : ''}`}
-                                                        onMouseDown={e => { e.preventDefault(); handleModuleNameSelect(name); }}
-                                                    >
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                                                        </svg>
-                                                        {name}
-                                                        {form.moduleName === name && (
-                                                            <svg className="cm-dropdown-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                                                <path d="M20 6L9 17l-5-5" />
-                                                            </svg>
-                                                        )}
+                                                filteredHeads.map(head => (
+                                                    <button key={head} type="button" className={`cm-dropdown-item ${form.moduleHeadName === head ? 'cm-dropdown-item--active' : ''}`}
+                                                        onMouseDown={e => { e.preventDefault(); handleHeadSelect(head); }}>
+                                                        {head}
                                                     </button>
                                                 ))
                                             )}
@@ -548,45 +614,109 @@ const CreateModule: React.FC = () => {
                                 </div>
                             </FormField>
 
-                            {/* Module Display Name */}
-                            <FormField id="moduleDisplayName" label="Module Display Name" readOnly={!!form.moduleName}
-                                hint="Auto-populated from IndusEnterpriseDemo">
-                                <input
-                                    id="moduleDisplayName"
-                                    type="text"
-                                    className={`cm-input ${form.moduleName ? 'cm-input--readonly' : ''}`}
-                                    placeholder="Auto populated after module selection"
-                                    value={form.moduleDisplayName}
-                                    onChange={e => handleChange('moduleDisplayName', e.target.value)}
-                                    readOnly={!!form.moduleName && !!form.moduleDisplayName}
-                                />
+                            {/* Module Name Dropdown */}
+                            <FormField id="moduleName" label="Module Name" required error={errors.moduleName} hint="Specific module filename (e.g. LedgerMaster.aspx)">
+                                <div className="cm-search-dropdown" ref={nameDropdownRef}>
+                                    <div className="cm-search-input-wrap">
+                                        <svg className="cm-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 9h6M9 12h6M9 15h4" />
+                                        </svg>
+                                        <input
+                                            id="moduleName"
+                                            type="text"
+                                            className={`cm-input cm-search-input ${errors.moduleName ? 'cm-input--error' : ''}`}
+                                            placeholder="Select Module..."
+                                            value={nameSearch}
+                                            onChange={e => {
+                                                setNameSearch(e.target.value);
+                                                setNameDropdownOpen(true);
+                                                handleChange('moduleName', e.target.value);
+                                            }}
+                                            onFocus={() => setNameDropdownOpen(true)}
+                                            autoComplete="off"
+                                        />
+                                        {autoFillLoading && <svg className="cm-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12a9 9 0 11-9-9" /></svg>}
+                                        <svg className={`cm-chevron ${nameDropdownOpen ? 'cm-chevron--open' : ''}`}
+                                            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                                            onClick={() => setNameDropdownOpen(v => !v)}>
+                                            <path d="M6 9l6 6 6-6" />
+                                        </svg>
+                                    </div>
+
+                                    {nameDropdownOpen && (
+                                        <div className="cm-dropdown-list" role="listbox">
+                                            {filteredNames.length === 0 ? (
+                                                <div className="cm-dropdown-status">{form.moduleHeadName ? `No modules in "${form.moduleHeadName}"` : 'No matches'}</div>
+                                            ) : (
+                                                filteredNames.map(name => (
+                                                    <button key={name} type="button" className={`cm-dropdown-item ${form.moduleName === name ? 'cm-dropdown-item--active' : ''}`}
+                                                        onMouseDown={e => { e.preventDefault(); handleModuleNameSelect(name); }}>
+                                                        {name}
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </FormField>
                         </FieldGroup>
 
                         <FieldGroup>
-                            {/* Module Head Name */}
-                            <FormField id="moduleHeadName" label="Module Head Name" readOnly={!!form.moduleName}>
-                                <input
-                                    id="moduleHeadName"
-                                    type="text"
-                                    className={`cm-input ${form.moduleName ? 'cm-input--readonly' : ''}`}
-                                    placeholder="Auto populated after module selection"
-                                    value={form.moduleHeadName}
-                                    onChange={e => handleChange('moduleHeadName', e.target.value)}
-                                    readOnly={!!form.moduleName && !!form.moduleHeadName}
-                                />
+                             {/* Module Display Name Dropdown */}
+                             <FormField id="moduleDisplayName" label="Module Display Name" hint="How this module appears in menus">
+                                <div className="cm-search-dropdown" ref={displayDropdownRef}>
+                                    <div className="cm-search-input-wrap">
+                                        <svg className="cm-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
+                                        </svg>
+                                        <input
+                                            id="moduleDisplayName"
+                                            type="text"
+                                            className="cm-input cm-search-input"
+                                            placeholder="Select Display Name..."
+                                            value={displaySearch}
+                                            onChange={e => {
+                                                setDisplaySearch(e.target.value);
+                                                setDisplayDropdownOpen(true);
+                                                handleChange('moduleDisplayName', e.target.value);
+                                            }}
+                                            onFocus={() => setDisplayDropdownOpen(true)}
+                                            autoComplete="off"
+                                        />
+                                        <svg className={`cm-chevron ${displayDropdownOpen ? 'cm-chevron--open' : ''}`}
+                                            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                                            onClick={() => setDisplayDropdownOpen(v => !v)}>
+                                            <path d="M6 9l6 6 6-6" />
+                                        </svg>
+                                    </div>
+
+                                    {displayDropdownOpen && (
+                                        <div className="cm-dropdown-list" role="listbox">
+                                            {uniqueFilteredDisplays.length === 0 ? (
+                                                <div className="cm-dropdown-status">No matches</div>
+                                            ) : (
+                                                uniqueFilteredDisplays.map(display => (
+                                                    <button key={display} type="button" className={`cm-dropdown-item ${form.moduleDisplayName === display ? 'cm-dropdown-item--active' : ''}`}
+                                                        onMouseDown={e => { e.preventDefault(); handleDisplaySelect(display); }}>
+                                                        {display}
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </FormField>
 
-                            {/* Module Head Display Name */}
-                            <FormField id="moduleHeadDisplayName" label="Module Head Display Name" readOnly={!!form.moduleName}>
+                            {/* Module Head Display Name - Keep as read-only text for simplicity as it usually matches Head Name or is fixed */}
+                            <FormField id="moduleHeadDisplayName" label="Module Head Display Name" readOnly>
                                 <input
                                     id="moduleHeadDisplayName"
                                     type="text"
-                                    className={`cm-input ${form.moduleName ? 'cm-input--readonly' : ''}`}
-                                    placeholder="Auto populated after module selection"
+                                    className="cm-input cm-input--readonly"
+                                    placeholder="Populated from Head Name"
                                     value={form.moduleHeadDisplayName}
                                     onChange={e => handleChange('moduleHeadDisplayName', e.target.value)}
-                                    readOnly={!!form.moduleName && !!form.moduleHeadDisplayName}
+                                    autoComplete="off"
                                 />
                             </FormField>
                         </FieldGroup>

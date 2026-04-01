@@ -60,7 +60,7 @@ const ERPTransactionDelete: React.FC = () => {
     const loadModules = async () => {
         try {
             showLoader();
-            const data = await getModules('Masters');
+            const data = await getModules('Masters_All');
             setModules(data);
         } catch (error) {
             console.error('Failed to load modules:', error);

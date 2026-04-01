@@ -25,6 +25,25 @@ public class ModuleService : IModuleService
 
             headName = headName?.Trim() ?? "";
 
+            // NEW: Specialized condition for ERP Transaction Delete (Show all masters)
+            if (string.Equals(headName, "Masters_All", StringComparison.OrdinalIgnoreCase))
+            {
+                logLines.Add("Matched: Masters_All Logic (Full list)");
+                query = @"
+                    SELECT
+                        ModuleId,
+                        ModuleName,
+                        ModuleDisplayName,
+                        ModuleHeadName
+                    FROM ModuleMaster 
+                    WHERE ModuleHeadName = 'Masters' 
+                      AND ISNULL(IsDeletedTransaction, 0) = 0 AND ModuleName NOT IN('BreakDownTypeMaster.aspx','MaintenanceServiceMaster.aspx','ClientWiseOperationRateSettings.aspx','ClientWisePritingRateSetting.aspx','ItemQCParameterSetting.aspx','CreateMaterialGroup.aspx','SapIntegrationItemMaster.aspx','ProductionUnitMaster.aspx')
+                    ORDER BY ModuleDisplayName";
+                
+                var allMasters = await _connection.QueryAsync<ModuleDto>(query);
+                return allMasters.ToList();
+            }
+
             if (headName == "ALL")
             {
                 return await GetAllModulesAsync();
@@ -43,7 +62,7 @@ public class ModuleService : IModuleService
                         ItemGroupName as ModuleName,
                         ItemGroupName as ModuleDisplayName,
                         'Item Masters' as ModuleHeadName
-                    FROM ItemGroupMaster";
+                    FROM ItemGroupMaster Where ItemGroupId IN (2,3,4,5,6,7,8,13,14,16) AND IsDeletedTransaction=0";
             }
             // 2. Ledger Master
             else if (string.Equals(headName, "Ledger Master", StringComparison.OrdinalIgnoreCase) ||
@@ -57,7 +76,7 @@ public class ModuleService : IModuleService
                         LedgerGroupName as ModuleName,
                         LedgerGroupNameDisplay as ModuleDisplayName,
                         'Ledger Master' as ModuleHeadName
-                    FROM LedgerGroupMaster";
+                    FROM LedgerGroupMaster Where LedgerGroupId IN (1,2,3,4,7,8) AND IsDeletedTransaction=0";
             }
             // 3. Tool Master
             else if (string.Equals(headName, "Tool Master", StringComparison.OrdinalIgnoreCase) ||
@@ -71,7 +90,7 @@ public class ModuleService : IModuleService
                         ToolGroupName as ModuleName,
                         ToolGroupName as ModuleDisplayName,
                         'Tool Master' as ModuleHeadName
-                    FROM ToolGroupMaster";
+                    FROM ToolGroupMaster Where ToolGroupId < 10 AND IsDeletedTransaction=0";
             }
             // 4. Product Group Master
             else if (string.Equals(headName, "Product Group Master", StringComparison.OrdinalIgnoreCase) ||
@@ -119,6 +138,13 @@ public class ModuleService : IModuleService
                         ModuleHeadName
                     FROM ModuleMaster
                     WHERE ModuleHeadName = @HeadName
+                      AND ModuleName IN (
+                          'LedgerMaster.aspx',
+                          'Masters.aspx',
+                          'ProductGroupMasterForGST.aspx',
+                          'ToolMaster.aspx',
+                          'SparePartMaster.aspx'
+                      )
                     ORDER BY ModuleName";
             }
             else
@@ -241,7 +267,11 @@ public class ModuleService : IModuleService
 
     public async Task<bool> DeleteModuleAsync(int moduleId)
     {
-        var query = "Update ModuleMaster SET IsDeletedTransaction =1 WHERE ModuleId = @ModuleId";
+        // Hard Delete from both tables
+        var query = @"
+            DELETE FROM UserModuleAuthentication WHERE ModuleId = @ModuleId;
+            DELETE FROM ModuleMaster WHERE ModuleId = @ModuleId;";
+            
         var rows = await _connection.ExecuteAsync(query, new { ModuleId = moduleId });
         return rows > 0;
     }
@@ -265,6 +295,34 @@ public class ModuleService : IModuleService
     private const string IndusConnStr =
         "Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseDemo;" +
         "User ID=indus;Password=Param@99811;Persist Security Info=True;TrustServerCertificate=True";
+
+    /// <summary>Gets all modules from IndusEnterpriseDemo.ModuleMaster.</summary>
+    public async Task<List<ModuleDto>> GetIndusModulesAsync()
+    {
+        try
+        {
+            await using var indusConn = new SqlConnection(IndusConnStr);
+            var query = @"
+                SELECT 
+                    ModuleId, 
+                    ModuleName, 
+                    ModuleDisplayName, 
+                    ModuleHeadName, 
+                    ModuleHeadDisplayName,
+                    SetGroupIndex
+                FROM ModuleMaster 
+                WHERE IsDeletedTransaction = 0 
+                ORDER BY ModuleHeadName, ModuleDisplayName";
+            
+            var modules = await indusConn.QueryAsync<ModuleDto>(query);
+            return modules.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleService] GetIndusModulesAsync error: {ex.Message}");
+            return new List<ModuleDto>();
+        }
+    }
 
     /// <summary>Gets the list of distinct ModuleNames from IndusEnterpriseDemo.ModuleMaster.</summary>
     public async Task<List<string>> GetIndusModuleNamesAsync()

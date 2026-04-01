@@ -1311,6 +1311,7 @@ public class ExcelService : IExcelService
                 FROM LedgerGroupMaster AS LGM
                 WHERE LGM.IsDeletedTransaction = 0
                     AND LGM.CompanyID = 2
+                    AND LGM.LedgerGroupID IN (1,2,3,4,7,8)
                 ORDER BY LGM.LedgerGroupID";
 
             var result = await _connection.QueryAsync<LedgerGroupDto>(query);
@@ -2586,6 +2587,7 @@ public class ExcelService : IExcelService
             FROM ToolGroupMaster
             WHERE CompanyID = 2
             AND ISNULL(IsDeletedTransaction, 0) = 0
+            AND ToolGroupID < 10
             ORDER BY ToolGroupID";
         
         var toolGroups = await _connection.QueryAsync<ToolGroupDto>(query);
@@ -3119,6 +3121,7 @@ public class ExcelService : IExcelService
                 FROM ItemGroupMaster
                 WHERE CompanyID = 2 
                   AND IsDeletedTransaction = 0
+                  AND ItemGroupID IN (2,3,4,5,6,7,8,13,14,16)
                 ORDER BY ItemGroupName";
 
             var itemGroups = await _connection.QueryAsync<ItemGroupDto>(query);

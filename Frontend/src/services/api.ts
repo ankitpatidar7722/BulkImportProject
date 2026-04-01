@@ -131,6 +131,11 @@ export const getIndusModuleNames = async (): Promise<string[]> => {
     return response.data;
 };
 
+export const getIndusModules = async (): Promise<ModuleDto[]> => {
+    const response = await api.get('/module/IndusModules');
+    return response.data;
+};
+
 export const getIndusModuleInfo = async (moduleName: string): Promise<IndusModuleInfoDto> => {
     const response = await api.get(`/module/IndusModuleInfo?moduleName=${encodeURIComponent(moduleName)}`);
     return response.data;

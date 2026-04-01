@@ -161,6 +161,22 @@ public class ModuleController : ControllerBase
         }
     }
 
+    /// <summary>Returns full module details from IndusEnterpriseDemo for interconnected dropdown filtering.</summary>
+    [HttpGet("IndusModules")]
+    public async Task<IActionResult> GetIndusModules()
+    {
+        try
+        {
+            var modules = await _moduleService.GetIndusModulesAsync();
+            return Ok(modules);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching full Indus modules list");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
     /// <summary>Returns auto-fill data for a given module name from IndusEnterpriseDemo.</summary>
     [HttpGet("IndusModuleInfo")]
     public async Task<IActionResult> GetIndusModuleInfo([FromQuery] string moduleName)
