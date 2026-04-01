@@ -136,7 +136,7 @@ const CompanySubscription: React.FC = () => {
     const [isClientListLoading, setIsClientListLoading] = useState(false);
 
     // ─── Module Group Authority State ───
-    const [groupAppName, setGroupAppName] = useState<string>('estimoprime');
+    const [groupAppName, setGroupAppName] = useState<string>('');
     const [moduleGroups, setModuleGroups] = useState<string[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<string>('');
     const [groupModules, setGroupModules] = useState<ModuleGroupModuleRow[]>([]);
@@ -725,6 +725,10 @@ const CompanySubscription: React.FC = () => {
 
     // ─── Module Group Authority Handlers ───
     const loadModuleGroups = useCallback(async (appName: string) => {
+        if (!appName) {
+            setModuleGroups([]);
+            return;
+        }
         try {
             const res = await getModuleGroups(appName);
             if (res.success) {
@@ -938,6 +942,9 @@ const CompanySubscription: React.FC = () => {
             paymentDueDate: formatDateForInput(selectedRow.paymentDueDate),
         });
         setEditTab(1);
+        setGroupAppName('');
+        setSelectedGroup('');
+        setGroupModules([]);
         setShowForm(true);
     };
 
@@ -952,6 +959,9 @@ const CompanySubscription: React.FC = () => {
             paymentDueDate: formatDateForInput(row.paymentDueDate),
         });
         setEditTab(1);
+        setGroupAppName('');
+        setSelectedGroup('');
+        setGroupModules([]);
         setShowForm(true);
     };
 
@@ -1216,7 +1226,7 @@ const CompanySubscription: React.FC = () => {
 
             {/* ═══════════════ FULL SETUP WIZARD ═══════════════ */}
             {showWizard && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl mx-4 max-h-[92vh] flex flex-col border border-gray-100 dark:border-gray-800">
                         {/* Wizard Header */}
                         <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 rounded-t-2xl">
@@ -1683,7 +1693,7 @@ const CompanySubscription: React.FC = () => {
             {showForm && (
                 <>
                     <style>{`@keyframes editModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
                         <div className="w-full max-w-6xl mx-4 max-h-[92vh] flex flex-col bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
                             onClick={e => e.stopPropagation()}
                             style={{ animation: 'editModalIn 0.2s ease-out' }}>
@@ -1878,6 +1888,7 @@ const CompanySubscription: React.FC = () => {
                                                     onChange={(e) => setGroupAppName(e.target.value)}
                                                     className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 outline-none transition-all cursor-pointer"
                                                 >
+                                                    <option value="" disabled hidden>Select Application name</option>
                                                     <option value="estimoprime">Estimoprime</option>
                                                     <option value="PrintudeERP">PrintudeERP</option>
                                                     <option value="MultiUnit">MultiUnit</option>
@@ -1895,6 +1906,7 @@ const CompanySubscription: React.FC = () => {
                                                     className="w-full h-9 px-2.5 py-1.5 text-[13px] bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 outline-none transition-all cursor-pointer"
                                                     disabled={moduleGroups.length === 0}
                                                 >
+                                                    <option value="" disabled hidden>Select Module Group</option>
                                                     {moduleGroups.map(g => (
                                                         <option key={g} value={g}>{g}</option>
                                                     ))}

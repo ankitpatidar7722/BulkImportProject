@@ -10,7 +10,8 @@ import DataGrid, {
     Grouping,
     GroupPanel,
     Editing,
-    ColumnChooser
+    ColumnChooser,
+    Scrolling
 } from 'devextreme-react/data-grid';
 import { getAllModules, deleteModule, ModuleDto } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
@@ -90,8 +91,10 @@ const ModuleAuthority: React.FC = () => {
                     onToolbarPreparing={handleToolbarPreparing}
                     onEditingStart={onEditingStart}
                     onRowRemoving={onRowRemoving}
+                    height="calc(100vh - 280px)"
                     className="custom-datagrid"
                 >
+                    <Scrolling mode="virtual" rowRenderingMode="virtual" />
                     <Paging defaultPageSize={50} />
                     <Pager 
                         showPageSizeSelector={true} 

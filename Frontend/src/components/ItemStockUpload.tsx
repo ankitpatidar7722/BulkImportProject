@@ -1187,7 +1187,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
             {/* Filename Error Modal */}
             {filenameError && (
-                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+                <div className="fixed inset-0 bg-black/50 z-[10001] flex items-center justify-center p-4">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400">
                             <AlertCircle className="w-8 h-8" />
@@ -1210,7 +1210,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
             {/* Validation Result Modal */}
             {showValidationModal && validationModalContent && (
-                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+                <div className="fixed inset-0 bg-black/50 z-[10001] flex items-center justify-center">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-700 max-h-[90vh] flex flex-col">
                         <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400 shrink-0">
                             <AlertCircle className="w-8 h-8" />

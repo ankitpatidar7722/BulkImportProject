@@ -1452,7 +1452,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                         {
                             "ModuleID", "ApplicationName", "ModuleGroupName", "CompanyID", "UserID",
                             "FYear", "IsLocked", "CreatedBy", "CreatedDate", "ModifiedBy", "ModifiedDate",
-                            "DeletedBy", "DeletedDate", "IsDeletedTransaction", "ProductionUnitID"
+                            "DeletedBy", "DeletedDate", "IsDeletedTransaction", "ProductionUnitID","IsIntegratedModule"
                         };
 
                         var columns = moduleDict.Keys.Where(k => !excludeColumns.Contains(k)).ToList();
@@ -1608,7 +1608,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                         {
                             "ModuleID", "ApplicationName", "ModuleGroupName", "CompanyID", "UserID",
                             "FYear", "IsLocked", "CreatedBy", "CreatedDate", "ModifiedBy", "ModifiedDate",
-                            "DeletedBy", "DeletedDate", "IsDeletedTransaction", "ProductionUnitID"
+                            "DeletedBy", "DeletedDate", "IsDeletedTransaction", "ProductionUnitID","IsIntegratedModule"
                         };
 
                         var columns = moduleDict.Keys.Where(k => !excludeColumns.Contains(k)).ToList();
