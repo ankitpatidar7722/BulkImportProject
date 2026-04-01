@@ -268,7 +268,11 @@ namespace Backend.Services
 
                 var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
                 var backupFileName = $"{databaseName}_{timestamp}.bak";
+
+                // Use local backup path (should be UNC path for remote servers)
                 var backupPath = Path.Combine(_config.BackupStoragePath, backupFileName);
+
+                Console.WriteLine($"[BackupRestore] Backup path: {backupPath}");
 
                 Console.WriteLine($"[BackupRestore] Creating backup: {backupPath}");
                 Console.WriteLine($"[BackupRestore] Executing BACKUP DATABASE command...");

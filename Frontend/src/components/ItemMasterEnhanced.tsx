@@ -163,15 +163,11 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         setIsLoading(true);
         try {
             const data = await getAllItems(itemGroupId);
-            if (data.length === 0) {
-                setItemData([]);
-                setMode('idle');
-                showError(`No data found in database against the selected ${itemGroupName}`);
-            } else {
-                setItemData(data);
-                setMode('loaded');
-                setValidationResult(null);
-                setSelectedRows(new Set()); // Clear selection
+            setItemData(data);
+            setMode('loaded');
+            setValidationResult(null);
+            setSelectedRows(new Set()); // Clear selection
+            if (data.length > 0) {
                 showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} item record(s) for the ${itemGroupName} group.`);
             }
         } catch (error: any) {
@@ -900,11 +896,6 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
     };
 
     const handleExport = async () => {
-        if (itemData.length === 0) {
-            showError('No data to export');
-            return;
-        }
-
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Item Master');
 
@@ -2808,7 +2799,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                         tooltipShowDelay={300}
                         tooltipInteraction={true}
                         enableCellTextSelection={true}
-                        overlayNoRowsTemplate='<span class="text-gray-500 dark:text-gray-400 text-lg">No records found</span>'
+                        overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No data found</div>`}
                     />
                 </div>
             )}

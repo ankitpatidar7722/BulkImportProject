@@ -433,17 +433,12 @@ const SparePartMasterEnhanced: React.FC = () => {
         setIsLoading(true);
         try {
             const data = await getAllSpareParts();
-            if (data.length === 0) {
-                setNoDataMessage("No data found in database");
-                setSparePartData([]);
-                setMode('idle');
-                setValidationResult(null); // Clear validation
-                setSelectedRows(new Set()); // Clear selection
-            } else {
-                setSparePartData(data);
-                setMode('loaded');
-                setValidationResult(null);
-                setFilterType('all');
+            setSparePartData(data);
+            setMode('loaded');
+            setValidationResult(null); // Clear validation
+            setFilterType('all');
+            setSelectedRows(new Set()); // Clear selection
+            if (data.length > 0) {
                 showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} spare part record(s) from the database.`);
             }
         } catch (error: any) {
@@ -753,11 +748,6 @@ const SparePartMasterEnhanced: React.FC = () => {
     };
 
     const handleExport = async () => {
-        if (sparePartData.length === 0) {
-            showMessage('error', 'No Data', 'There is no data to export. Please load data from the database or upload an Excel file first.');
-            return;
-        }
-
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Spare Part Master');
 
@@ -1202,7 +1192,7 @@ const SparePartMasterEnhanced: React.FC = () => {
                             paginationPageSizeSelector={[1000, 2000, 5000]}
                             enableCellTextSelection={true}
                             ensureDomOrder={true}
-                            overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No records found</div>`}
+                            overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No data found</div>`}
                         />
                     </div>
                 </div>

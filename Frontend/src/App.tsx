@@ -20,6 +20,7 @@ import CreateModule from './pages/CreateModule';
 import DynamicModule from './pages/DynamicModule';
 import CompanySubscription from './pages/CompanySubscription';
 import ModuleGroupAuthority from './pages/ModuleGroupAuthority';
+import ERPTransactionDelete from './pages/ERPTransactionDelete';
 
 // Login Flow Component (handles two-step login)
 const LoginFlow = () => {
@@ -77,6 +78,7 @@ const AuthenticatedLayout = () => {
                         <Route path="/dynamic-module" element={<DynamicModule />} />
                         <Route path="/company-subscription" element={<CompanySubscription />} />
                         <Route path="/module-group-authority" element={<ModuleGroupAuthority />} />
+                        <Route path="/erp-transaction-delete" element={<ERPTransactionDelete />} />
                         <Route path="*" element={<Navigate to={defaultPath} replace />} />
                     </Routes>
                     </div>

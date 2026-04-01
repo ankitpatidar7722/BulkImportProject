@@ -93,8 +93,8 @@ builder.Services.AddScoped<SqlConnection>(sp =>
         }
     }
 
-    // Fallback: Check if DefaultConnection exists (e.g. for development or initial setup)
-    var defaultConn = config.GetConnectionString("DefaultConnection");
+    // Fallback: Check if IndusConnection exists (e.g. for development or initial setup)
+    var defaultConn = config.GetConnectionString("IndusConnection");
     if (!string.IsNullOrEmpty(defaultConn))
     {
         return new SqlConnection(defaultConn);
@@ -130,10 +130,10 @@ builder.Services.Configure<BackupRestoreConfig>(builder.Configuration.GetSection
 // Configure EPPlus license
 OfficeOpenXml.ExcelPackage.LicenseContext = OfficeOpenXml.LicenseContext.NonCommercial;
 
+var app = builder.Build();
+
 // Ensure Company Object Exists (Auto-Migration)
-#pragma warning disable ASP0000 // Disable warning for BuildServiceProvider in startup code
-using (var scope = builder.Services.BuildServiceProvider().CreateScope())
-#pragma warning restore ASP0000
+using (var scope = app.Services.CreateScope())
 {
     try
     {
@@ -483,8 +483,6 @@ using (var scope = builder.Services.BuildServiceProvider().CreateScope())
          System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMasterDetails Init Error: {ex.Message}\n");
     }
 }
-
-var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

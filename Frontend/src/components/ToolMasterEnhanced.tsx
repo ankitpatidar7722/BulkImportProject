@@ -523,7 +523,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         if (rowIndex === undefined || rowIndex === null) return;
         setToolData(prevData => {
             const newData = [...prevData];
-            newData[rowIndex] = { ...newData[rowIndex], [colDef.field as keyof ToolMasterDto]: newValue };
+            const trimmedValue = typeof newValue === 'string' ? newValue.trim() : newValue;
+            newData[rowIndex] = { ...newData[rowIndex], [colDef.field as keyof ToolMasterDto]: trimmedValue };
             return newData;
         });
     }, []);
@@ -597,12 +598,10 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 t._rowIndex = idx;
             });
             setToolData(data);
-            setMode(data.length > 0 ? 'loaded' : 'idle');
+            setMode('loaded');
             setValidationResult(null);
             setSelectedRows(new Set());
-            if (data.length === 0) {
-                setNoDataMessage(`No data found in database against the selected ${toolGroupName}`);
-            } else {
+            if (data.length > 0) {
                 showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} tool record(s) for the ${toolGroupName} group.`);
             }
         } catch (error: any) {
@@ -710,7 +709,11 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 const worksheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-                const toStr = (v: any) => (v !== undefined && v !== null && v !== '') ? String(v) : undefined;
+                const toStr = (v: any) => {
+                    if (v === undefined || v === null || v === '') return undefined;
+                    const s = String(v).trim();
+                    return s === '' ? undefined : s;
+                };
 
                 const tools: ToolMasterDto[] = jsonData.map((row: any) => {
                     let upsAround = row.UpsAround;
@@ -739,7 +742,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             purchaseUnit: toStr(row.PurchaseUnit),
                             purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
                             stockUnit: toStr(row.StockUnit),
-                            toolName: toStr(row.ToolName),
+                            toolName: toStr(row.ToolName) || toStr(row.JobName),
                             toolRefCode: toStr(row.ToolRefCode),
                         };
                     } else if (toolGroupId === 5) { // PRINTING CYLINDER
@@ -794,7 +797,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             upsAcross: upsAcross !== undefined && upsAcross !== '' && !isNaN(parseInt(upsAcross)) ? parseInt(upsAcross) : undefined,
                             totalUps: totalUps !== undefined && totalUps !== '' && !isNaN(parseInt(totalUps)) ? parseInt(totalUps) : undefined,
                             productHSNName: toStr(row.ProductHSNName),
-                            toolName: toStr(row.ToolName),
+                            toolName: toStr(row.ToolName) || toStr(row.JobName),
                             toolType: toStr(row.ToolType),
                             aroundGap: row.AroundGap !== undefined && row.AroundGap !== '' && !isNaN(parseFloat(row.AroundGap)) ? parseFloat(row.AroundGap) : undefined,
                             acrossGap: row.AcrossGap !== undefined && row.AcrossGap !== '' && !isNaN(parseFloat(row.AcrossGap)) ? parseFloat(row.AcrossGap) : undefined,
@@ -816,7 +819,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
                             purchaseUnit: toStr(row.PurchaseUnit),
                             stockUnit: toStr(row.StockUnit),
-                            toolName: toStr(row.ToolName),
+                            toolName: toStr(row.ToolName) || toStr(row.JobName),
                             productHSNName: toStr(row.ProductHSNName),
                         };
                     }
@@ -1064,8 +1067,6 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
     };
 
     const handleExport = async () => {
-        if (toolData.length === 0) { showError('No data to export'); return; }
-
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet(toolGroupName || 'Sheet1');
 
@@ -1483,7 +1484,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             ensureDomOrder={true}
                             tooltipShowDelay={300}
                             tooltipInteraction={true}
-                            overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No records found</div>`}
+                            overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No data found</div>`}
                         />
                     </div>
                 </div>

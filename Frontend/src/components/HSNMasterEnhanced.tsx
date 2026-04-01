@@ -411,16 +411,12 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         setIsLoading(true);
         try {
             const data = await getHSNs();
-            if (data.length === 0) {
-                showError('No data found in database');
-                setHsnData([]);
-                setMode('idle');
-                setValidationResult(null); // Ensure validation is cleared
-            } else {
-                setHsnData(data);
-                setMode('loaded');
-                setValidationResult(null);
-                setFilterType('all');
+            setHsnData(data);
+            setMode('loaded');
+            setValidationResult(null);
+            setFilterType('all');
+            setSelectedRows(new Set());
+            if (data.length > 0) {
                 showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} HSN record(s) from the database.`);
             }
         } catch (error: any) {
@@ -929,7 +925,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         </button>
                     )}
 
-                    <button onClick={handleExport} disabled={isLoading || hsnData.length === 0} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm font-medium shadow-sm">
+                    <button onClick={handleExport} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 text-sm font-medium shadow-sm">
                         <Download className="w-4 h-4" /> Export
                     </button>
                 </div>
@@ -1021,7 +1017,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         enableCellTextSelection={true}
                         isExternalFilterPresent={isExternalFilterPresent}
                         doesExternalFilterPass={doesExternalFilterPass}
-                        overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No records found</div>`}
+                        overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No data found</div>`}
                         gridOptions={{
                             headerHeight: 40,
                             rowHeight: 35,

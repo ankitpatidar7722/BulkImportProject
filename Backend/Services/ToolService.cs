@@ -56,12 +56,18 @@ public class ToolService : IToolService
 
         if (toolIds.Count > 0)
         {
-            var allDetailsQuery = @"
-                SELECT ToolID, FieldName, FieldValue
-                FROM ToolMasterDetails
-                WHERE ToolID IN @ToolIDs AND ISNULL(IsDeletedTransaction, 0) = 0";
-
-            var allDetails = await _connection.QueryAsync<dynamic>(allDetailsQuery, new { ToolIDs = toolIds });
+            var allDetails = new List<dynamic>();
+            const int batchSize = 2000;
+            for (int i = 0; i < toolIds.Count; i += batchSize)
+            {
+                var batch = toolIds.Skip(i).Take(batchSize).ToList();
+                var batchDetails = await _connection.QueryAsync<dynamic>(@"
+                    SELECT ToolID, FieldName, FieldValue
+                    FROM ToolMasterDetails
+                    WHERE ToolID IN @ToolIDs AND ISNULL(IsDeletedTransaction, 0) = 0", 
+                    new { ToolIDs = batch });
+                allDetails.AddRange(batchDetails);
+            }
 
             var detailsByToolId = allDetails
                 .GroupBy(d => (int)d.ToolID)
@@ -200,8 +206,8 @@ public class ToolService : IToolService
     {
         return toolGroupId switch
         {
-            3 => // DIE: ToolName + SizeL + SizeW + TotalUps
-                $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeL?.ToString() ?? ""}|{tool.SizeW?.ToString() ?? ""}|{tool.TotalUps?.ToString() ?? ""}",
+            3 => // DIE: JobName + SizeL + SizeW + SizeH + ToolRefCode
+                $"{(tool.JobName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeL?.ToString() ?? ""}|{tool.SizeW?.ToString() ?? ""}|{tool.SizeH?.ToString() ?? ""}|{(tool.ToolRefCode?.Trim() ?? "").ToLowerInvariant()}",
 
             5 => // PRINTING CYLINDER: ToolName + SizeW + Manufacturer + NoOfTeeth
                 $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeW?.ToString() ?? ""}|{(tool.Manufacturer?.Trim() ?? "").ToLowerInvariant()}|{tool.NoOfTeeth?.ToString() ?? ""}",
@@ -268,7 +274,7 @@ public class ToolService : IToolService
         if (toolGroupId == 3) // DIE
         {
             requiredFields = new[] {
-                "ToolName", "JobName", "SizeL", "SizeW", "SizeH",
+                "ToolName", "SizeL", "SizeW", "SizeH",
                 "UpsAround", "UpsAcross", "TotalUps", "ProductHSNName",
                 "PurchaseUnit", "PurchaseRate", "StockUnit"
             };
@@ -299,7 +305,7 @@ public class ToolService : IToolService
         else if (toolGroupId == 8) // FLEXO DIE
         {
             requiredFields = new[] {
-                "ToolName", "ToolType", "JobName", "SizeL", "SizeH",
+                "ToolName", "ToolType", "SizeL", "SizeH",
                 "UpsAround", "UpsAcross", "TotalUps", "AroundGap", "AcrossGap",
                 "ProductHSNName", "PurchaseUnit", "PurchaseRate", "StockUnit"
             };
@@ -616,6 +622,17 @@ public class ToolService : IToolService
                 productHSNID = hsnId;
             }
 
+            tool.JobName = tool.JobName?.Trim();
+            tool.ClientName = tool.ClientName?.Trim();
+            tool.ToolRefCode = tool.ToolRefCode?.Trim();
+            tool.ToolName = tool.ToolName?.Trim();
+            tool.ToolType = tool.ToolType?.Trim();
+            tool.Manufacturer = tool.Manufacturer?.Trim();
+            tool.ProductHSNName = tool.ProductHSNName?.Trim();
+            tool.PurchaseUnit = tool.PurchaseUnit?.Trim();
+            tool.StockUnit = tool.StockUnit?.Trim();
+            tool.ManufecturerItemCode = tool.ManufecturerItemCode?.Trim();
+
             masterRows.Add((tool, toolCode, maxToolNo, toolName, toolType, totalUps, productHSNID, i));
         }
 
@@ -765,7 +782,6 @@ public class ToolService : IToolService
             AddDetail("ToolType",              r.ToolType);
             AddDetail("JobName",               tool.JobName);
             AddDetail("ClientName",            tool.ClientName);
-            AddDetail("ToolRefCode",           tool.ToolRefCode);
             AddDetail("Manufacturer",          tool.Manufacturer);
             if (tool.NoOfTeeth.HasValue)           AddDetail("NoOfTeeth",           tool.NoOfTeeth.ToString());
             if (tool.CircumferenceMM.HasValue)     AddDetail("CircumferenceMM",     tool.CircumferenceMM.ToString());

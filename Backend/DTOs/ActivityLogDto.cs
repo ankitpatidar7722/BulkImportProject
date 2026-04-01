@@ -24,6 +24,7 @@ public class CreateActivityLogRequest
 {
     public int? WebUserId { get; set; }
     public string WebUserName { get; set; } = string.Empty;
+    public string ModuleName { get; set; } = "Company Subscription";
     public string ActionType { get; set; } = string.Empty;
     public string? EntityName { get; set; }
     public int? EntityID { get; set; }

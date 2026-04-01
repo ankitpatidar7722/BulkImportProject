@@ -32,7 +32,7 @@ public class ActivityLogService : IActivityLogService
                     CreatedDate, IsSuccess, ErrorMessage
                 )
                 VALUES (
-                    @WebUserId, @WebUserName, 'indus', @ActionType, 'Company Subscription', @EntityName, @EntityID,
+                    @WebUserId, @WebUserName, 'indus', @ActionType, @ModuleName, @EntityName, @EntityID,
                     @ActionDescription, @OldValue, @NewValue, @IPAddress, @UserAgent,
                     GETDATE(), @IsSuccess, @ErrorMessage
                 );

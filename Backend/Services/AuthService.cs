@@ -13,11 +13,13 @@ public class AuthService : IAuthService
 {
     private readonly IConfiguration _config;
     private readonly ICompanySessionStore _sessionStore;
+    private readonly IActivityLogService _activityLogService;
 
-    public AuthService(IConfiguration config, ICompanySessionStore sessionStore)
+    public AuthService(IConfiguration config, ICompanySessionStore sessionStore, IActivityLogService activityLogService)
     {
         _config = config;
         _sessionStore = sessionStore;
+        _activityLogService = activityLogService;
     }
 
     public async Task<CompanyLoginResponse> CompanyLoginAsync(CompanyLoginRequest request)
@@ -153,7 +155,7 @@ public class AuthService : IAuthService
             using var conn = new SqlConnection(indusConnString);
 
             var query = @"
-                SELECT TOP 1 WebUserName
+                SELECT TOP 1 WebUserId, WebUserName
                 FROM CompanyWebUser
                 WHERE WebUserName = @User AND ISNULL(WebUserPassword, '') = @Pass";
 
@@ -170,6 +172,7 @@ public class AuthService : IAuthService
 
             Console.WriteLine($"[IndusLogin] SUCCESS - Matched WebUserName={result.WebUserName}");
 
+            int? webUserId = result.WebUserId;
             string webUserName = result.WebUserName;
 
             var sessionId = _sessionStore.CreateSession(webUserName, indusConnString, "Indus");
@@ -181,6 +184,25 @@ public class AuthService : IAuthService
             }
 
             var token = GenerateIndusJwtToken(sessionId, webUserName);
+
+            // Log Indus login activity to ActivityLog
+            try
+            {
+                await _activityLogService.LogActivityAsync(new CreateActivityLogRequest
+                {
+                    WebUserId = webUserId,
+                    WebUserName = webUserName,
+                    ModuleName = "Indus Login",
+                    ActionType = "LOGIN",
+                    ActionDescription = $"Indus user '{webUserName}' logged in successfully",
+                    IsSuccess = true
+                });
+            }
+            catch (Exception logEx)
+            {
+                Console.WriteLine($"[IndusLogin] ActivityLog failed: {logEx.Message}");
+                // Don't fail the login if logging fails
+            }
 
             return new IndusLoginResponse
             {

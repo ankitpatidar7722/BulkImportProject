@@ -691,12 +691,10 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         try {
             const data = await getLedgersByGroup(ledgerGroupId);
             setLedgerData(data);
-            setMode(data.length > 0 ? 'loaded' : 'idle');
+            setMode('loaded');
             setValidationResult(null); // Clear validation
             setSelectedRows(new Set()); // Clear selection
-            if (data.length === 0) {
-                setNoDataMessage(`No data found in database against the selected ${ledgerGroupName}`);
-            } else {
+            if (data.length > 0) {
                 showMessage('success', 'Data Loaded', `Successfully loaded ${data.length} ledger record(s) for the ${ledgerGroupName} group.`);
             }
         } catch (error: any) {
@@ -1179,11 +1177,6 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     };
 
     const handleExport = async () => {
-        if (ledgerData.length === 0) {
-            showError('No data to export');
-            return;
-        }
-
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet(ledgerGroupName || 'Sheet1');
 
@@ -1825,7 +1818,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             ensureDomOrder={true}
                             tooltipShowDelay={300}
                             tooltipInteraction={true}
-                            overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No records found</div>`}
+                            overlayNoRowsTemplate={`<div class="ag-overlay-no-rows-center">No data found</div>`}
                         />
                     </div>
                 </div>

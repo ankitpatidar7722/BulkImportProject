@@ -3,7 +3,7 @@ import { Building2, Save, Edit2, Loader2, X } from 'lucide-react';
 import { getCompany, updateCompany, CompanyDto } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
 
-// ─── Reusable Components ────────────────────────────────────────────────────
+// ─── Reusable UI Components ──────────────────────────────────────────────────
 
 function Toggle({ name, checked, onChange }: { name: string; checked: boolean; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) {
     return (
@@ -21,6 +21,114 @@ function StatusBadge({ value }: { value: boolean }) {
         </span>
     );
 }
+
+interface FormFieldProps {
+    label: string;
+    name: keyof CompanyDto;
+    type?: 'text' | 'email' | 'number' | 'textarea' | 'password';
+    required?: boolean;
+    formData: CompanyDto;
+    company: CompanyDto;
+    isEditing: boolean;
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
+}
+
+const FormField: React.FC<FormFieldProps> = ({ label, name, type = 'text', required = false, formData, company, isEditing, onChange }) => {
+    const val = formData[name];
+    const dispVal = company[name];
+    return (
+        <div className="space-y-1.5">
+            <label className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                {label}
+                {required && <span className="text-red-500">*</span>}
+            </label>
+            {isEditing ? (
+                type === 'textarea' ? (
+                    <textarea
+                        name={name}
+                        value={val as string || ''}
+                        onChange={onChange}
+                        rows={3}
+                        placeholder={`Enter ${label.toLowerCase()}`}
+                        className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all resize-none"
+                    />
+                ) : (
+                    <input
+                        type={type}
+                        name={name}
+                        value={val as string || ''}
+                        onChange={onChange}
+                        placeholder={`Enter ${label.toLowerCase()}`}
+                        className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all"
+                    />
+                )
+            ) : (
+                <div className="text-sm font-medium w-full text-gray-900 dark:text-white bg-gray-50 dark:bg-[#1e293b] px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800 min-h-[38px] flex items-center">
+                    {dispVal ? (
+                        name === 'applicationConfiguration' ? (
+                            <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-[13px] tracking-wide flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Configuration Active
+                            </span>
+                        ) : type === 'password' ? (
+                            <span className="tracking-widest opacity-60">••••••••</span>
+                        ) : (
+                            <span className={`w-full ${type === 'textarea' ? 'line-clamp-3 break-words' : 'truncate'}`} title={String(dispVal)}>
+                                {String(dispVal)}
+                            </span>
+                        )
+                    ) : <span className="text-gray-400 italic text-xs">Not set</span>}
+                </div>
+            )}
+        </div>
+    );
+};
+
+interface ToggleFieldProps {
+    label: string;
+    name: keyof CompanyDto;
+    formData: CompanyDto;
+    company: CompanyDto;
+    isEditing: boolean;
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+const ToggleField: React.FC<ToggleFieldProps> = ({ label, name, formData, company, isEditing, onChange }) => {
+    const val = formData[name];
+    const dispVal = company[name];
+    return (
+        <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-[#1e293b] border border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-200 dark:hover:border-blue-800 transition-all group">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">{label}</span>
+            {isEditing
+                ? <Toggle name={name} checked={!!val} onChange={onChange} />
+                : <StatusBadge value={!!dispVal} />
+            }
+        </div>
+    );
+};
+
+const Section: React.FC<{ title: string; icon: string; children: React.ReactNode; cols?: 1 | 2 | 3 }> = ({ title, icon, children, cols = 2 }) => (
+    <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border-b border-gray-100 dark:border-gray-800">
+            <span className="text-lg">{icon}</span>
+            <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-tight">{title}</h4>
+        </div>
+        <div className={`p-5 grid grid-cols-1 ${cols === 2 ? 'md:grid-cols-2' : cols === 3 ? 'md:grid-cols-3' : ''} gap-4`}>
+            {children}
+        </div>
+    </div>
+);
+
+const ToggleGrid: React.FC<{ title: string; icon: string; children: React.ReactNode }> = ({ title, icon, children }) => (
+    <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border-b border-gray-100 dark:border-gray-800">
+            <span className="text-lg">{icon}</span>
+            <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-tight">{title}</h4>
+        </div>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {children}
+        </div>
+    </div>
+);
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
@@ -108,93 +216,29 @@ const CompanyMaster: React.FC = () => {
         { id: 12, label: 'Prefixes',            icon: '🏷️' },
     ];
 
-    // ── Render Helpers ────────────────────────────────────────────────
-    const F = (label: string, name: keyof CompanyDto, type: 'text' | 'email' | 'number' | 'textarea' | 'password' = 'text', required = false) => {
-        const val = formData[name];
-        const dispVal = company[name];
-        return (
-            <div className="space-y-1.5">
-                <label className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    {label}
-                    {required && <span className="text-red-500">*</span>}
-                </label>
-                {isEditing ? (
-                    type === 'textarea' ? (
-                        <textarea
-                            name={name}
-                            value={val as string || ''}
-                            onChange={handleChange}
-                            rows={3}
-                            placeholder={`Enter ${label.toLowerCase()}`}
-                            className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all resize-none"
-                        />
-                    ) : (
-                        <input
-                            type={type}
-                            name={name}
-                            value={val as string || ''}
-                            onChange={handleChange}
-                            placeholder={`Enter ${label.toLowerCase()}`}
-                            className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all"
-                        />
-                    )
-                ) : (
-                    <div className="text-sm font-medium w-full text-gray-900 dark:text-white bg-gray-50 dark:bg-[#1e293b] px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800 min-h-[38px] flex items-center">
-                        {dispVal ? (
-                            name === 'applicationConfiguration' ? (
-                                <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-[13px] tracking-wide flex items-center gap-1.5">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Configuration Active
-                                </span>
-                            ) : type === 'password' ? (
-                                <span className="tracking-widest opacity-60">••••••••</span>
-                            ) : (
-                                <span className={`w-full ${type === 'textarea' ? 'line-clamp-3 break-words' : 'truncate'}`} title={String(dispVal)}>
-                                    {String(dispVal)}
-                                </span>
-                            )
-                        ) : <span className="text-gray-400 italic text-xs">Not set</span>}
-                    </div>
-                )}
-            </div>
-        );
-    };
-
-    const T = (label: string, name: keyof CompanyDto) => {
-        const val = formData[name];
-        const dispVal = company[name];
-        return (
-            <div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-[#1e293b] border border-gray-200 dark:border-gray-700 rounded-xl hover:border-blue-200 dark:hover:border-blue-800 transition-all group">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white transition-colors">{label}</span>
-                {isEditing
-                    ? <Toggle name={name} checked={!!val} onChange={handleChange} />
-                    : <StatusBadge value={!!dispVal} />
-                }
-            </div>
-        );
-    };
-
-    const Section = ({ title, icon, children, cols = 2 }: { title: string; icon: string; children: React.ReactNode; cols?: 1 | 2 | 3 }) => (
-        <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border-b border-gray-100 dark:border-gray-800">
-                <span className="text-lg">{icon}</span>
-                <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-tight">{title}</h4>
-            </div>
-            <div className={`p-5 grid grid-cols-1 ${cols === 2 ? 'md:grid-cols-2' : cols === 3 ? 'md:grid-cols-3' : ''} gap-4`}>
-                {children}
-            </div>
-        </div>
+    // Helper functions for concise rendering with props
+    const F = (label: string, name: keyof CompanyDto, type: any = 'text', required = false) => (
+        <FormField
+            label={label}
+            name={name}
+            type={type}
+            required={required}
+            formData={formData}
+            company={company}
+            isEditing={isEditing}
+            onChange={handleChange}
+        />
     );
 
-    const ToggleGrid = ({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) => (
-        <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border-b border-gray-100 dark:border-gray-800">
-                <span className="text-lg">{icon}</span>
-                <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-tight">{title}</h4>
-            </div>
-            <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                {children}
-            </div>
-        </div>
+    const T = (label: string, name: keyof CompanyDto) => (
+        <ToggleField
+            label={label}
+            name={name}
+            formData={formData}
+            company={company}
+            isEditing={isEditing}
+            onChange={handleChange}
+        />
     );
 
     return (

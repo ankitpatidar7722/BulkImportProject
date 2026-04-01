@@ -10,7 +10,9 @@
       "Bash(dotnet publish:*)",
       "Bash(dotnet clean:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(powershell.exe -Command \"Test-Path ''\\\\\\\\13.200.122.70\\\\SQLBackups''\")",
+      "Bash(powershell.exe -Command \"Write-Host ''Testing network access to SQL Server share...''; Write-Host ''Run this command:''; Write-Host ''Test-Path \\\\\\\\13.200.122.70\\\\SQLBackups''; Write-Host ''''; Write-Host ''If False, the share is not set up yet.''; Write-Host ''If True, you are ready to test the backup download!''\")"
     ]
   }
 }

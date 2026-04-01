@@ -2201,3 +2201,82 @@ export const getActivityLogUsernames = async (): Promise<string[]> => {
     return response.data;
 };
 
+// Transaction Delete API
+export const clearAllTransactions = async (username: string, password: string, reason: string): Promise<{ message: string; deletedCount: number }> => {
+    const response = await api.post('/transactiondelete/clear-all-transactions', {
+        username,
+        password,
+        reason
+    });
+    return response.data;
+};
+
+// Master Usage Check & Delete
+export interface UsageDetail {
+    area: string;
+    tableName: string;
+    count: number;
+    description: string;
+}
+
+export interface MasterUsageResult {
+    isUsed: boolean;
+    usages: UsageDetail[];
+    message: string;
+    totalItemsInGroup: number;
+    itemsUsedInTransactions: number;
+    unusedItemsCount: number;
+}
+
+export interface DeleteMasterDataResult {
+    success: boolean;
+    message: string;
+    deletedCount: number;
+}
+
+export const checkMasterUsage = async (moduleName: string, subModuleId: number): Promise<MasterUsageResult> => {
+    const response = await api.post('/transactiondelete/check-master-usage', {
+        moduleName,
+        subModuleId
+    });
+    return response.data;
+};
+
+export const deleteMasterData = async (
+    moduleName: string,
+    subModuleId: number,
+    username: string,
+    password: string,
+    reason: string
+): Promise<DeleteMasterDataResult> => {
+    const response = await api.post('/transactiondelete/delete-master-data', {
+        moduleName,
+        subModuleId,
+        username,
+        password,
+        reason
+    }, {
+        headers: { 'X-Skip-Auth-Redirect': 'true' }  // Prevent 401 from redirecting to login
+    });
+    return response.data;
+};
+
+export const deleteUnusedMasterData = async (
+    moduleName: string,
+    subModuleId: number,
+    username: string,
+    password: string,
+    reason: string
+): Promise<DeleteMasterDataResult> => {
+    const response = await api.post('/transactiondelete/delete-unused-master-data', {
+        moduleName,
+        subModuleId,
+        username,
+        password,
+        reason
+    }, {
+        headers: { 'X-Skip-Auth-Redirect': 'true' }  // Prevent 401 from redirecting to login
+    });
+    return response.data;
+};
+

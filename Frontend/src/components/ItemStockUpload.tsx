@@ -6,7 +6,6 @@ import { AllCommunityModule, ModuleRegistry, ColDef, GridApi, RowClassRules, IRo
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { useTheme } from '../context/ThemeContext';
-import { useLoader } from '../context/LoaderContext';
 import {
     enrichItemStock, importItemStock, validateItemStock, loadStockData,
     resetItemStock, resetFloorStock,
@@ -25,17 +24,11 @@ interface ItemStockUploadProps {
 
 const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGroupName, onHasDataChange }) => {
     const { isDark } = useTheme();
-    const { showLoader, hideLoader } = useLoader();
 
     // ─── State ───────────────────────────────────────────────────────────────
     const [gridData, setGridData] = useState<ItemStockEnrichedRow[]>([]);
     const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');
     const [isLoading, setIsLoading] = useState(false);
-
-    useEffect(() => {
-        if (isLoading) showLoader();
-        else hideLoader();
-    }, [isLoading]);
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [gridApi, setGridApi] = useState<GridApi | null>(null);
 
@@ -227,23 +220,6 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             const enrichResult = await enrichItemStock(rows, itemGroupId);
             setGridData(enrichResult.rows);
             setMode('preview');
-
-            // Pre-load bins for all unique warehouses in the data
-            const uniqueWarehouses = [...new Set(enrichResult.rows
-                .map(r => r.warehouseName)
-                .filter(Boolean)
-            )] as string[];
-
-            for (const whName of uniqueWarehouses) {
-                if (!binsCache[whName]) {
-                    try {
-                        const bins = await getStockBins(whName);
-                        setBinsCache(prev => ({ ...prev, [whName]: bins }));
-                    } catch {
-                        // Ignore errors
-                    }
-                }
-            }
 
         } catch (error: any) {
             setValidationModalContent({
@@ -498,23 +474,6 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             if (data.length === 0) {
                 setValidationModalContent({ title: 'No Data', messages: ['No stock records found for this Item Group.'] });
                 setShowValidationModal(true);
-            } else {
-                // Pre-load bins for all unique warehouses in the data
-                const uniqueWarehouses = [...new Set(data
-                    .map(r => r.warehouseName)
-                    .filter(Boolean)
-                )] as string[];
-
-                for (const whName of uniqueWarehouses) {
-                    if (!binsCache[whName]) {
-                        try {
-                            const bins = await getStockBins(whName);
-                            setBinsCache(prev => ({ ...prev, [whName]: bins }));
-                        } catch {
-                            // Ignore errors
-                        }
-                    }
-                }
             }
         } catch (error: any) {
             setValidationModalContent({
@@ -695,22 +654,6 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
     const onCellValueChanged = useCallback(async (params: any) => {
         const { colDef, data, newValue } = params;
-
-        // Update the gridData state with the new value
-        setGridData(prevData => {
-            const newData = [...prevData];
-            const rowIndex = newData.indexOf(data);
-            if (rowIndex !== -1) {
-                newData[rowIndex] = { ...data };
-            }
-            return newData;
-        });
-
-        // Clear validation when data changes
-        setValidationResult(null);
-        setMode('preview');
-
-        // Special handling for warehouse changes
         if (colDef.field === 'warehouseName') {
             data.binName = '';
             if (newValue) {
@@ -1237,7 +1180,6 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                         paginationPageSizeSelector={[1000, 2000, 5000]}
                         tooltipShowDelay={300}
                         tooltipInteraction={true}
-                        enableCellTextSelection={true}
                         overlayNoRowsTemplate='<span class="text-gray-500 dark:text-gray-400 text-lg">No records found</span>'
                     />
                 </div>
