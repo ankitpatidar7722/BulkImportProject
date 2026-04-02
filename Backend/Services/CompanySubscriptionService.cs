@@ -1199,60 +1199,76 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 await targetConn.ExecuteAsync("DELETE FROM UserModuleAuthentication", transaction: transaction);
                 await targetConn.ExecuteAsync("DELETE FROM ModuleMaster", transaction: transaction);
 
-                // Insert all source rows (exclude identity ModuleID)
-                int copiedCount = 0;
-                foreach (IDictionary<string, object> row in sourceRows)
+                // Insert all source rows in batches of 50 to stay under SQL parameter limits (2100)
+                var rowsList = sourceRows.Cast<IDictionary<string, object>>().ToList();
+                int totalCopied = 0;
+                int batchSize = 50;
+
+                for (int i = 0; i < rowsList.Count; i += batchSize)
                 {
-                    var columns = row.Keys.Where(k => !k.Equals("ModuleID", StringComparison.OrdinalIgnoreCase)).ToList();
+                    var batch = rowsList.Skip(i).Take(batchSize).ToList();
+                    if (!batch.Any()) continue;
+
+                    var firstRow = batch.First();
+                    var columns = firstRow.Keys.Where(k => !k.Equals("ModuleID", StringComparison.OrdinalIgnoreCase)).ToList();
                     var colNames = string.Join(", ", columns.Select(c => $"[{c}]"));
-                    var paramNames = string.Join(", ", columns.Select(c => $"@{c}"));
 
-                    var paramObj = new DynamicParameters();
-                    foreach (var col in columns)
+                    var sqlBuilder = new StringBuilder();
+                    var batchParams = new DynamicParameters();
+                    sqlBuilder.Append($"INSERT INTO ModuleMaster ({colNames}) VALUES ");
+
+                    var valueLines = new List<string>();
+                    for (int j = 0; j < batch.Count; j++)
                     {
-                        paramObj.Add(col, row[col]);
+                        var row = batch[j];
+                        var rowParamNames = new List<string>();
+                        foreach (var col in columns)
+                        {
+                            var paramName = $"r{i}_{j}_{col}";
+                            batchParams.Add(paramName, row[col]);
+                            rowParamNames.Add($"@{paramName}");
+                        }
+                        valueLines.Add($"({string.Join(", ", rowParamNames)})");
                     }
+                    sqlBuilder.Append(string.Join(", ", valueLines));
+                    sqlBuilder.Append(";");
 
-                    // Insert into ModuleMaster and get new ModuleID
-                    var newModuleId = await targetConn.ExecuteScalarAsync<int>(
-                        $"INSERT INTO ModuleMaster ({colNames}) OUTPUT INSERTED.ModuleID VALUES ({paramNames})",
-                        paramObj, transaction: transaction);
+                    await targetConn.ExecuteAsync(sqlBuilder.ToString(), batchParams, transaction: transaction);
+                    totalCopied += batch.Count;
+                }
 
-                    // Sync UserModuleAuthentication: insert with full permissions for admin
-                    if (adminUserId.HasValue)
-                    {
-                        string moduleName = row.ContainsKey("ModuleName") ? row["ModuleName"]?.ToString() ?? "" : "";
-                        await targetConn.ExecuteAsync(@"
-                            INSERT INTO UserModuleAuthentication
-                            (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy, IsDeletedTransaction)
-                            VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, @CompanyID, 0, @UserID, 0)",
-                            new { UserID = adminUserId.Value, ModuleID = newModuleId, ModuleName = moduleName, CompanyID = companyId ?? 2 },
-                            transaction: transaction);
-                    }
-
-                    copiedCount++;
+                // Sync UserModuleAuthentication in ONE SHOT for admin user instead of inside the loop
+                if (adminUserId.HasValue)
+                {
+                    await targetConn.ExecuteAsync(@"
+                        INSERT INTO UserModuleAuthentication
+                        (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy, IsDeletedTransaction)
+                        SELECT @UserID, ModuleID, ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, @CompanyID, 0, @UserID, 0
+                        FROM ModuleMaster",
+                        new { UserID = adminUserId.Value, CompanyID = companyId ?? 2 },
+                        transaction: transaction);
                 }
 
                 transaction.Commit();
-                Console.WriteLine($"[CopyModules] Copied {copiedCount} modules (+ UserModuleAuthentication) to target {request.TargetCompanyUserID}");
+                Console.WriteLine($"[CopyModules] Optimized Copy: {totalCopied} modules (+ UserModuleAuthentication) to target {request.TargetCompanyUserID}");
 
                 // Log activity
                 await LogActivityAsync(
                     actionType: "Copy Modules",
-                    actionDescription: $"Copied {copiedCount} modules to client {request.TargetCompanyUserID}",
+                    actionDescription: $"Copied {totalCopied} modules to client {request.TargetCompanyUserID}",
                     entityName: "Modules",
                     newValue: System.Text.Json.JsonSerializer.Serialize(new
                     {
                         request.TargetCompanyUserID,
-                        ModulesCopied = copiedCount
+                        ModulesCopied = totalCopied
                     })
                 );
 
                 return new CopyModulesResponse
                 {
                     Success = true,
-                    Message = $"Modules copied successfully to selected client. ({copiedCount} modules)",
-                    CopiedCount = copiedCount
+                    Message = $"Modules copied successfully to selected client. ({totalCopied} modules)",
+                    CopiedCount = totalCopied
                 };
             }
             catch
@@ -1898,6 +1914,21 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             Console.WriteLine($"[DeleteModuleGroup] SUCCESS - Deleted {deletedCount} modules from group '{request.ModuleGroupName}' by user '{request.UserName}'. Reason: {request.Reason}");
 
+            // Log activity
+            await LogActivityAsync(
+                actionType: "Delete",
+                actionDescription: $"Deleted Module Group: {request.ModuleGroupName} (App: {request.ApplicationName}). Reason: {request.Reason}",
+                entityName: "ModuleGroup",
+                oldValue: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    request.ModuleGroupName,
+                    request.ApplicationName,
+                    DeletedCount = deletedCount,
+                    Reason = request.Reason,
+                    ActionBy = request.UserName
+                })
+            );
+
             return new DeleteModuleGroupResponse
             {
                 Success = true,
@@ -1965,13 +1996,11 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             // Step 2: Check if company subscription exists
             Console.WriteLine($"[DeleteCompanySubscription] Checking if company subscription exists: '{request.CompanyUserID}'");
-            var subCount = await indusConn.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM CompanyWebUserMaster WHERE CompanyUserID = @CompanyUserID",
+            var oldData = await indusConn.QueryFirstOrDefaultAsync<CompanySubscriptionDto>(
+                "SELECT * FROM Indus_Company_Authentication_For_Web_Modules WHERE CompanyUserID = @CompanyUserID",
                 new { CompanyUserID = request.CompanyUserID });
 
-            Console.WriteLine($"[DeleteCompanySubscription] Company subscription check returned count: {subCount}");
-
-            if (subCount == 0)
+            if (oldData == null)
             {
                 Console.WriteLine($"[DeleteCompanySubscription] Company subscription not found");
                 return new DeleteCompanySubscriptionResponse { Success = false, Message = $"Company subscription '{request.CompanyUserID}' does not exist." };
@@ -1980,10 +2009,25 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             // Step 3: Delete the record
             Console.WriteLine($"[DeleteCompanySubscription] Proceeding with deletion");
             var deletedCount = await indusConn.ExecuteAsync(
-                "DELETE FROM CompanyWebUserMaster WHERE CompanyUserID = @CompanyUserID",
+                "DELETE FROM Indus_Company_Authentication_For_Web_Modules WHERE CompanyUserID = @CompanyUserID",
                 new { CompanyUserID = request.CompanyUserID });
 
             Console.WriteLine($"[DeleteCompanySubscription] SUCCESS - Deleted company subscription '{request.CompanyUserID}' by user '{request.UserName}'. Reason: {request.Reason}");
+
+            // Log activity
+            await LogActivityAsync(
+                actionType: "Delete",
+                actionDescription: $"Deleted company subscription (Auth): {oldData.CompanyName} (ID: {request.CompanyUserID}). Reason: {request.Reason}",
+                entityName: "Subscription",
+                oldValue: System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    oldData.CompanyUserID,
+                    oldData.CompanyName,
+                    oldData.ApplicationName,
+                    Reason = request.Reason,
+                    ActionBy = request.UserName
+                })
+            );
 
             return new DeleteCompanySubscriptionResponse
             {

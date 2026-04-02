@@ -63,7 +63,7 @@ import 'devextreme/dist/css/dx.light.css';
 
 const EMPTY_FORM: CompanySubscriptionDto = {
     companyUserID: '', password: '', companyName: '', companyCode: '', companyUniqueCode: '',
-    conn_String: '', applicationName: 'estimoprime', subscriptionStatus: 'Active',
+    conn_String: '', applicationName: '', subscriptionStatus: 'Active',
     statusDescription: '', subscriptionStatusMessage: '', address: '', country: 'India',
     state: '', city: '', gstin: '', email: '', mobile: '', loginAllowed: 1,
     fromDate: '', toDate: '', paymentDueDate: '', fYear: '',
@@ -143,7 +143,7 @@ const CompanySubscription: React.FC = () => {
     const [isLoadingGroupModules, setIsLoadingGroupModules] = useState(false);
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
-    const [newGroupApp, setNewGroupApp] = useState('estimoprime');
+    const [newGroupApp, setNewGroupApp] = useState('');
     const [availableModules, setAvailableModules] = useState<ModuleGroupModuleRow[]>([]);
     const [selectedModulesForGroup, setSelectedModulesForGroup] = useState<Set<string>>(new Set());
     const [isCreatingGroup, setIsCreatingGroup] = useState(false);
@@ -156,8 +156,8 @@ const CompanySubscription: React.FC = () => {
     const [step2SavedUserId, setStep2SavedUserId] = useState<string>('');
     const [serverList, setServerList] = useState<string[]>([]);
     const [wizardServer, setWizardServer] = useState('');
-    const [wizardAppName, setWizardAppName] = useState('estimoprime');
-    const [wizardBackupType, setWizardBackupType] = useState('Offset');
+    const [wizardAppName, setWizardAppName] = useState('');
+    const [wizardBackupType, setWizardBackupType] = useState('');
     const [wizardClientName, setWizardClientName] = useState('');
     const [wizardDbName, setWizardDbName] = useState('');
     const [wizardDbNameEdited, setWizardDbNameEdited] = useState(false);
@@ -295,7 +295,7 @@ const CompanySubscription: React.FC = () => {
         setMaxWizardStep(1);
         setIsStep2Saved(false);
         setStep2SavedUserId('');
-        setWizardServer(''); setWizardAppName('estimoprime'); setWizardBackupType('Offset'); setWizardClientName('');
+        setWizardServer(''); setWizardAppName(''); setWizardBackupType(''); setWizardClientName('');
         setWizardDbName(''); setWizardDbNameEdited(false); setSetupResult(null);
         setWizardBackupDatabase('');
         setBackupDatabaseList([]);
@@ -1302,6 +1302,7 @@ const CompanySubscription: React.FC = () => {
                                                 <label className={labelCls}>Application Name *</label>
                                                 <select value={wizardAppName} onChange={e => { setWizardAppName(e.target.value); setWizardDbNameEdited(false); }}
                                                     className={`${inputCls} cursor-pointer`}>
+                                                    <option value="" disabled>Select application</option>
                                                     {APPLICATION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                                                 </select>
                                             </div>
@@ -1309,6 +1310,7 @@ const CompanySubscription: React.FC = () => {
                                                 <label className={labelCls}>Backup Type *</label>
                                                 <select value={wizardBackupType} onChange={e => setWizardBackupType(e.target.value)}
                                                     className={`${inputCls} cursor-pointer`}>
+                                                    <option value="" disabled>Select backup type</option>
                                                     {['Offset', 'Flexo', 'Rotogravure'].map(o => <option key={o} value={o}>{o}</option>)}
                                                 </select>
                                             </div>
@@ -1442,7 +1444,7 @@ const CompanySubscription: React.FC = () => {
                         {/* ═══ STEP 2: Subscription Details ═══ */}
                         {wizardStep === 2 && (
                             <>
-                                <div className="p-4 space-y-3">
+                                <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
                                     {/* DB Created Banner */}
                                     {setupResult && (
                                         <div className="flex items-center gap-2 bg-emerald-50/60 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/40 rounded-lg px-3 py-1.5">
@@ -2004,7 +2006,7 @@ const CompanySubscription: React.FC = () => {
             {showCopyModal && (
                 <>
                     <style>{`@keyframes copyModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm"
                         onClick={() => setShowCopyModal(false)}>
                         <div className="w-full max-w-[520px] mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
                             onClick={e => e.stopPropagation()}
@@ -2104,7 +2106,7 @@ const CompanySubscription: React.FC = () => {
             {showDeleteConfirm && (
                 <>
                     <style>{`@keyframes deleteModalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
-                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm"
                         onClick={() => setShowDeleteConfirm(false)}>
                         <div className="w-full max-w-md mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
                             onClick={e => e.stopPropagation()}
@@ -2208,7 +2210,7 @@ const CompanySubscription: React.FC = () => {
             {showCreateGroupModal && (
                 <>
                     <style>{`@keyframes groupModalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }`}</style>
-                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm"
                         onClick={() => setShowCreateGroupModal(false)}>
                         <div className="w-full max-w-3xl mx-4 bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800"
                             onClick={e => e.stopPropagation()}
@@ -2372,6 +2374,7 @@ const FormSelect: React.FC<FormSelectProps> = ({ label, name, value, onChange, o
     <div className="space-y-1">
         <label className={labelCls}>{label}</label>
         <select name={name} value={value} onChange={onChange} className={`${inputCls} cursor-pointer`}>
+            {!value && <option value="" disabled>Select {label.replace(' *', '').toLowerCase()}</option>}
             {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
     </div>

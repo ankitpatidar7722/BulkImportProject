@@ -55,12 +55,32 @@ const CompanyLogin: React.FC = () => {
     const [indusUser, setIndusUser] = useState('');
     const [indusPass, setIndusPass] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [recentCompanies, setRecentCompanies] = useState<string[]>([]);
+    const [recentIndusUsers, setRecentIndusUsers] = useState<string[]>([]);
+
+    useEffect(() => {
+        const savedCompanies = JSON.parse(localStorage.getItem('recent_companies') || '[]');
+        const savedIndusUsers = JSON.parse(localStorage.getItem('recent_indus_users') || '[]');
+        setRecentCompanies(savedCompanies);
+        setRecentIndusUsers(savedIndusUsers);
+    }, []);
+
+    const saveRecentInput = (type: 'company' | 'indus', val: string) => {
+        if (!val.trim()) return;
+        const key = type === 'company' ? 'recent_companies' : 'recent_indus_users';
+        const current = JSON.parse(localStorage.getItem(key) || '[]');
+        const updated = [val, ...current.filter((i: string) => i !== val)].slice(0, 8);
+        localStorage.setItem(key, JSON.stringify(updated));
+        if (type === 'company') setRecentCompanies(updated);
+        else setRecentIndusUsers(updated);
+    };
 
     const handleCompanySubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
         try {
             await companyLogin({ companyUserID: companyUser, password: companyPass });
+            saveRecentInput('company', companyUser);
         } catch (error: any) {
             showMessage('error', 'Login Failed', error.message || 'Invalid company credentials. Please try again.');
         } finally {
@@ -73,6 +93,7 @@ const CompanyLogin: React.FC = () => {
         setIsSubmitting(true);
         try {
             await indusLogin({ webUserName: indusUser, password: indusPass });
+            saveRecentInput('indus', indusUser);
         } catch (error: any) {
             showMessage('error', 'Login Failed', error.message || 'Invalid Indus credentials. Please try again.');
         } finally {
@@ -167,6 +188,7 @@ const CompanyLogin: React.FC = () => {
                                     </div>
                                     <input
                                         type="text"
+                                        list="recent-companies-list"
                                         value={companyUser}
                                         onChange={(e) => setCompanyUser(e.target.value)}
                                         className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
@@ -174,6 +196,9 @@ const CompanyLogin: React.FC = () => {
                                         required
                                         autoFocus
                                     />
+                                    <datalist id="recent-companies-list">
+                                        {recentCompanies.map(c => <option key={c} value={c} />)}
+                                    </datalist>
                                 </div>
                             </div>
 
@@ -229,6 +254,7 @@ const CompanyLogin: React.FC = () => {
                                     </div>
                                     <input
                                         type="text"
+                                        list="recent-indus-list"
                                         value={indusUser}
                                         onChange={(e) => setIndusUser(e.target.value)}
                                         className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
@@ -236,6 +262,9 @@ const CompanyLogin: React.FC = () => {
                                         required
                                         autoFocus
                                     />
+                                    <datalist id="recent-indus-list">
+                                        {recentIndusUsers.map(u => <option key={u} value={u} />)}
+                                    </datalist>
                                 </div>
                             </div>
 
