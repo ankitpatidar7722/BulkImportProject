@@ -20,7 +20,7 @@ const PrivateRoute: React.FC<PrivateRouteProps> = ({ children }) => {
 
     // If not authenticated, redirect to login with the return URL
     if (!isAuthenticated) {
-        return <Navigate to="/login" state={{ from: location }} replace />;
+        return <Navigate to="/CompanyLogin" state={{ from: location }} replace />;
     }
 
     // User is authenticated, render the protected route

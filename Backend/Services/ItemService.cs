@@ -585,7 +585,7 @@ public class ItemService : IItemService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = "HSNGroup",
-                        ValidationMessage = "HSNGroup does not match ProductHSNMaster DisplayName",
+                        ValidationMessage = "Invalid",
                         Status = ValidationStatus.Mismatch
                     });
 
@@ -675,7 +675,7 @@ public class ItemService : IItemService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = "ItemSubGroupName",
-                        ValidationMessage = "ItemSubGroupName does not match valid values from database",
+                        ValidationMessage = "Invalid",
                         Status = ValidationStatus.Mismatch
                     });
 
@@ -696,7 +696,7 @@ public class ItemService : IItemService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = "ProductHSNName",
-                        ValidationMessage = "ProductHSNName does not match ProductHSNMaster DisplayName",
+                        ValidationMessage = "Invalid",
                         Status = ValidationStatus.Mismatch
                     });
 

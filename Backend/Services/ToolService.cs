@@ -416,7 +416,7 @@ public class ToolService : IToolService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = "ProductHSNName",
-                        ValidationMessage = "ProductHSNName does not match ProductHSNMaster DisplayName (Tool category)",
+                        ValidationMessage = "Invalid",
                         Status = ValidationStatus.Mismatch
                     });
 
@@ -435,7 +435,7 @@ public class ToolService : IToolService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = "ClientName",
-                        ValidationMessage = "ClientName does not match LedgerMaster LedgerName (LedgerGroupId=1)",
+                        ValidationMessage = "Invalid",
                         Status = ValidationStatus.Mismatch
                     });
 

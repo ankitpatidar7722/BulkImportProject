@@ -97,6 +97,14 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     // No Data Popup State
     const [noDataPopupGroup, setNoDataPopupGroup] = useState<string | null>(null);
 
+    // Helper: Build dropdown params that include current value if missing
+    const getDropdownParams = (options: string[]) => (params: any) => {
+        const currentVal = params.value;
+        const vals = [...options];
+        if (currentVal && !vals.includes(currentVal)) vals.unshift(currentVal);
+        return { values: vals };
+    };
+
     // --- AG Grid Setup ---
     const gridApiRef = useRef<GridApi | null>(null);
 
@@ -298,9 +306,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 width: 130,
                 editable: isEditable,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: ['Raw Material', 'Finish Goods', 'Spare Parts', 'Service', 'Tool']
-                },
+                cellEditorParams: getDropdownParams(['Raw Material', 'Finish Goods', 'Spare Parts', 'Service', 'Tool']),
                 cellRenderer: DropdownCellRenderer,
                 cellClassRules: commonCellRules
             },
@@ -320,9 +326,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                     return productType.toLowerCase() === 'raw material';
                 },
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: itemGroups
-                },
+                cellEditorParams: getDropdownParams(itemGroups),
                 cellRenderer: ItemGroupRenderer,
                 cellClassRules: commonCellRules
             }
@@ -675,10 +679,10 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                             const col = cell.columnName || 'Unknown';
                             if (!columnFailures.has(col)) columnFailures.set(col, new Set());
 
-                            let reason = cell.validationMessage;
-                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
-                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
-                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+                            let reason = 'Invalid';
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Master Mismatch';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid Format';
 
                             columnFailures.get(col)!.add(reason);
                         });
@@ -769,15 +773,86 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 setIsLoading(false);
             }
         } else {
-            // Local remove
-            const selectedIndices = new Set(selectedNodes.map(n => n.rowIndex));
-            const newHsnData = hsnData.filter((_, idx) => !selectedIndices.has(idx as number));
-            setHsnData(newHsnData);
+            // Local remove from Excel Preview
+            const selectedIndicesList = selectedNodes.map(n => n.rowIndex as number).sort((a, b) => b - a);
+            const selectedIndicesSet = new Set(selectedIndicesList);
+
+            // 1. Update data
+            const newData = hsnData.filter((_, idx) => !selectedIndicesSet.has(idx));
+            setHsnData(newData);
             setSelectedRows(new Set());
-            // Reset validation if rows change, or we could just re-validate manually
-            setValidationResult(null);
-            setMode('preview'); // Back to preview to force validation
-            showMessage('info', 'Rows Removed', `${selectedIndices.size} row(s) have been removed from the preview. Please re-run validation before importing.`);
+
+            // 2. Update validationResult (if exists)
+            if (validationResult) {
+                const oldRows = validationResult.rows;
+                const newRows: HSNRowValidation[] = [];
+                const summary = { ...validationResult.summary };
+
+                // Map to track index shifts
+                const indexMap = new Map<number, number>();
+                let shift = 0;
+                for (let i = 0; i < hsnData.length; i++) {
+                    if (selectedIndicesSet.has(i)) {
+                        shift++;
+                    } else {
+                        indexMap.set(i, i - shift);
+                    }
+                }
+
+                // Filter and re-index rows
+                oldRows.forEach(row => {
+                    if (selectedIndicesSet.has(row.rowIndex)) {
+                        // This row was deleted - decrement summary counts
+                        summary.totalRows--;
+                        if (row.rowStatus === ValidationStatus.Duplicate) summary.duplicateCount--;
+                        else if (row.rowStatus === ValidationStatus.Valid) summary.validRows--;
+
+                        // Cell-level failures
+                        row.cellValidations?.forEach((cv: any) => {
+                            if (cv.status === ValidationStatus.MissingData) summary.missingDataCount--;
+                            else if (cv.status === ValidationStatus.Mismatch) summary.mismatchCount--;
+                            else if (cv.status === ValidationStatus.InvalidContent) summary.invalidContentCount--;
+                        });
+                    } else {
+                        // This row stays - update index
+                        newRows.push({
+                            ...row,
+                            rowIndex: indexMap.get(row.rowIndex)!
+                        });
+                    }
+                });
+
+                // Sanity check: Ensure counts don't go negative
+                summary.totalRows = Math.max(0, summary.totalRows);
+                summary.duplicateCount = Math.max(0, summary.duplicateCount);
+                summary.missingDataCount = Math.max(0, summary.missingDataCount);
+                summary.mismatchCount = Math.max(0, summary.mismatchCount);
+                summary.invalidContentCount = Math.max(0, summary.invalidContentCount);
+                summary.validRows = Math.max(0, summary.validRows);
+
+                const isStillValid = summary.duplicateCount === 0 &&
+                    summary.missingDataCount === 0 &&
+                    summary.mismatchCount === 0 &&
+                    summary.invalidContentCount === 0;
+
+                setValidationResult({
+                    ...validationResult,
+                    rows: newRows,
+                    summary: summary,
+                    isValid: isStillValid
+                });
+                
+                // Keep the mode as validated if it was already
+                if (mode === 'validated') {
+                     // Stay in validated mode to show updated summary
+                } else {
+                    setMode('preview');
+                }
+            } else {
+                setMode('preview');
+            }
+
+            showMessage('info', 'Rows Removed', `${selectedIndicesList.length} row(s) have been removed from the preview.`);
         }
     };
 

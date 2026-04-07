@@ -225,6 +225,14 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         return map;
     }, [validationResult]);
 
+    // Helper: Build dropdown params that include current value if missing
+    const getDropdownParams = (options: string[]) => (params: any) => {
+        const currentVal = params.value;
+        const vals = [...options];
+        if (currentVal && !vals.includes(currentVal)) vals.unshift(currentVal);
+        return { values: vals };
+    };
+
     // AG Grid Setup
     const gridApiRef = useRef<GridApi | null>(null);
 
@@ -252,20 +260,20 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
             {
                 field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellEditorParams: getDropdownParams(hsnGroups.map(h => h.displayName)),
                 cellRenderer: DropdownCellRenderer
             },
         ];
@@ -283,20 +291,20 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellEditorParams: getDropdownParams(hsnGroups.map(h => h.displayName)),
                 cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
             {
                 field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
@@ -313,20 +321,20 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellEditorParams: getDropdownParams(hsnGroups.map(h => h.displayName)),
                 cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
             {
                 field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
@@ -341,20 +349,20 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellEditorParams: getDropdownParams(hsnGroups.map(h => h.displayName)),
                 cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
             {
                 field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
@@ -370,20 +378,20 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellEditorParams: getDropdownParams(hsnGroups.map(h => h.displayName)),
                 cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
             {
                 field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
@@ -401,7 +409,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: hsnGroups.map(h => h.displayName) },
+                cellEditorParams: getDropdownParams(hsnGroups.map(h => h.displayName)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
@@ -411,13 +419,13 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'unitSymbol', headerName: 'UnitSymbol', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             {
                 field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
@@ -426,7 +434,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             {
                 field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: { values: units.map(u => u.unitSymbol) },
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
         ];
@@ -471,18 +479,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         return {
             editable: () => mode === 'preview' || mode === 'validated',
             sortable: true, filter: true, resizable: true, minWidth: 50,
-            tooltipValueGetter: (params: any) => {
-                const rowIndex = params.data?._rowIndex;
-                if (rowIndex === undefined || rowIndex === null) return null;
-                const rowValidation = validationMap.get(rowIndex);
-                if (!rowValidation) return null;
-                const cellVal = findToolCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
-                if (cellVal) return null; // Removed validation message tooltip as requested
-                if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
-                    return rowValidation.errorMessage || 'Duplicate row detected';
-                }
-                return null;
-            },
+            tooltipValueGetter: () => null,
             cellStyle: (params: any): Record<string, string> | null => {
                 const rowIndex = params.data?._rowIndex;
                 if (rowIndex === undefined || rowIndex === null) return null;
@@ -657,14 +654,68 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         if (!window.confirm(`Are you sure you want to remove ${selectedNodes.length} tool(s)?`)) return;
 
         const selectedData = selectedNodes.map(node => node.data);
-        const selectedIndices = new Set(selectedData.map(d => toolData.indexOf(d)).filter(i => i !== -1));
 
         if (mode === 'preview' || mode === 'validated') {
-            const newToolData = toolData.filter((_, index) => !selectedIndices.has(index));
+            const selectedInternalIndices = new Set(selectedData.map(d => (d as any)._rowIndex).filter(i => i !== undefined && i !== null));
+
+            // 1. Update data
+            const newToolData = toolData.filter(d => !selectedInternalIndices.has((d as any)._rowIndex));
             setToolData(newToolData);
-            setValidationResult(null);
-            setMode('preview');
-            showMessage('info', 'Rows Removed', `${selectedIndices.size} row(s) have been removed from the preview. Please re-run validation before importing.`);
+            setSelectedRows(new Set());
+
+            // 2. Update validationResult (if exists)
+            if (validationResult) {
+                const oldRows = validationResult.rows;
+                const newRows: ToolRowValidation[] = [];
+                const summary = { ...validationResult.summary };
+
+                oldRows.forEach(row => {
+                    if (selectedInternalIndices.has(row.rowIndex)) {
+                        // This row was deleted
+                        summary.totalRows--;
+                        if (row.rowStatus === ValidationStatus.Duplicate) summary.duplicateCount--;
+                        else if (row.rowStatus === ValidationStatus.Valid) summary.validRows--;
+
+                        row.cellValidations?.forEach((cv: any) => {
+                            if (cv.status === ValidationStatus.MissingData) summary.missingDataCount--;
+                            else if (cv.status === ValidationStatus.Mismatch) summary.mismatchCount--;
+                            else if (cv.status === ValidationStatus.InvalidContent) summary.invalidContentCount--;
+                        });
+                    } else {
+                        // Row stays - no index update needed because _rowIndex is stable
+                        newRows.push(row);
+                    }
+                });
+
+                summary.totalRows = Math.max(0, summary.totalRows);
+                summary.duplicateCount = Math.max(0, summary.duplicateCount);
+                summary.missingDataCount = Math.max(0, summary.missingDataCount);
+                summary.mismatchCount = Math.max(0, summary.mismatchCount);
+                summary.invalidContentCount = Math.max(0, summary.invalidContentCount);
+                summary.validRows = Math.max(0, summary.validRows);
+
+                const isStillValid = summary.duplicateCount === 0 &&
+                    summary.missingDataCount === 0 &&
+                    summary.mismatchCount === 0 &&
+                    summary.invalidContentCount === 0;
+
+                setValidationResult({
+                    ...validationResult,
+                    rows: newRows,
+                    summary: summary,
+                    isValid: isStillValid
+                });
+
+                if (mode === 'validated') {
+                    // Stay in validated mode
+                } else {
+                    setMode('preview');
+                }
+            } else {
+                setMode('preview');
+            }
+
+            showMessage('info', 'Rows Removed', `${selectedInternalIndices.size} row(s) have been removed from the preview.`);
             return;
         }
 
@@ -962,10 +1013,10 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                         row.cellValidations.forEach((cell: any) => {
                             const col = cell.columnName || 'Unknown';
                             if (!columnFailures.has(col)) columnFailures.set(col, new Set());
-                            let reason = cell.validationMessage;
-                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
-                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
-                            else if (cell.status === ValidationStatus.InvalidContent) reason = "Single quote (') and double quote (\") are not allowed.";
+                            let reason = 'Invalid';
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Master Mismatch';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid Format';
                             columnFailures.get(col)!.add(reason);
                         });
                     }

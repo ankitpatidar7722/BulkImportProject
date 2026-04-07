@@ -300,6 +300,14 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
 
 
+    // Helper: Build dropdown params that include current value if missing
+    const getDropdownParams = (options: string[]) => (params: any) => {
+        const currentVal = params.value;
+        const vals = [...options];
+        if (currentVal && !vals.includes(currentVal)) vals.unshift(currentVal);
+        return { values: vals };
+    };
+
     // --- AG Grid Setup ---
     const gridApiRef = useRef<GridApi | null>(null);
 
@@ -342,9 +350,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 headerName: 'ClientName',
                 hide: !isConsignee,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: clients.map(c => c.ledgerName || c.LedgerName || '').filter(Boolean)
-                },
+                cellEditorParams: getDropdownParams(clients.map(c => c.ledgerName || c.LedgerName || '').filter(Boolean)),
                 cellRenderer: DropdownCellRenderer
             },
 
@@ -355,11 +361,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 field: 'country',
                 headerName: 'Country',
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: () => {
-                    return {
-                        values: distinctCountries
-                    };
-                },
+                cellEditorParams: getDropdownParams(distinctCountries),
                 cellRenderer: DropdownCellRenderer
             },
             {
@@ -368,15 +370,17 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: (params: any) => {
                     const selectedCountry = params.data.country;
-                    if (!selectedCountry) return { values: [] };
+                    const currentVal = params.value;
+                    if (!selectedCountry) return { values: currentVal ? [currentVal] : [] };
 
                     const filteredStates = countryStates
-                        .filter(cs => cs.country === selectedCountry)
-                        .map(cs => cs.state);
+                         .filter(cs => cs.country === selectedCountry)
+                         .map(cs => cs.state);
+                    
+                    const options = [...filteredStates.sort()];
+                    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
 
-                    return {
-                        values: filteredStates.sort()
-                    };
+                    return { values: options };
                 },
                 cellRenderer: DropdownCellRenderer
             },
@@ -403,9 +407,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 field: 'departmentName',
                 headerName: 'DepartmentName',
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: departments.map(d => d.departmentName || d.DepartmentName || '').filter(Boolean)
-                },
+                cellEditorParams: getDropdownParams(departments.map(d => d.departmentName || d.DepartmentName || '').filter(Boolean)),
                 cellRenderer: DropdownCellRenderer,
                 hide: !isEmployee
             },
@@ -427,9 +429,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 field: 'salesRepresentative',
                 headerName: 'SalesRepresentative',
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: salesRepresentatives.map(sr => sr.employeeName || sr.EmployeeName || '').filter(Boolean)
-                },
+                cellEditorParams: getDropdownParams(salesRepresentatives.map(sr => sr.employeeName || sr.EmployeeName || '').filter(Boolean)),
                 cellRenderer: DropdownCellRenderer,
                 hide: isSupplier || isEmployee || isConsignee || isVendor || isTransporter
             },
@@ -471,23 +471,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                     }
                     return null;
                 },
-                tooltipValueGetter: (params: any) => {
-                    const val = params.data?.gstApplicable;
-                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
-                        return `Invalid boolean value. Only 'true' or 'false' (case-insensitive) are accepted.`;
-                    }
-                    // Otherwise use default tooltip logic
-                    const rowIndex = ledgerData.indexOf(params.data);
-                    if (rowIndex === -1) return null;
-                    const rowValidation = validationMap.get(rowIndex);
-                    if (!rowValidation) return null;
-                    const cellVal = findLedgerCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
-                    if (cellVal) return cellVal.validationMessage;
-                    if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
-                        return rowValidation.errorMessage || 'Duplicate row detected';
-                    }
-                    return null;
-                },
+                tooltipValueGetter: () => null,
                 hide: isEmployee || isConsignee || isTransporter
             },
             { field: 'refCode', headerName: 'RefCode', hide: isEmployee || isVendor || isTransporter },
@@ -524,18 +508,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             filter: true,
             resizable: true,
             minWidth: 50,
-            tooltipValueGetter: (params: any) => {
-                const rowIndex = ledgerData.indexOf(params.data);
-                if (rowIndex === -1) return null;
-                const rowValidation = validationMap.get(rowIndex);
-                if (!rowValidation) return null;
-                const cellVal = findLedgerCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
-                if (cellVal) return cellVal.validationMessage;
-                if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
-                    return rowValidation.errorMessage || 'Duplicate row detected';
-                }
-                return null;
-            },
+            tooltipValueGetter: () => null,
             cellStyle: (params: any): Record<string, string> | null => {
                 const rowIndex = ledgerData.indexOf(params.data);
                 if (rowIndex === -1) return null;
@@ -769,11 +742,81 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         const selectedIndices = new Set(selectedData.map(d => ledgerData.indexOf(d)).filter(i => i !== -1));
 
         if (mode === 'preview' || mode === 'validated') {
-            const newLedgerData = ledgerData.filter((_, index) => !selectedIndices.has(index));
+            const selectedIndicesList = Array.from(selectedIndices).sort((a, b) => b - a);
+            const selectedSet = new Set(selectedIndicesList);
+
+            // 1. Update data
+            const newLedgerData = ledgerData.filter((_, index) => !selectedSet.has(index));
             setLedgerData(newLedgerData);
-            setValidationResult(null); // Reset validation as indices shift
-            setMode('preview');
-            showMessage('info', 'Rows Removed', `${selectedIndices.size} row(s) have been removed from the preview. Please re-run validation before importing.`);
+            setSelectedRows(new Set());
+
+            // 2. Update validationResult (if exists)
+            if (validationResult) {
+                const oldRows = validationResult.rows;
+                const newRows: LedgerRowValidation[] = [];
+                const summary = { ...validationResult.summary };
+
+                // Map to track index shifts
+                const indexMap = new Map<number, number>();
+                let shift = 0;
+                for (let i = 0; i < ledgerData.length; i++) {
+                    if (selectedSet.has(i)) {
+                        shift++;
+                    } else {
+                        indexMap.set(i, i - shift);
+                    }
+                }
+
+                // Filter and re-index rows
+                oldRows.forEach(row => {
+                    if (selectedSet.has(row.rowIndex)) {
+                        // This row was deleted
+                        summary.totalRows--;
+                        if (row.rowStatus === ValidationStatus.Duplicate) summary.duplicateCount--;
+                        else if (row.rowStatus === ValidationStatus.Valid) summary.validRows--;
+
+                        row.cellValidations?.forEach((cv: any) => {
+                            if (cv.status === ValidationStatus.MissingData) summary.missingDataCount--;
+                            else if (cv.status === ValidationStatus.Mismatch) summary.mismatchCount--;
+                            else if (cv.status === ValidationStatus.InvalidContent) summary.invalidContentCount--;
+                        });
+                    } else {
+                        newRows.push({
+                            ...row,
+                            rowIndex: indexMap.get(row.rowIndex)!
+                        });
+                    }
+                });
+
+                summary.totalRows = Math.max(0, summary.totalRows);
+                summary.duplicateCount = Math.max(0, summary.duplicateCount);
+                summary.missingDataCount = Math.max(0, summary.missingDataCount);
+                summary.mismatchCount = Math.max(0, summary.mismatchCount);
+                summary.invalidContentCount = Math.max(0, summary.invalidContentCount);
+                summary.validRows = Math.max(0, summary.validRows);
+
+                const isStillValid = summary.duplicateCount === 0 &&
+                    summary.missingDataCount === 0 &&
+                    summary.mismatchCount === 0 &&
+                    summary.invalidContentCount === 0;
+
+                setValidationResult({
+                    ...validationResult,
+                    rows: newRows,
+                    summary: summary,
+                    isValid: isStillValid
+                });
+
+                if (mode === 'validated') {
+                    // Stay in validated mode
+                } else {
+                    setMode('preview');
+                }
+            } else {
+                setMode('preview');
+            }
+
+            showMessage('info', 'Rows Removed', `${selectedIndicesList.length} row(s) have been removed from the preview.`);
             return;
         }
 
@@ -1053,10 +1096,10 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                             const col = cell.columnName || 'Unknown';
                             if (!columnFailures.has(col)) columnFailures.set(col, new Set());
 
-                            let reason = cell.validationMessage;
-                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
-                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
-                            else if (cell.status === ValidationStatus.InvalidContent) reason = "Single quote (') and double quote (\") are not allowed.";
+                            let reason = 'Invalid';
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Master Mismatch';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid Format';
 
                             columnFailures.get(col)!.add(reason);
                         });

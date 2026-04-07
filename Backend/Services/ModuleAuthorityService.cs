@@ -74,78 +74,120 @@ public class ModuleAuthorityService : IModuleAuthorityService
     /// </summary>
     public async Task<object> SaveModuleAuthorityAsync(List<ModuleAuthoritySaveDto> modules, string product)
     {
-        int inserted = 0, enabled = 0, disabled = 0;
+        int inserted = 0, deleted = 0, maintained = 0;
 
-        // 1. Fetch all existing local modules at once for faster lookups
-        var loginModules = (await _connection.QueryAsync<dynamic>(
-            "SELECT ModuleId, ModuleHeadName, ModuleDisplayName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster"
-        )).ToList();
+        await _connection.OpenAsync();
+        using var transaction = _connection.BeginTransaction();
 
-        var loginLookup = new Dictionary<string, (int ModuleId, bool IsDeletedTransaction)>();
-        foreach (var lm in loginModules)
+        try
         {
-            string key = $"{lm.ModuleHeadName}|{lm.ModuleDisplayName}";
-            if (!loginLookup.ContainsKey(key))
-                loginLookup[key] = ((int)lm.ModuleId, (bool)lm.IsDeletedTransaction);
-        }
+            // 1. Fetch all existing local modules for lookup
+            var loginModules = (await _connection.QueryAsync<dynamic>(
+                "SELECT ModuleId, ModuleHeadName, ModuleDisplayName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster",
+                transaction: transaction
+            )).ToList();
 
-        await using var sourceConn = new SqlConnection(SourceConnStr);
-
-        // 2. Process changes
-        foreach (var mod in modules)
-        {
-            string key = $"{mod.ModuleHeadName}|{mod.ModuleDisplayName}";
-            bool existsLocally = loginLookup.TryGetValue(key, out var loginInfo);
-
-            if (mod.Status) // Checkbox ticked
+            var loginLookup = new Dictionary<string, (int ModuleId, bool IsDeletedTransaction)>();
+            foreach (var lm in loginModules)
             {
-                if (!existsLocally)
+                string key = $"{lm.ModuleHeadName}|{lm.ModuleDisplayName}";
+                if (!loginLookup.ContainsKey(key))
+                    loginLookup[key] = ((int)lm.ModuleId, (bool)lm.IsDeletedTransaction);
+            }
+
+            await using var sourceConn = new SqlConnection(SourceConnStr);
+            await sourceConn.OpenAsync();
+
+            // 2. Process all modules in the payload
+            foreach (var mod in modules)
+            {
+                string key = $"{mod.ModuleHeadName}|{mod.ModuleDisplayName}";
+                bool existsLocally = loginLookup.TryGetValue(key, out var loginInfo);
+
+                if (mod.Status) // Checkbox ticked -> Should exist in local DB
                 {
-                    // Case A: Insert from source DB
-                    var sourceRow = await sourceConn.QueryFirstOrDefaultAsync<dynamic>(
-                        @"SELECT * FROM ModuleMaster
-                          WHERE ModuleHeadName = @ModuleHeadName
-                            AND ModuleDisplayName = @ModuleDisplayName
-                            AND IsDeletedTransaction = 0",
-                        new { mod.ModuleHeadName, mod.ModuleDisplayName });
-
-                    if (sourceRow != null)
+                    if (!existsLocally)
                     {
-                        var srcDict = (IDictionary<string, object>)sourceRow;
-                        srcDict.Remove("ModuleId");
-                        srcDict.Remove("ModuleID");
+                        // Case A: Insert from source DB
+                        var sourceRow = await sourceConn.QueryFirstOrDefaultAsync<dynamic>(
+                            @"SELECT * FROM ModuleMaster 
+                              WHERE ModuleHeadName = @ModuleHeadName 
+                                AND ModuleDisplayName = @ModuleDisplayName 
+                                AND IsDeletedTransaction = 0",
+                            new { mod.ModuleHeadName, mod.ModuleDisplayName });
 
-                        var columns = srcDict.Keys.ToList();
-                        var colList = string.Join(", ", columns);
-                        var paramList = string.Join(", ", columns.Select(c => "@" + c));
+                        if (sourceRow != null)
+                        {
+                            var srcDict = (IDictionary<string, object>)sourceRow;
+                            // Remove identity/calculated columns
+                            srcDict.Remove("ModuleId");
+                            srcDict.Remove("ModuleID");
 
-                        var insertQuery = $"INSERT INTO ModuleMaster ({colList}) VALUES ({paramList})";
-                        await _connection.ExecuteAsync(insertQuery, new DynamicParameters(srcDict));
-                        inserted++;
+                            var columns = srcDict.Keys.ToList();
+                            var colList = string.Join(", ", columns);
+                            var paramList = string.Join(", ", columns.Select(c => "@" + c));
+
+                            var insertQuery = $"INSERT INTO ModuleMaster ({colList}) VALUES ({paramList}); SELECT CAST(SCOPE_IDENTITY() as int);";
+                            var newModuleId = await _connection.ExecuteScalarAsync<int>(insertQuery, new DynamicParameters(srcDict), transaction: transaction);
+                            
+                            // Also give admin full permission for this new module
+                            var adminUserId = await _connection.ExecuteScalarAsync<int?>(
+                                "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin' AND ISNULL(IsBlocked, 0) = 0", 
+                                transaction: transaction);
+                            
+                            if (adminUserId.HasValue)
+                            {
+                                await _connection.ExecuteAsync(@"
+                                    INSERT INTO UserModuleAuthentication 
+                                    (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy)
+                                    VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, 2, 0, @UserID)",
+                                    new { UserID = adminUserId.Value, ModuleID = newModuleId, ModuleName = mod.ModuleDisplayName },
+                                    transaction: transaction);
+                            }
+
+                            inserted++;
+                        }
+                    }
+                    else 
+                    {
+                        // Module exists. If it was previously soft-deleted, we should restore it?
+                        // Actually, the user wants hard deletes, so there shouldn't be soft-deleted modules.
+                        // But for safety, ensure IsDeletedTransaction is 0 if it exists.
+                        if (loginInfo.IsDeletedTransaction)
+                        {
+                            await _connection.ExecuteAsync(
+                                "UPDATE ModuleMaster SET IsDeletedTransaction = 0 WHERE ModuleId = @ModuleId",
+                                new { ModuleId = loginInfo.ModuleId }, transaction: transaction);
+                        }
+                        maintained++;
                     }
                 }
-                else if (loginInfo.IsDeletedTransaction)
+                else // Checkbox unticked -> Should be hard deleted
                 {
-                    // Case B: Module exists but disabled -> enable it
-                    await _connection.ExecuteAsync(
-                        "UPDATE ModuleMaster SET IsDeletedTransaction = 0 WHERE ModuleId = @ModuleId",
-                        new { ModuleId = loginInfo.ModuleId });
-                    enabled++;
-                }
-            }
-            else // Checkbox unticked
-            {
-                if (existsLocally && !loginInfo.IsDeletedTransaction)
-                {
-                    // Case C: Disable module
-                    await _connection.ExecuteAsync(
-                        "UPDATE ModuleMaster SET IsDeletedTransaction = 1 WHERE ModuleId = @ModuleId",
-                        new { ModuleId = loginInfo.ModuleId });
-                    disabled++;
-                }
-            }
-        }
+                    if (existsLocally)
+                    {
+                        // HARD DELETE: Remove from UserModuleAuthentication first, then ModuleMaster
+                        await _connection.ExecuteAsync(
+                            "DELETE FROM UserModuleAuthentication WHERE ModuleID = @ModuleId",
+                            new { ModuleId = loginInfo.ModuleId }, transaction: transaction);
 
-        return new { inserted, enabled, disabled, total = modules.Count };
+                        await _connection.ExecuteAsync(
+                            "DELETE FROM ModuleMaster WHERE ModuleId = @ModuleId",
+                            new { ModuleId = loginInfo.ModuleId }, transaction: transaction);
+                        
+                        deleted++;
+                    }
+                }
+            }
+
+            transaction.Commit();
+            return new { inserted, deleted, maintained, total = modules.Count };
+        }
+        catch (Exception ex)
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
+
 }

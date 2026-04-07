@@ -100,8 +100,9 @@ const ERPTransactionDelete: React.FC = () => {
         }
     };
 
-    const selectedModuleName = modules.find(m => m.moduleId.toString() === selectedModule)?.moduleDisplayName ||
-                                modules.find(m => m.moduleId.toString() === selectedModule)?.moduleName || '';
+    const selectedModuleData = modules.find(m => m.moduleId.toString() === selectedModule);
+    const selectedModuleName = selectedModuleData?.moduleDisplayName || selectedModuleData?.moduleName || '';
+    const selectedModuleInternalName = selectedModuleData?.moduleName || selectedModuleName;
 
     const showSubModuleDropdown = modulesWithSubModules.includes(selectedModuleName) && subModules.length > 0;
 
@@ -126,7 +127,7 @@ const ERPTransactionDelete: React.FC = () => {
         setIsChecking(true);
 
         try {
-            const moduleName = selectedModuleName;
+            const moduleName = selectedModuleInternalName;
             const subModuleId = showSubModuleDropdown
                 ? parseInt(selectedSubModule)
                 : 0; // No sub-module dropdown = no filter, backend will scan entire table
@@ -159,7 +160,7 @@ const ERPTransactionDelete: React.FC = () => {
         showLoader();
 
         try {
-            const moduleName = selectedModuleName;
+            const moduleName = selectedModuleInternalName;
             const subModuleId = showSubModuleDropdown
                 ? parseInt(selectedSubModule)
                 : 0; // No sub-module dropdown = no filter, delete entire master table
@@ -212,7 +213,7 @@ const ERPTransactionDelete: React.FC = () => {
         showLoader();
 
         try {
-            const moduleName = selectedModuleName;
+            const moduleName = selectedModuleInternalName;
             const subModuleId = showSubModuleDropdown
                 ? parseInt(selectedSubModule)
                 : 0;

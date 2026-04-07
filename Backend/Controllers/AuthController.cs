@@ -75,4 +75,28 @@ public class AuthController : ControllerBase
             Claims = User.Claims.Select(c => new { c.Type, c.Value })
         });
     }
+
+    [HttpGet("check-session")]
+    [Authorize]
+    public IActionResult CheckSession()
+    {
+        var sessionIdClaim = User.FindFirst("sessionId")?.Value;
+        var loginType = User.FindFirst("loginType")?.Value;
+
+        if (!string.IsNullOrEmpty(sessionIdClaim) && Guid.TryParse(sessionIdClaim, out var sessionId))
+        {
+            if (_sessionStore.TryGetSession(sessionId, out var session) && session != null)
+            {
+                return Ok(new { Success = true, Message = "Session is valid", LoginType = loginType ?? "customer" });
+            }
+        }
+        
+        // Final fallback for cases where session might be in-memory but sessionId is missing (unlikely given current GenerateToken logic)
+        if (User.Identity?.IsAuthenticated == true)
+        {
+             return Ok(new { Success = true, Message = "Authenticated via Token", LoginType = loginType });
+        }
+
+        return Unauthorized(new { Success = false, Message = "Session expired or invalid" });
+    }
 }

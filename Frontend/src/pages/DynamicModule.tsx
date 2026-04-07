@@ -52,20 +52,49 @@ const DynamicModule: React.FC = () => {
         setModules(prev => prev.map(m => m._id === rowId ? { ...m, _status: !m._status } : m));
     }, []);
 
-    // Select all / Deselect all
-    const handleSelectAll = useCallback(() => {
-        setModules(prev => {
-            const allChecked = prev.every(m => m._status);
-            return prev.map(m => ({ ...m, _status: !allChecked }));
-        });
-    }, []);
+    // Select all / Deselect all respecting filters
+    const handleSelectAll = useCallback(async () => {
+        if (!gridRef.current || modules.length === 0) return;
+
+        const gridInstance = gridRef.current.instance;
+        const dataSource = gridInstance.getDataSource();
+        const combinedFilter = gridInstance.getCombinedFilter();
+        
+        try {
+            // Get all items that pass the current filter across all pages
+            const loadResult = await dataSource.store().load({ filter: combinedFilter });
+            const filteredItems = Array.isArray(loadResult) ? loadResult : (loadResult as any).data || [];
+            const filteredIds = new Set(filteredItems.map((item: any) => item._id));
+
+            setModules(prev => {
+                // Determine if all filtered items are currently checked
+                const filteredRows = prev.filter(m => filteredIds.has(m._id));
+                const allFilteredChecked = filteredRows.length > 0 && filteredRows.every(m => m._status);
+                
+                // Toggle only the filtered items
+                return prev.map(m => {
+                    if (filteredIds.has(m._id)) {
+                        return { ...m, _status: !allFilteredChecked };
+                    }
+                    return m;
+                });
+            });
+        } catch (error) {
+            console.error("Selective select all failed:", error);
+            // Fallback to basic select all if filter processing fails
+            setModules(prev => {
+                const allChecked = prev.every(m => m._status);
+                return prev.map(m => ({ ...m, _status: !allChecked }));
+            });
+        }
+    }, [modules.length]);
 
     // Save
     const handleSave = async () => {
         setSaving(true);
         try {
-            const changedModules = modules.filter(m => m._status !== m.status);
-            const payload: ModuleAuthoritySaveDto[] = changedModules.map(m => ({
+            // Send ALL modules to ensure backend can perform a full sync or hard delete accurately
+            const payload: ModuleAuthoritySaveDto[] = modules.map(m => ({
                 moduleHeadName: m.moduleHeadName,
                 moduleDisplayName: m.moduleDisplayName,
                 status: m._status
@@ -75,7 +104,7 @@ const DynamicModule: React.FC = () => {
             showMessage(
                 'success',
                 'Saved Successfully',
-                `Inserted: ${result.inserted} | Enabled: ${result.enabled} | Disabled: ${result.disabled}`
+                `Inserted: ${result.inserted} | Deleted: ${result.deleted} | Maintained: ${result.maintained}`
             );
 
             await handleShowModules();
@@ -89,6 +118,7 @@ const DynamicModule: React.FC = () => {
 
     const changeCount = modules.filter(m => m._status !== m.status).length;
     const checkedCount = modules.filter(m => m._status).length;
+
     const allChecked = modules.length > 0 && modules.every(m => m._status);
 
     // Custom cell render for Status checkbox

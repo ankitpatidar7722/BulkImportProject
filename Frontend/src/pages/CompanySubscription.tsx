@@ -140,6 +140,7 @@ const CompanySubscription: React.FC = () => {
     const [moduleGroups, setModuleGroups] = useState<string[]>([]);
     const [selectedGroup, setSelectedGroup] = useState<string>('');
     const [groupModules, setGroupModules] = useState<ModuleGroupModuleRow[]>([]);
+    const gridRef = React.useRef<DataGrid>(null);
     const [isLoadingGroupModules, setIsLoadingGroupModules] = useState(false);
     const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
@@ -930,6 +931,54 @@ const CompanySubscription: React.FC = () => {
             </div>
         );
     }, [handleModuleStatusToggle]);
+
+    const handleModuleSelectAll = useCallback(async () => {
+        if (!gridRef.current) return;
+        const gridInstance = gridRef.current.instance;
+        const combinedFilter = gridInstance.getCombinedFilter();
+
+        // Get only the items that match the current filter
+        // If no filter is applied, combinedFilter will be empty/undefined
+        const dataSource = gridInstance.getDataSource();
+        const loadResult = await dataSource.store().load({ filter: combinedFilter });
+        const filteredItems = Array.isArray(loadResult) ? loadResult : (loadResult as any).data || [];
+        
+        const filteredNames = new Set(filteredItems.map((item: any) => item.moduleName));
+        const allFilteredChecked = filteredItems.every((item: any) => {
+            const currentItem = moduleData.find(m => m.moduleName === item.moduleName);
+            return currentItem?.status;
+        });
+
+        setModuleData(prev => prev.map(m => {
+            if (filteredNames.has(m.moduleName)) {
+                return { ...m, status: !allFilteredChecked };
+            }
+            return m;
+        }));
+    }, [moduleData]);
+
+    const moduleStatusHeaderRender = useCallback(() => {
+        if (!gridRef.current) return null;
+        
+        
+        // This is tricky because we can't easily sync header state from render without a ref to filtered items
+        // But we can approximate by checking the moduleData against the filter
+        // For simplicity, we'll just check if ALL modules are selected if no filter
+        // and if a filter is applied, we'll rely on the user clicking it to toggle
+        const isAllChecked = moduleData.length > 0 && moduleData.every(m => m.status);
+        
+        return (
+            <div className="flex items-center justify-center">
+                <input type="checkbox" 
+                    checked={isAllChecked} 
+                    onChange={handleModuleSelectAll}
+                    title="Toggle selection for all filtered rows"
+                    className="w-5 h-5 cursor-pointer mb-[-4px]" 
+                    style={{ accentColor: '#f59e0b' }} 
+                />
+            </div>
+        );
+    }, [moduleData, handleModuleSelectAll]);
 
     // ─── Edit Handlers ───
     const handleEdit = () => {
@@ -1849,6 +1898,7 @@ const CompanySubscription: React.FC = () => {
                                             </div>
                                         ) : (
                                             <DataGrid
+                                                ref={gridRef}
                                                 dataSource={moduleData}
                                                 keyExpr="moduleName"
                                                 showBorders={false}
@@ -1869,7 +1919,8 @@ const CompanySubscription: React.FC = () => {
                                                 <Column dataField="moduleHeadName" caption="Module Head Name" minWidth={250} />
                                                 <Column dataField="moduleDisplayName" caption="Module Display Name" minWidth={250} />
                                                 <Column caption="Status" width={120} alignment="center" allowFiltering={false} allowSorting={false}
-                                                    cellRender={moduleStatusCellRender} />
+                                                    cellRender={moduleStatusCellRender} 
+                                                    headerCellRender={moduleStatusHeaderRender} />
                                             </DataGrid>
                                         )}
                                     </div>

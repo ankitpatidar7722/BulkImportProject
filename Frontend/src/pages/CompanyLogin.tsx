@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import '../components/Login.css';
 import { useAuth } from '../context/AuthContext';
 import { Building2, ArrowRight, Loader2, Lock, User } from 'lucide-react';
@@ -46,8 +47,18 @@ const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[]; spee
 
 // ─── CompanyLogin Page ────────────────────────────────────────────────────────
 const CompanyLogin: React.FC = () => {
-    const { companyLogin, indusLogin, isLoading } = useAuth();
+    const { companyLogin, indusLogin, isLoading, loginStep, loginType } = useAuth();
+    const navigate = useNavigate();
     const { showMessage, ModalRenderer } = useMessageModal();
+    
+    useEffect(() => {
+        if (loginStep === 1) {
+            navigate('/UserLogin', { replace: true });
+        } else if (loginStep === 2) {
+            const path = loginType === 'indus' ? '/company-subscription' : '/dashboard';
+            navigate(path, { replace: true });
+        }
+    }, [loginStep, loginType, navigate]);
 
     const [loginMode, setLoginMode] = useState<'customer' | 'indus'>('customer');
     const [companyUser, setCompanyUser] = useState('');

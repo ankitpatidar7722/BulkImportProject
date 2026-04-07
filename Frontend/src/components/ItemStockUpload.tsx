@@ -13,6 +13,7 @@ import {
     ItemStockEnrichedRow, ItemStockImportResult, ItemStockValidationResult,
     ItemStockRowValidation, ItemStockCellValidation, WarehouseDto
 } from '../services/api';
+import DropdownCellRenderer from './DropdownCellRenderer';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -439,11 +440,87 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             return;
         }
 
-        const newData = gridData.filter((_, index) => !selectedRows.has(index));
+        const selectedIndicesList = Array.from(selectedRows).sort((a, b) => b - a);
+        const selectedSet = new Set(selectedIndicesList);
+
+        // 1. Update data
+        const newData = gridData.filter((_, index) => !selectedSet.has(index));
         setGridData(newData);
         setSelectedRows(new Set());
-        setValidationResult(null);
-        setMode('preview');
+
+        // 2. Update validationResult (if exists)
+        if (validationResult) {
+            const oldRows = validationResult.rows;
+            const newRows: any[] = [];
+            const summary = { ...validationResult.summary };
+
+            // Map to track index shifts
+            const indexMap = new Map<number, number>();
+            let shift = 0;
+            for (let i = 0; i < gridData.length; i++) {
+                if (selectedSet.has(i)) {
+                    shift++;
+                } else {
+                    indexMap.set(i, i - shift);
+                }
+            }
+
+            // Filter and re-index rows
+            oldRows.forEach((row: any) => {
+                if (selectedSet.has(row.rowIndex)) {
+                    // This row was deleted
+                    summary.totalRows--;
+                    
+                    const isDuplicate = row.cellValidations?.some((cv: any) => cv.status === 'Duplicate') || row.rowStatus === 'Duplicate';
+                    if (isDuplicate) summary.duplicateCount--;
+                    else if (row.isValid || row.rowStatus === 'Valid') summary.validRows--;
+
+                    row.cellValidations?.forEach((cv: any) => {
+                        if (cv.status === 'MissingData') summary.missingDataCount--;
+                        else if (cv.status === 'Mismatch') summary.mismatchCount--;
+                        else if (cv.status === 'InvalidContent') summary.invalidContentCount--;
+                    });
+                } else {
+                    newRows.push({
+                        ...row,
+                        rowIndex: indexMap.get(row.rowIndex)!
+                    });
+                }
+            });
+
+            summary.totalRows = Math.max(0, summary.totalRows);
+            summary.duplicateCount = Math.max(0, summary.duplicateCount);
+            summary.missingDataCount = Math.max(0, summary.missingDataCount);
+            summary.mismatchCount = Math.max(0, summary.mismatchCount);
+            summary.invalidContentCount = Math.max(0, summary.invalidContentCount);
+            summary.validRows = Math.max(0, summary.validRows);
+
+            const isStillValid = summary.duplicateCount <= 0 &&
+                summary.missingDataCount <= 0 &&
+                summary.mismatchCount <= 0 &&
+                summary.invalidContentCount <= 0;
+
+            setValidationResult({
+                ...validationResult,
+                rows: newRows,
+                summary: summary,
+                isValid: isStillValid
+            });
+
+            if (mode === 'validated') {
+                // Stay in validated mode
+            } else {
+                setMode('preview');
+            }
+        } else {
+            setMode('preview');
+        }
+
+        setValidationModalContent({
+            title: 'Rows Removed',
+            messages: [`${selectedIndicesList.length} row(s) have been removed from the preview.`]
+        });
+        setShowValidationModal(true);
     };
 
     // ─── Load Stock from Database ───────────────────────────────────────────
@@ -468,13 +545,8 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
         try {
             const data = await loadStockData(itemGroupId);
-            setGridData(data);
+            setGridData(data || []);
             setMode('loaded');
-
-            if (data.length === 0) {
-                setValidationModalContent({ title: 'No Data', messages: ['No stock records found for this Item Group.'] });
-                setShowValidationModal(true);
-            }
         } catch (error: any) {
             setValidationModalContent({
                 title: 'Load Error',
@@ -621,18 +693,27 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
     // ─── Export to Excel ─────────────────────────────────────────────────────
     const handleExport = () => {
-        if (gridData.length === 0) return;
-
-        const exportData = gridData.map(r => ({
-            ItemCode: r.itemCode || '',
-            ItemID: r.itemID || '',
-            ReceiptQuantity: r.receiptQuantity || 0,
-            LandedRate: r.landedRate || 0,
-            BatchNo: r.batchNo || '',
-            StockUnit: r.stockUnit || '',
-            WarehouseName: r.warehouseName || '',
-            BinName: r.binName || '',
-        }));
+        const exportData = gridData.length > 0 
+            ? gridData.map(r => ({
+                ItemCode: r.itemCode || '',
+                ItemID: r.itemID || '',
+                ReceiptQuantity: r.receiptQuantity || 0,
+                LandedRate: r.landedRate || 0,
+                BatchNo: r.batchNo || '',
+                StockUnit: r.stockUnit || '',
+                WarehouseName: r.warehouseName || '',
+                BinName: r.binName || '',
+            }))
+            : [{
+                ItemCode: '',
+                ItemID: '',
+                ReceiptQuantity: 0,
+                LandedRate: 0,
+                BatchNo: '',
+                StockUnit: '',
+                WarehouseName: '',
+                BinName: '',
+            }];
 
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
@@ -718,8 +799,8 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             field: 'itemID', headerName: 'ItemID', width: 90, editable: false,
             cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
         },
-        { field: 'receiptQuantity', headerName: 'ReceiptQuantity', width: 140, editable: true, type: 'numericColumn' },
-        { field: 'landedRate', headerName: 'LandedRate', width: 120, editable: true, type: 'numericColumn' },
+        { field: 'receiptQuantity', headerName: 'ReceiptQuantity', width: 140, editable: mode !== 'loaded', type: 'numericColumn' },
+        { field: 'landedRate', headerName: 'LandedRate', width: 120, editable: mode !== 'loaded', type: 'numericColumn' },
         {
             field: 'batchNo', headerName: 'BatchNo', width: 220, editable: false,
             cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
@@ -729,22 +810,37 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
         },
         {
-            field: 'warehouseName', headerName: 'WarehouseName', width: 170, editable: true,
+            field: 'warehouseName', headerName: 'WarehouseName', width: 170, editable: mode !== 'loaded',
             cellEditor: 'agSelectCellEditor',
-            cellEditorParams: { values: ['', ...warehouseNames] }
+            cellEditorParams: (params: any) => {
+                const currentVal = params.value;
+                const options = [...warehouseNames];
+                if (currentVal && !options.includes(currentVal)) {
+                    options.unshift(currentVal);
+                }
+                return { values: ['', ...options] };
+            },
+            cellRenderer: DropdownCellRenderer
         },
         {
-            field: 'binName', headerName: 'BinName', width: 150, editable: true,
+            field: 'binName', headerName: 'BinName', width: 150, editable: mode !== 'loaded',
             cellEditor: 'agSelectCellEditor',
             cellEditorParams: (params: any) => {
                 const whName = params.data?.warehouseName;
+                const currentVal = params.value;
                 const bins = whName && binsCache[whName]
                     ? binsCache[whName].map(b => b.binName || '').filter(Boolean)
                     : [];
-                return { values: ['', ...bins] };
-            }
+                
+                const options = [...bins];
+                if (currentVal && !options.includes(currentVal)) {
+                    options.unshift(currentVal);
+                }
+                return { values: ['', ...options] };
+            },
+            cellRenderer: DropdownCellRenderer
         }
-    ], [warehouseNames, binsCache, isDark]);
+    ], [warehouseNames, binsCache, isDark, mode]);
 
     // ─── Columns with Validation Styling ─────────────────────────────────────
     const columnsWithStyle = useMemo(() => {
@@ -935,7 +1031,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 )}
 
                 {/* Export */}
-                {(mode === 'loaded' || mode === 'preview' || mode === 'validated') && gridData.length > 0 && (
+                {(mode === 'loaded' || mode === 'preview' || mode === 'validated') && (
                     <button
                         onClick={handleExport}
                         disabled={isLoading}
@@ -1075,7 +1171,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             )}
 
             {/* AG Grid */}
-            {gridData.length > 0 && (
+            {mode !== 'idle' && (
                 <div
                     className={isDark ? "ag-theme-quartz-dark" : "ag-theme-quartz"}
                     style={{ height: 600, width: '100%' }}
@@ -1180,6 +1276,8 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                         paginationPageSizeSelector={[1000, 2000, 5000]}
                         tooltipShowDelay={300}
                         tooltipInteraction={true}
+                        enableCellTextSelection={true}
+                        ensureDomOrder={true}
                         overlayNoRowsTemplate='<span class="text-gray-500 dark:text-gray-400 text-lg">No records found</span>'
                     />
                 </div>

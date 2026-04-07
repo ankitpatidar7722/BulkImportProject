@@ -4,6 +4,7 @@ import {
     userLogin as userLoginApi,
     indusLogin as indusLoginApi,
     logout as logoutApi,
+    checkSession as checkSessionApi,
     CompanyLoginRequest,
     UserLoginRequest,
     IndusLoginRequest
@@ -22,6 +23,7 @@ interface AuthContextType {
     userLogin: (data: UserLoginRequest) => Promise<void>;
     indusLogin: (data: IndusLoginRequest) => Promise<void>;
     logout: () => void;
+    checkSessionStatus: () => Promise<boolean>;
     isLoading: boolean;
 }
 
@@ -84,7 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCompanyName('');
             setUserName('');
             setFYear('');
-            window.location.href = '/login';
+            window.location.href = '/CompanyLogin';
         };
 
         window.addEventListener('auth:unauthorized', handleUnauthorized);
@@ -148,8 +150,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCompanyName('');
         setUserName('');
         setFYear('');
-        window.location.href = '/login';
+        window.location.href = '/CompanyLogin';
     };
+
+    const checkSessionStatus = async (): Promise<boolean> => {
+        if (loginStep === 2) {
+            const isValid = await checkSessionApi();
+            if (!isValid) {
+                // Interceptor already handles redirect/logout event
+                return false;
+            }
+            return true;
+        }
+        return false;
+    };
+
+    // Periodically check if session is still on server (e.g. every 5 minutes if browser stays open)
+    useEffect(() => {
+        if (loginStep === 2) {
+            const interval = setInterval(checkSessionStatus, 300000); // 5 minutes
+            return () => clearInterval(interval);
+        }
+    }, [loginStep]);
 
     return (
         <AuthContext.Provider value={{
@@ -163,6 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             userLogin,
             indusLogin,
             logout,
+            checkSessionStatus,
             isLoading
         }}>
             {children}

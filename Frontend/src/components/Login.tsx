@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Login.css';
 import { useAuth } from '../context/AuthContext';
 import { User, Calendar, ArrowRight, Loader2, ArrowLeft, Lock, ChevronRight } from 'lucide-react';
@@ -46,8 +47,17 @@ const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[]; spee
 
 // ─── User Login Component (Step 1 → Step 2) ──────────────────────────────────
 const Login: React.FC = () => {
-    const { userLogin, companyName, isLoading, logout } = useAuth();
+    const { userLogin, companyName, isLoading, logout, loginStep } = useAuth();
+    const navigate = useNavigate();
     const { showMessage, ModalRenderer } = useMessageModal();
+    
+    useEffect(() => {
+        if (loginStep === 0) {
+            navigate('/CompanyLogin', { replace: true });
+        } else if (loginStep === 2) {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [loginStep, navigate]);
 
     const [userName, setUserName] = useState('');
     const [userPass, setUserPass] = useState('');

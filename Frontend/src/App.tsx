@@ -22,8 +22,8 @@ import CompanySubscription from './pages/CompanySubscription';
 import ModuleGroupAuthority from './pages/ModuleGroupAuthority';
 import ERPTransactionDelete from './pages/ERPTransactionDelete';
 
-// Login Flow Component (handles two-step login)
-const LoginFlow = () => {
+// Login Route Coordinator
+const LoginRedirect = () => {
     const { loginStep, isLoading } = useAuth();
 
     if (isLoading) {
@@ -34,17 +34,8 @@ const LoginFlow = () => {
         );
     }
 
-    // Step 0: Company Login
-    if (loginStep === 0) {
-        return <CompanyLogin />;
-    }
-
-    // Step 1: User Login
-    if (loginStep === 1) {
-        return <Login />;
-    }
-
-    // Step 2: Already authenticated, redirect to dashboard
+    if (loginStep === 0) return <Navigate to="/CompanyLogin" replace />;
+    if (loginStep === 1) return <Navigate to="/UserLogin" replace />;
     return <Navigate to="/dashboard" replace />;
 };
 
@@ -76,7 +67,7 @@ const AuthenticatedLayout = () => {
                         <Route path="/module-authority" element={<ModuleAuthority />} />
                         <Route path="/create-module" element={<CreateModule />} />
                         <Route path="/dynamic-module" element={<DynamicModule />} />
-                        <Route path="/company-subscription" element={<CompanySubscription />} />
+                        <Route path="/company-subscription" element={loginType === 'indus' ? <CompanySubscription /> : <Navigate to="/dashboard" replace />} />
                         <Route path="/module-group-authority" element={<ModuleGroupAuthority />} />
                         <Route path="/erp-transaction-delete" element={<ERPTransactionDelete />} />
                         <Route path="*" element={<Navigate to={defaultPath} replace />} />
@@ -95,11 +86,15 @@ function App() {
                 <AuthProvider>
                     <Router>
                         <Routes>
-                            {/* Public Route: Login */}
-                            <Route path="/login" element={<LoginFlow />} />
+                            {/* Individual Login Step Routes */}
+                            <Route path="/CompanyLogin" element={<CompanyLogin />} />
+                            <Route path="/UserLogin" element={<Login />} />
 
-                            {/* Root Route: Redirect to login */}
-                            <Route path="/" element={<Navigate to="/login" replace />} />
+                            {/* Legacy or Redirect Root Login Route */}
+                            <Route path="/login" element={<LoginRedirect />} />
+
+                            {/* Root Route: Orchestrate based on auth state */}
+                            <Route path="/" element={<LoginRedirect />} />
 
                             {/* Protected Routes: Require Authentication */}
                             <Route path="/*" element={

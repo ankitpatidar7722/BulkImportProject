@@ -1279,6 +1279,17 @@ export const indusLogin = async (data: IndusLoginRequest): Promise<IndusLoginRes
     return response.data;
 };
 
+export const checkSession = async (): Promise<boolean> => {
+    try {
+        await api.get('/auth/check-session');
+        return true;
+    } catch (error: any) {
+        // If it's a 401, the interceptor will handle it.
+        // If it's another error, we still consider it "not authenticated" for safety in this check.
+        return false;
+    }
+};
+
 // ==================== COMPANY SUBSCRIPTION ====================
 
 export interface CompanySubscriptionDto {
@@ -1866,7 +1877,7 @@ export const getModuleAuthorityData = async (product: string): Promise<ModuleAut
     return response.data;
 };
 
-export const saveModuleAuthority = async (product: string, modules: ModuleAuthoritySaveDto[]): Promise<{ inserted: number; enabled: number; disabled: number; total: number }> => {
+export const saveModuleAuthority = async (product: string, modules: ModuleAuthoritySaveDto[]): Promise<{ inserted: number; deleted: number; maintained: number; total: number }> => {
     const response = await api.post('/moduleauthority/Save', { product, modules });
     return response.data;
 };

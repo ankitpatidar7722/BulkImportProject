@@ -176,7 +176,7 @@ public class SparePartService : ISparePartService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = "HSNGroup",
-                        ValidationMessage = "HSNGroup does not match ProductHSNMaster DisplayName",
+                        ValidationMessage = "Invalid",
                         Status = ValidationStatus.Mismatch
                     });
 
@@ -198,7 +198,7 @@ public class SparePartService : ISparePartService
                     rowValidation.CellValidations.Add(new CellValidation
                     {
                         ColumnName = "Unit",
-                        ValidationMessage = "Unit does not match UnitMaster UnitSymbol",
+                        ValidationMessage = "Invalid",
                         Status = ValidationStatus.Mismatch
                     });
 

@@ -255,8 +255,11 @@ const SparePartMasterEnhanced: React.FC = () => {
                 headerName: 'HSNGroup',
                 minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: hsnGroups.map(h => h.displayName)
+                cellEditorParams: (params: any) => {
+                    const currentVal = params.value;
+                    const options = hsnGroups.map(h => h.displayName);
+                    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
+                    return { values: options };
                 },
                 cellRenderer: DropdownCellRenderer
             },
@@ -264,8 +267,11 @@ const SparePartMasterEnhanced: React.FC = () => {
                 field: 'unit',
                 headerName: 'Unit',
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: units.map(u => u.unitSymbol)
+                cellEditorParams: (params: any) => {
+                    const currentVal = params.value;
+                    const options = units.map(u => u.unitSymbol);
+                    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
+                    return { values: options };
                 },
                 cellRenderer: DropdownCellRenderer
             },
@@ -274,8 +280,11 @@ const SparePartMasterEnhanced: React.FC = () => {
                 field: 'sparePartType',
                 headerName: 'SparePartType',
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: {
-                    values: sparePartTypes
+                cellEditorParams: (params: any) => {
+                    const currentVal = params.value;
+                    const options = [...sparePartTypes];
+                    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
+                    return { values: options };
                 },
                 cellRenderer: DropdownCellRenderer
             },
@@ -505,11 +514,81 @@ const SparePartMasterEnhanced: React.FC = () => {
         const selectedIndices = new Set(selectedData.map(d => sparePartData.indexOf(d)).filter(i => i !== -1));
 
         if (mode === 'preview' || mode === 'validated') {
-            const newSparePartData = sparePartData.filter((_, index) => !selectedIndices.has(index));
+            const selectedIndicesList = Array.from(selectedIndices).sort((a, b) => b - a);
+            const selectedSet = new Set(selectedIndicesList);
+
+            // 1. Update data
+            const newSparePartData = sparePartData.filter((_, index) => !selectedSet.has(index));
             setSparePartData(newSparePartData);
-            setValidationResult(null); // Reset validation as indices shift
-            setMode('preview');
-            showMessage('info', 'Rows Removed', `${selectedIndices.size} row(s) have been removed from the preview. Please re-run validation before importing.`);
+            setSelectedRows(new Set());
+
+            // 2. Update validationResult (if exists)
+            if (validationResult) {
+                const oldRows = validationResult.rows;
+                const newRows: SparePartRowValidation[] = [];
+                const summary = { ...validationResult.summary };
+
+                // Map to track index shifts
+                const indexMap = new Map<number, number>();
+                let shift = 0;
+                for (let i = 0; i < sparePartData.length; i++) {
+                    if (selectedSet.has(i)) {
+                        shift++;
+                    } else {
+                        indexMap.set(i, i - shift);
+                    }
+                }
+
+                // Filter and re-index rows
+                oldRows.forEach(row => {
+                    if (selectedSet.has(row.rowIndex)) {
+                        // This row was deleted
+                        summary.totalRows--;
+                        if (row.rowStatus === ValidationStatus.Duplicate) summary.duplicateCount--;
+                        else if (row.rowStatus === ValidationStatus.Valid) summary.validRows--;
+
+                        row.cellValidations?.forEach((cv: any) => {
+                            if (cv.status === ValidationStatus.MissingData) summary.missingDataCount--;
+                            else if (cv.status === ValidationStatus.Mismatch) summary.mismatchCount--;
+                            else if (cv.status === ValidationStatus.InvalidContent) summary.invalidContentCount--;
+                        });
+                    } else {
+                        newRows.push({
+                            ...row,
+                            rowIndex: indexMap.get(row.rowIndex)!
+                        });
+                    }
+                });
+
+                summary.totalRows = Math.max(0, summary.totalRows);
+                summary.duplicateCount = Math.max(0, summary.duplicateCount);
+                summary.missingDataCount = Math.max(0, summary.missingDataCount);
+                summary.mismatchCount = Math.max(0, summary.mismatchCount);
+                summary.invalidContentCount = Math.max(0, summary.invalidContentCount);
+                summary.validRows = Math.max(0, summary.validRows);
+
+                const isStillValid = summary.duplicateCount === 0 &&
+                    summary.missingDataCount === 0 &&
+                    summary.mismatchCount === 0 &&
+                    summary.invalidContentCount === 0;
+
+                setValidationResult({
+                    ...validationResult,
+                    rows: newRows,
+                    summary: summary,
+                    isValid: isStillValid
+                });
+
+                if (mode === 'validated') {
+                    // Stay in validated mode
+                } else {
+                    setMode('preview');
+                }
+            } else {
+                setMode('preview');
+            }
+
+            showMessage('info', 'Rows Removed', `${selectedIndicesList.length} row(s) have been removed from the preview.`);
             return;
         }
 
@@ -619,10 +698,10 @@ const SparePartMasterEnhanced: React.FC = () => {
                             const col = cell.columnName || 'Unknown';
                             if (!columnFailures.has(col)) columnFailures.set(col, new Set());
 
-                            let reason = cell.validationMessage;
-                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
-                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
-                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+                            let reason = 'Invalid';
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Master Mismatch';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid Format';
 
                             columnFailures.get(col)!.add(reason);
                         });
@@ -683,10 +762,10 @@ const SparePartMasterEnhanced: React.FC = () => {
                             const col = cell.columnName || 'Unknown';
                             if (!columnFailures.has(col)) columnFailures.set(col, new Set());
 
-                            let reason = cell.validationMessage;
-                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing data';
-                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Mismatch with Master';
-                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid format/Special characters';
+                            let reason = 'Invalid';
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Master Mismatch';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid Format';
 
                             columnFailures.get(col)!.add(reason);
                         });

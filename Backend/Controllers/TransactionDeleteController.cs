@@ -93,6 +93,59 @@ namespace Backend.Controllers
             return null;
         }
 
+        private string StandardizeModuleName(string moduleName)
+        {
+            if (string.IsNullOrWhiteSpace(moduleName)) return moduleName;
+            
+            var lower = moduleName.ToLower().Trim();
+
+            // Item Master
+            if (lower.Contains("item") || lower.Contains("masters.aspx"))
+                return "Item Master";
+            
+            // Ledger Master
+            if (lower.Contains("ledger") || lower.Contains("ledgermaster.aspx"))
+                return "Ledger Master";
+            
+            // Tool Master
+            if (lower.Contains("tool") || lower.Contains("toolmaster.aspx"))
+                return "Tool Master";
+
+            // Spare Part Master
+            if (lower.Contains("spare") || lower.Contains("sparepartmaster.aspx"))
+                return "Spare Part Master";
+
+            // Product Group / HSN Master
+            if (lower.Contains("product group") || lower.Contains("hsn") || lower.Contains("productgroupmasterforgst.aspx"))
+                return "Product Group Master";
+
+            // Machine Master
+            if (lower.Contains("machine") || lower.Contains("machinemaster.aspx"))
+                return "Machine Master";
+
+            // Process Master
+            if (lower.Contains("process") || lower.Contains("processmaster.aspx"))
+                return "Process Master";
+
+            // Category Master
+            if (lower.Contains("category") || lower.Contains("categorymaster.aspx"))
+                return "Category Master";
+
+            // Department Master
+            if (lower.Contains("department") || lower.Contains("departmentmaster.aspx"))
+                return "Department Master";
+
+            // Warehouse Master
+            if (lower.Contains("warehouse") || lower.Contains("warehousemaster.aspx"))
+                return "Warehouse Master";
+
+            // Unit Master
+            if (lower.Contains("unit") || lower.Contains("unitmaster.aspx"))
+                return "Unit Master";
+
+            return moduleName;
+        }
+
         [HttpPost("clear-all-transactions")]
         public async Task ClearAllTransactions([FromBody] ClearTransactionDataRequestDto request)
         {
@@ -463,7 +516,7 @@ namespace Backend.Controllers
                 await connection.OpenAsync();
 
                 var result = new MasterUsageResultDto();
-                var moduleName = request.ModuleName.Trim();
+                var moduleName = StandardizeModuleName(request.ModuleName);
 
                 if (moduleName.Contains("Item", StringComparison.OrdinalIgnoreCase))
                 {
@@ -501,7 +554,8 @@ namespace Backend.Controllers
                 {
                     await CheckUnitMasterUsage(connection, result);
                 }
-                else if (moduleName.Contains("Product Group", StringComparison.OrdinalIgnoreCase))
+                else if (moduleName.Contains("Product Group", StringComparison.OrdinalIgnoreCase) || 
+                         moduleName.Contains("HSN", StringComparison.OrdinalIgnoreCase))
                 {
                     await CheckProductGroupMasterUsage(connection, request.SubModuleId, result);
                 }
@@ -2217,7 +2271,7 @@ namespace Backend.Controllers
 
                 // Re-check usage before deleting
                 var usageResult = new MasterUsageResultDto();
-                var moduleName = request.ModuleName.Trim();
+                var moduleName = StandardizeModuleName(request.ModuleName);
 
                 if (moduleName.Contains("Item", StringComparison.OrdinalIgnoreCase))
                 {
@@ -2283,6 +2337,8 @@ namespace Backend.Controllers
 
                 try
                 {
+
+
                     if (moduleName.Contains("Item", StringComparison.OrdinalIgnoreCase))
                     {
                         // Delete ItemMasterDetails first (child records)
@@ -2512,13 +2568,15 @@ namespace Backend.Controllers
                 using var connection = new SqlConnection(connectionString);
                 await connection.OpenAsync();
 
-                var moduleName = request.ModuleName.Trim();
+                var moduleName = StandardizeModuleName(request.ModuleName);
                 int deletedCount = 0;
 
                 using var transaction = connection.BeginTransaction();
 
                 try
                 {
+
+
                     if (moduleName.Contains("Item", StringComparison.OrdinalIgnoreCase))
                     {
                         // Get all active ItemIDs in this group
