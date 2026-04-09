@@ -1861,6 +1861,7 @@ export const getHSNCount = async (companyId: number = 2): Promise<number> => {
 
 export interface ModuleAuthorityRowDto {
     moduleHeadName: string;
+    moduleName: string;
     moduleDisplayName: string;
     status: boolean;
     existsInLoginDb: boolean;
@@ -1868,6 +1869,7 @@ export interface ModuleAuthorityRowDto {
 
 export interface ModuleAuthoritySaveDto {
     moduleHeadName: string;
+    moduleName: string;
     moduleDisplayName: string;
     status: boolean;
 }

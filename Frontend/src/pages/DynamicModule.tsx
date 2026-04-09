@@ -96,6 +96,7 @@ const DynamicModule: React.FC = () => {
             // Send ALL modules to ensure backend can perform a full sync or hard delete accurately
             const payload: ModuleAuthoritySaveDto[] = modules.map(m => ({
                 moduleHeadName: m.moduleHeadName,
+                moduleName: m.moduleName,
                 moduleDisplayName: m.moduleDisplayName,
                 status: m._status
             }));

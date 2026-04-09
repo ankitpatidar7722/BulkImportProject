@@ -26,7 +26,7 @@ public class ModuleAuthorityService : IModuleAuthorityService
         // 1. Fetch source modules
         await using var sourceConn = new SqlConnection(SourceConnStr);
         var sourceModules = (await sourceConn.QueryAsync<dynamic>(
-            "SELECT ModuleHeadName, ModuleDisplayName FROM ModuleMaster WHERE IsDeletedTransaction = 0"
+            "SELECT ModuleHeadName, ModuleName, ModuleDisplayName FROM ModuleMaster WHERE IsDeletedTransaction = 0"
         )).ToList();
 
         // 2. Fetch login DB modules (all, including soft-deleted). ISNULL handles NULL values.
@@ -60,6 +60,7 @@ public class ModuleAuthorityService : IModuleAuthorityService
             result.Add(new ModuleAuthorityRowDto
             {
                 ModuleHeadName = src.ModuleHeadName ?? "",
+                ModuleName = src.ModuleName ?? "",
                 ModuleDisplayName = src.ModuleDisplayName ?? "",
                 Status = status,
                 ExistsInLoginDb = existsInLogin
@@ -141,7 +142,7 @@ public class ModuleAuthorityService : IModuleAuthorityService
                                     INSERT INTO UserModuleAuthentication 
                                     (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy)
                                     VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, 2, 0, @UserID)",
-                                    new { UserID = adminUserId.Value, ModuleID = newModuleId, ModuleName = mod.ModuleDisplayName },
+                                    new { UserID = adminUserId.Value, ModuleID = newModuleId, ModuleName = mod.ModuleName },
                                     transaction: transaction);
                             }
 

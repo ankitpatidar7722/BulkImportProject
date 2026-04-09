@@ -6,6 +6,7 @@ namespace Backend.DTOs;
 public class ModuleAuthorityRowDto
 {
     public string ModuleHeadName { get; set; } = string.Empty;
+    public string ModuleName { get; set; } = string.Empty;
     public string ModuleDisplayName { get; set; } = string.Empty;
     public bool Status { get; set; }
     public bool ExistsInLoginDb { get; set; }
@@ -17,6 +18,7 @@ public class ModuleAuthorityRowDto
 public class ModuleAuthoritySaveDto
 {
     public string ModuleHeadName { get; set; } = string.Empty;
+    public string ModuleName { get; set; } = string.Empty;
     public string ModuleDisplayName { get; set; } = string.Empty;
     public bool Status { get; set; }
 }
