@@ -1,26 +1,22 @@
 import React, { useState, useCallback } from 'react';
-import { RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { getItemGroups, getToolGroups, ItemGroupDto, ToolGroupDto } from '../services/api';
 import ItemStockUpload from '../components/ItemStockUpload';
 import SparePartMasterStockUpload from '../components/SparePartMasterStockUpload';
 import ToolStockUpload from '../components/ToolStockUpload';
+import { useMessageModal } from '../components/MessageModal';
 
 const StockUpload: React.FC = () => {
     const [selectedModule, setSelectedModule] = useState<string>('');
     const [selectedSubModule, setSelectedSubModule] = useState<string>('');
     const [itemGroups, setItemGroups] = useState<ItemGroupDto[]>([]);
     const [toolGroups, setToolGroups] = useState<ToolGroupDto[]>([]);
+    // Modals
+    const { showMessage, ModalRenderer: MessageModalRenderer } = useMessageModal();
     const [isLoading, setIsLoading] = useState(false);
 
     // Track whether the child component has data loaded
     const [childHasData, setChildHasData] = useState(false);
-
-    // Switch confirmation state
-    const [switchConfirm, setSwitchConfirm] = useState<{
-        type: 'module' | 'submodule' | 'refresh';
-        newValue: string;
-        message: string;
-    } | null>(null);
 
     const onChildHasDataChange = useCallback((hasData: boolean) => {
         setChildHasData(hasData);
@@ -31,11 +27,14 @@ const StockUpload: React.FC = () => {
 
         // If child has data, show confirmation before switching module
         if (childHasData) {
-            setSwitchConfirm({
-                type: 'module',
-                newValue: moduleValue,
-                message: `You have data loaded in the current window. Switching the module will close this window and clear all data. Do you want to continue?`
-            });
+            showMessage('warning', 'Switch Confirmation', 
+                `You have data loaded in the current window. Switching the module will close this window and clear all data. Do you want to continue?`,
+                {
+                    onConfirm: () => applyModuleChange(moduleValue),
+                    confirmLabel: 'OK, Continue',
+                    cancelLabel: 'Cancel'
+                }
+            );
             return;
         }
 
@@ -79,11 +78,14 @@ const StockUpload: React.FC = () => {
 
         // If child has data, show confirmation before switching sub module
         if (childHasData) {
-            setSwitchConfirm({
-                type: 'submodule',
-                newValue,
-                message: `You have data loaded in the current window. Switching the Sub Module will close this window and clear all data. Do you want to continue?`
-            });
+            showMessage('warning', 'Switch Confirmation',
+                `You have data loaded in the current window. Switching the Sub Module will close this window and clear all data. Do you want to continue?`,
+                {
+                    onConfirm: () => setSelectedSubModule(newValue),
+                    confirmLabel: 'OK, Continue',
+                    cancelLabel: 'Cancel'
+                }
+            );
             return;
         }
 
@@ -93,11 +95,14 @@ const StockUpload: React.FC = () => {
     const handleRefresh = () => {
         // If child has data, show confirmation before refreshing
         if (childHasData) {
-            setSwitchConfirm({
-                type: 'refresh',
-                newValue: '',
-                message: `You have data loaded in the current window. Refreshing will close this window and clear all data. Do you want to continue?`
-            });
+            showMessage('warning', 'Switch Confirmation',
+                `You have data loaded in the current window. Refreshing will close this window and clear all data. Do you want to continue?`,
+                {
+                    onConfirm: () => applyRefresh(),
+                    confirmLabel: 'OK, Continue',
+                    cancelLabel: 'Cancel'
+                }
+            );
             return;
         }
 
@@ -112,24 +117,7 @@ const StockUpload: React.FC = () => {
         setChildHasData(false);
     };
 
-    const handleSwitchConfirm = async () => {
-        if (!switchConfirm) return;
-        const { type, newValue } = switchConfirm;
-        setSwitchConfirm(null);
-        setChildHasData(false);
 
-        if (type === 'module') {
-            await applyModuleChange(newValue);
-        } else if (type === 'submodule') {
-            setSelectedSubModule(newValue);
-        } else if (type === 'refresh') {
-            applyRefresh();
-        }
-    };
-
-    const handleSwitchCancel = () => {
-        setSwitchConfirm(null);
-    };
 
     // Get selected item group name for display
     const getSelectedItemGroupName = (): string => {
@@ -297,34 +285,8 @@ const StockUpload: React.FC = () => {
                 />
             )}
 
-            {/* ─── Switch Confirmation Modal ────────────────────────────────── */}
-            {switchConfirm && (
-                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full border-2 border-orange-400">
-                        <div className="flex items-center gap-3 mb-4">
-                            <AlertCircle className="w-6 h-6 text-orange-500" />
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Switch Confirmation</h3>
-                        </div>
-                        <p className="text-gray-700 dark:text-gray-300 mb-6">
-                            {switchConfirm.message}
-                        </p>
-                        <div className="flex justify-end gap-3">
-                            <button
-                                onClick={handleSwitchCancel}
-                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded-lg"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleSwitchConfirm}
-                                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
-                            >
-                                OK, Continue
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Message Modal Renderer */}
+            {MessageModalRenderer}
         </div>
     );
 };

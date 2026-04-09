@@ -54,7 +54,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     const [validationResult, setValidationResult] = useState<HSNValidationResultDto | null>(null);
     const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');
     const [filterType, setFilterType] = useState<'all' | 'valid' | 'duplicate' | 'missing' | 'mismatch' | 'invalid'>('all');
-    const [showFileNameError, setShowFileNameError] = useState(false);
+
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [pendingMode, setPendingMode] = useState<{ type: 'load' | 'upload'; action: () => void } | null>(null);
@@ -566,15 +566,22 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (!file.name.endsWith('.xlsx')) {
-            showError('Only .xlsx files are supported');
+        // Step 1: File Extension Check
+        const fileName = file.name;
+        const extension = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
+        if (extension !== '.xlsx') {
+            showMessage('error', 'Invalid Excel Version',
+                'Your Excel file format is not supported.\n\nPlease upload file in .xlsx format only.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
 
-        const fileName = file.name.replace(/\.xlsx$/i, '').trim();
-        // Validation Rule: File name (without extension) must be "HSN Master" (case insensitive)
-        if (fileName.toLowerCase() !== 'hsn master') {
-            setShowFileNameError(true);
+        // Step 2: File Name Validation
+        const expectedName = 'HSN Master';
+        const actualNameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.')).trim();
+        if (actualNameWithoutExt.toLowerCase() !== expectedName.toLowerCase()) {
+            showMessage('error', 'Invalid File Name',
+                `You have selected wrong file.\n\nPlease upload correct file for selected Module and Group.\n\nExpected: ${expectedName}.xlsx`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             // Reset any existing data
             setHsnData([]);
@@ -583,7 +590,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
             return;
         }
 
-        setShowFileNameError(false);
+
         const reader = new FileReader();
         reader.onload = async (evt) => {
             try {
@@ -1144,15 +1151,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
 
             {/* Grid */}
             <div className="flex-1 w-full overflow-hidden ag-theme-quartz p-4" style={{ height: '100%' }}>
-                {showFileNameError ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center p-8 bg-red-50 dark:bg-red-900/10 rounded-lg border-2 border-dashed border-red-200 dark:border-red-800">
-                        <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-                        <h3 className="text-lg font-bold text-red-700 dark:text-red-400 mb-2">Incorrect File Name</h3>
-                        <p className="text-red-600 dark:text-red-300 max-w-md">
-                            Please correct your Excel name as <strong>"HSN Master.xlsx"</strong> to proceed with the import.
-                        </p>
-                    </div>
-                ) : (mode === 'loaded' || mode === 'preview' || mode === 'validated') && (
+                {(mode === 'loaded' || mode === 'preview' || mode === 'validated') && (
                     <AgGridReact
                         onGridReady={(params) => gridApiRef.current = params.api}
                         rowData={hsnData}

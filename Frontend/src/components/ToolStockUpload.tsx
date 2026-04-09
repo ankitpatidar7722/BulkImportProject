@@ -7,6 +7,7 @@ import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { useTheme } from '../context/ThemeContext';
 import { useLoader } from '../context/LoaderContext';
+import { useMessageModal } from './MessageModal';
 import {
     enrichToolStock, importToolStock, validateToolStock, loadToolStockData,
     getToolStockWarehouses, getToolStockBins,
@@ -48,9 +49,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
     const [filterType, setFilterType] = useState<'all' | 'valid' | 'duplicate' | 'missing' | 'mismatch' | 'invalid'>('all');
 
     // Modals
-    const [filenameError, setFilenameError] = useState<string | null>(null);
-    const [showValidationModal, setShowValidationModal] = useState(false);
-    const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
+    const { showMessage, ModalRenderer: MessageModalRenderer } = useMessageModal();
     const [successInfo, setSuccessInfo] = useState<{ rowCount: number } | null>(null);
     const [importProgress, setImportProgress] = useState<{ active: boolean; step: string; pct: number; total: number } | null>(null);
 
@@ -142,9 +141,23 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
         const file = event.target.files?.[0];
         if (!file) return;
 
-        const expectedFilename = 'ToolMasterStock.xlsx';
-        if (file.name !== expectedFilename) {
-            setFilenameError(`Please correct your Excel file name. Expected: ${expectedFilename}`);
+        // Step 1: File Extension Check (FIRST PRIORITY)
+        const fileName = file.name;
+        const extension = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
+
+        if (extension !== '.xlsx') {
+            showMessage('error', 'Invalid Excel Version',
+                'Your Excel file format is not supported.\n\nPlease upload file in .xlsx format only.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+
+        // Step 2: File Name Validation (Only if extension is correct)
+        const expectedName = 'ToolMasterStock'; // Matching current hardcoded rule
+        const actualNameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.')).trim();
+        if (actualNameWithoutExt.toLowerCase() !== expectedName.toLowerCase()) {
+            showMessage('error', 'Invalid File Name',
+                `You have selected wrong file.\n\nPlease upload correct file for selected Module and Group.\n\nExpected: ${expectedName}.xlsx`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
@@ -175,8 +188,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
 
             if (jsonData.length === 0) {
-                setValidationModalContent({ title: 'Empty Excel', messages: ['Excel file is empty. No rows found.'] });
-                setShowValidationModal(true);
+                showMessage('error', 'Empty Excel', 'Excel file is empty. No rows found.');
                 setIsLoading(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
                 return;
@@ -186,8 +198,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             const keys = Object.keys(jsonData[0]);
             const hasToolName = keys.some(k => k.toLowerCase() === 'toolname');
             if (!hasToolName) {
-                setValidationModalContent({ title: 'Missing Column', messages: ['Excel must contain a ToolName column.'] });
-                setShowValidationModal(true);
+                showMessage('error', 'Missing Column', 'Excel must contain a ToolName column.');
                 setIsLoading(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
                 return;
@@ -195,8 +206,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
 
             const hasQty = keys.some(k => k.toLowerCase() === 'receiptquantity' || k.toLowerCase() === 'quantity');
             if (!hasQty) {
-                setValidationModalContent({ title: 'Missing Column', messages: ['Excel must contain a ReceiptQuantity (or Quantity) column.'] });
-                setShowValidationModal(true);
+                showMessage('error', 'Missing Column', 'Excel must contain a ReceiptQuantity (or Quantity) column.');
                 setIsLoading(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
                 return;
@@ -236,11 +246,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             }
 
         } catch (error: any) {
-            setValidationModalContent({
-                title: 'Upload Error',
-                messages: [error?.response?.data?.message || error?.message || 'Failed to process Excel file.']
-            });
-            setShowValidationModal(true);
+            showMessage('error', 'Upload Error', error?.response?.data?.message || error?.message || 'Failed to process Excel file.');
         } finally {
             setIsLoading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -250,8 +256,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
     // ─── Check Validation ────────────────────────────────────────────────────
     const handleCheckValidation = async () => {
         if (gridData.length === 0) {
-            setValidationModalContent({ title: 'No Data', messages: ['There is no data to validate.'] });
-            setShowValidationModal(true);
+            showMessage('info', 'No Data', 'There is no data to validate.');
             return;
         }
 
@@ -265,11 +270,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             setMode('validated');
 
             if (result.isValid) {
-                setValidationModalContent({
-                    title: 'Validation Passed',
-                    messages: ['All records passed validation successfully. You can now save the data.']
-                });
-                setShowValidationModal(true);
+                showMessage('success', 'Validation Passed', 'All records passed validation successfully. The data is ready to be imported.');
             } else {
                 const columnFailures = new Map<string, Set<string>>();
                 result.rows.forEach((row: ToolStockRowValidation) => {
@@ -299,18 +300,11 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                     messages.push(`${col}: ${Array.from(reasons).join(', ')}`);
                 });
 
-                setValidationModalContent({
-                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
-                    messages: messages.length > 0 ? messages : ['Validation failed. Please check the grid for errors.']
-                });
-                setShowValidationModal(true);
+                showMessage('error', `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
+                    messages.length > 0 ? messages.join('\n') : 'Validation failed. Please check the grid for errors.');
             }
         } catch (error: any) {
-            setValidationModalContent({
-                title: 'Validation Error',
-                messages: [error?.response?.data?.message || error?.message || 'Validation failed.']
-            });
-            setShowValidationModal(true);
+            showMessage('error', 'Validation Error', error?.response?.data?.message || error?.message || 'Validation failed.');
         } finally {
             setIsLoading(false);
         }
@@ -319,13 +313,11 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
     // ─── Save Data (Import) ──────────────────────────────────────────────────
     const handleImport = async () => {
         if (gridData.length === 0) {
-            setValidationModalContent({ title: 'No Data', messages: ['No data to import.'] });
-            setShowValidationModal(true);
+            showMessage('info', 'No Data', 'No data to import.');
             return;
         }
 
         setIsLoading(true);
-        setValidationModalContent(null);
 
         try {
             // Re-validate (duplicate gate)
@@ -337,22 +329,14 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             if (duplicateRows.length > 0) {
                 setImportProgress(null);
                 const messages = duplicateRows.map((r: ToolStockRowValidation) => `Row ${r.rowIndex + 1}: ${r.errorMessage || 'Duplicate row (same ToolID, BatchNo, WarehouseName, BinName)'}`);
-                setValidationModalContent({
-                    title: `Import Blocked: ${duplicateRows.length} Duplicate Row(s) Found`,
-                    messages
-                });
-                setShowValidationModal(true);
+                showMessage('error', `Import Blocked: ${duplicateRows.length} Duplicate Row(s) Found`, messages.join('\n'));
                 setIsLoading(false);
                 return;
             }
 
             if (!reValidation.isValid) {
                 setImportProgress(null);
-                setValidationModalContent({
-                    title: 'Import Blocked: Validation Errors',
-                    messages: ['Please fix all validation errors before saving.']
-                });
-                setShowValidationModal(true);
+                showMessage('error', 'Import Blocked', 'Please fix all validation errors before saving.');
                 setIsLoading(false);
                 return;
             }
@@ -390,11 +374,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                 if (!importRes) {
                     clearInterval(progressTimer);
                     setImportProgress(null);
-                    setValidationModalContent({
-                        title: 'Import Failed',
-                        messages: [axiosErr?.message || 'Import request failed.']
-                    });
-                    setShowValidationModal(true);
+                    showMessage('error', 'Import Failed', axiosErr?.message || 'Import request failed.');
                     setIsLoading(false);
                     return;
                 }
@@ -413,28 +393,19 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             if (isSuccess || imported > 0) {
                 setSuccessInfo({ rowCount: imported || gridData.length });
                 if (errRows > 0 && errMsgs.length > 0) {
-                    setValidationModalContent({
-                        title: `${errRows} Row(s) Skipped During Import`,
-                        messages: errMsgs
-                    });
+                    showMessage('warning', `${errRows} Row(s) Skipped During Import`, errMsgs.join('\n'));
                 }
             } else {
                 if (errMsgs.length > 0) {
-                    setValidationModalContent({ title: 'Import Failed', messages: errMsgs });
-                    setShowValidationModal(true);
+                    showMessage('error', 'Import Failed', errMsgs.join('\n'));
                 } else {
                     const msg = importRes?.message ?? 'Import failed - no rows were inserted.';
-                    setValidationModalContent({ title: 'Import Failed', messages: [msg] });
-                    setShowValidationModal(true);
+                    showMessage('error', 'Import Failed', msg);
                 }
             }
         } catch (error: any) {
             setImportProgress(null);
-            setValidationModalContent({
-                title: 'Import Error',
-                messages: [error?.message || 'An unexpected error occurred during import.']
-            });
-            setShowValidationModal(true);
+            showMessage('error', 'Import Error', error?.message || 'An unexpected error occurred during import.');
         } finally {
             setIsLoading(false);
         }
@@ -443,8 +414,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
     // ─── Delete Excel Row ────────────────────────────────────────────────────
     const handleRemoveSelectedRows = () => {
         if (selectedRows.size === 0) {
-            setValidationModalContent({ title: 'No Selection', messages: ['Please select at least one row to remove.'] });
-            setShowValidationModal(true);
+            showMessage('info', 'No Selection', 'Please select at least one row to remove.');
             return;
         }
 
@@ -528,11 +498,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             setMode('preview');
         }
 
-        setValidationModalContent({
-            title: 'Rows Removed',
-            messages: [`${selectedIndicesList.length} row(s) have been removed from the preview.`]
-        });
-        setShowValidationModal(true);
+        showMessage('success', 'Rows Removed', `${selectedIndicesList.length} row(s) have been removed from the preview.`);
     };
 
     // ─── Load Stock from Database ───────────────────────────────────────────
@@ -577,11 +543,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                 }
             }
         } catch (error: any) {
-            setValidationModalContent({
-                title: 'Load Error',
-                messages: [error?.response?.data?.message || error?.message || 'Failed to load stock data.']
-            });
-            setShowValidationModal(true);
+            showMessage('error', 'Load Error', error?.response?.data?.message || error?.message || 'Failed to load stock data.');
         } finally {
             setIsLoading(false);
         }
@@ -899,9 +861,6 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                                 setFilterType('all');
                                 setSelectedRows(new Set());
                                 if (fileInputRef.current) fileInputRef.current.value = '';
-                                if (validationModalContent && validationModalContent.title.includes('Skipped During Import')) {
-                                    setShowValidationModal(true);
-                                }
                             }}
                             className="mt-2 w-full px-6 py-3 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-xl font-semibold text-lg transition-colors"
                         >
@@ -1209,55 +1168,8 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                 </div>
             )}
 
-            {/* Filename Error Modal */}
-            {filenameError && (
-                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400">
-                            <AlertCircle className="w-8 h-8" />
-                            <h3 className="text-lg font-bold">Invalid File Name</h3>
-                        </div>
-                        <p className="mb-6 text-gray-700 dark:text-gray-300 text-lg">
-                            {filenameError}
-                        </p>
-                        <div className="flex justify-end">
-                            <button
-                                onClick={() => setFilenameError(null)}
-                                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
-                            >
-                                Ok
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Validation Result Modal */}
-            {showValidationModal && validationModalContent && (
-                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-700 max-h-[90vh] flex flex-col">
-                        <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400 shrink-0">
-                            <AlertCircle className="w-8 h-8" />
-                            <h3 className="text-xl font-bold">{validationModalContent.title}</h3>
-                        </div>
-                        <div className="flex-1 overflow-y-auto mb-6 pr-2">
-                            <ul className="list-disc list-inside space-y-2 text-gray-700 dark:text-gray-300 text-lg">
-                                {validationModalContent.messages.map((msg, idx) => (
-                                    <li key={idx} className="whitespace-pre-wrap leading-relaxed">{msg}</li>
-                                ))}
-                            </ul>
-                        </div>
-                        <div className="flex justify-center shrink-0">
-                            <button
-                                onClick={() => setShowValidationModal(false)}
-                                className="px-8 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-lg min-w-[120px]"
-                            >
-                                Ok
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Message Modal Renderer */}
+            {MessageModalRenderer}
 
             {/* Import Progress Overlay */}
             {importProgress?.active && (

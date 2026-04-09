@@ -292,9 +292,37 @@ const ImportMaster: React.FC = () => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const extension = file.name.toLowerCase();
-        if (!extension.endsWith('.xlsx')) {
-            showMessage('error', 'Invalid File Type', 'Only .xlsx Excel files are supported. Please convert old .xls files to .xlsx format and try again.');
+        // Step 1: File Extension Check (FIRST PRIORITY)
+        const fileName = file.name;
+        const extension = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
+
+        if (extension !== '.xlsx') {
+            showMessage('error', 'Invalid Excel Version',
+                'Your Excel file format is not supported.\n\nPlease upload file in .xlsx format only.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+
+        // Step 2: File Name Validation (Only if extension is correct)
+        let expectedName = '';
+        if (isItemMode) {
+            expectedName = itemGroups.find(g => g.itemGroupID === selectedItemGroup)?.itemGroupName || '';
+        } else if (isToolMode) {
+            expectedName = toolGroups.find(g => g.toolGroupID === selectedToolGroup)?.toolGroupName || '';
+        } else if (isLedgerMode) {
+            expectedName = subModules.find(s => s.moduleId === selectedLedgerGroup)?.moduleDisplayName || 
+                           subModules.find(s => s.moduleId === selectedLedgerGroup)?.moduleName || '';
+        } else if (isHSNMode) {
+            expectedName = 'HSN Master';
+        } else if (isSparePartMode) {
+            expectedName = 'Spare Part Master';
+        }
+
+        // Validate name (case-insensitive, excluding extension)
+        const actualNameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.')).trim();
+        if (expectedName && actualNameWithoutExt.toLowerCase() !== expectedName.trim().toLowerCase()) {
+            showMessage('error', 'Invalid File Name',
+                `You have selected wrong file.\n\nPlease upload correct file for selected Module and Group.\n\nExpected: ${expectedName}.xlsx`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }

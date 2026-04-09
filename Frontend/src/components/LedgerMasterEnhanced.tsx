@@ -125,7 +125,6 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
     // Validation Modal State
     const [showValidationModal, setShowValidationModal] = useState(false);
     const [validationModalContent, setValidationModalContent] = useState<{ title: string; messages: string[] } | null>(null);
-    const [filenameError, setFilenameError] = useState<string | null>(null);
     const [clearActionType, setClearActionType] = useState<'clearOnly' | 'freshUpload'>('freshUpload');
     const [noDataMessage, setNoDataMessage] = useState<string | null>(null);
 
@@ -271,7 +270,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         setFilterType('all');
         setShowValidationModal(false);
         setValidationModalContent(null);
-        setFilenameError(null);
+
         setClearFlowStep(0);
         setClearCredentials({ username: '', password: '', reason: '' });
 
@@ -850,9 +849,21 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const expectedFilename = `${ledgerGroupName}.xlsx`;
-        if (file.name !== expectedFilename) {
-            setFilenameError(`Please correct your Excel file name according to the selected Ledger Group. Expected: ${expectedFilename}`);
+        // Step 1: File Extension Check
+        const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        if (extension !== '.xlsx') {
+            showMessage('error', 'Invalid Excel Version',
+                'Your Excel file format is not supported.\n\nPlease upload file in .xlsx format only.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+
+        // Step 2: File Name Validation
+        const expectedName = ledgerGroupName;
+        const actualNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')).trim();
+        if (expectedName && actualNameWithoutExt.toLowerCase() !== expectedName.trim().toLowerCase()) {
+            showMessage('error', 'Invalid File Name',
+                `You have selected wrong file.\n\nPlease upload correct file for selected Module and Group.\n\nExpected: ${expectedName}.xlsx`);
             if (fileInputRef.current) fileInputRef.current.value = '';
             return;
         }
@@ -2021,30 +2032,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 </div>
             )}
 
-            {/* Filename Error Popup */}
-            {filenameError && (
-                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-md w-full border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400">
-                            <AlertCircle className="w-8 h-8" />
-                            <h3 className="text-lg font-bold">Invalid File Name</h3>
-                        </div>
 
-                        <p className="mb-6 text-gray-700 dark:text-gray-300 text-lg">
-                            {filenameError}
-                        </p>
-
-                        <div className="flex justify-end">
-                            <button
-                                onClick={() => setFilenameError(null)}
-                                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
-                            >
-                                Ok
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Mode Switch Confirmation Modal */}
             {showModeSwitchModal && pendingMode && (

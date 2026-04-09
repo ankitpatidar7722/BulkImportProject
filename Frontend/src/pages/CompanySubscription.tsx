@@ -149,6 +149,36 @@ const CompanySubscription: React.FC = () => {
     const [selectedModulesForGroup, setSelectedModulesForGroup] = useState<Set<string>>(new Set());
     const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
+    // ─── Module Override Confirmation State ───
+    const [showModuleOverrideConfirm, setShowModuleOverrideConfirm] = useState(false);
+    const [overrideCaptchaQuestion, setOverrideCaptchaQuestion] = useState({ num1: 0, num2: 0, answer: 0 });
+    const [overrideCaptchaInput, setOverrideCaptchaInput] = useState('');
+    const [overrideCaptchaError, setOverrideCaptchaError] = useState(false);
+    const [overrideModuleCount, setOverrideModuleCount] = useState(0);
+
+    const generateOverrideCaptcha = () => {
+        const n1 = Math.floor(Math.random() * 50) + 20;
+        const n2 = Math.floor(Math.random() * 15) + 5;
+        setOverrideCaptchaQuestion({ num1: n1, num2: n2, answer: n1 - n2 });
+        setOverrideCaptchaInput('');
+        setOverrideCaptchaError(false);
+    };
+
+    // ─── Copy Modules Confirmation State ───
+    const [showCopyConfirmModal, setShowCopyConfirmModal] = useState(false);
+    const [copyCaptchaQuestion, setCopyCaptchaQuestion] = useState({ num1: 0, num2: 0, answer: 0 });
+    const [copyCaptchaInput, setCopyCaptchaInput] = useState('');
+    const [copyCaptchaError, setCopyCaptchaError] = useState(false);
+    const [targetClientNameForCopy, setTargetClientNameForCopy] = useState('');
+
+    const generateCopyCaptcha = () => {
+        const n1 = Math.floor(Math.random() * 40) + 15;
+        const n2 = Math.floor(Math.random() * 10) + 5;
+        setCopyCaptchaQuestion({ num1: n1, num2: n2, answer: n1 - n2 });
+        setCopyCaptchaInput('');
+        setCopyCaptchaError(false);
+    };
+
     // ─── Wizard State ───
     const [showWizard, setShowWizard] = useState(false);
     const [wizardStep, setWizardStep] = useState<WizardStepNum>(1);
@@ -687,20 +717,15 @@ const CompanySubscription: React.FC = () => {
             }
 
             // Check if target client already has modules
-            const checkRes = await checkModulesExist(targetClientRes.data.conn_String);
+            const checkRes = await checkModulesExist(targetClientRes.data?.conn_String || '');
 
             if (checkRes.hasModules) {
-                // Show warning confirmation
-                const confirmed = window.confirm(
-                    `⚠️ Warning: Target client already has ${checkRes.moduleCount} module(s).\n\n` +
-                    `Are you sure you want to delete the existing modules and add new modules?\n\n` +
-                    `Click OK to proceed or Cancel to abort.`
-                );
-
-                if (!confirmed) {
-                    setIsCopying(false);
-                    return;
-                }
+                // Trigger custom confirmation modal instead of window.confirm
+                setTargetClientNameForCopy(targetClientRes.data.companyName);
+                generateCopyCaptcha();
+                setShowCopyConfirmModal(true);
+                setIsCopying(false);
+                return;
             }
 
             // Proceed with copy
@@ -718,11 +743,46 @@ const CompanySubscription: React.FC = () => {
         }
     };
 
+    const confirmCopyModules = async () => {
+        if (parseInt(copyCaptchaInput) !== copyCaptchaQuestion.answer) {
+            setCopyCaptchaError(true);
+            showMessage('error', 'Invalid Verification', 'The answer you entered is incorrect. Please try again.');
+            return;
+        }
+
+        setShowCopyConfirmModal(false);
+        setIsCopying(true);
+        try {
+            if (!formData.conn_String || !copyTargetUserID) {
+                showMessage('error', 'Error', 'Connection details are missing.');
+                setIsCopying(false);
+                return;
+            }
+            const res = await copyModules(formData.conn_String, copyTargetUserID);
+            if (res.success) {
+                showMessage('success', 'Copied', res.message);
+                setShowCopyModal(false);
+            } else {
+                showMessage('error', 'Copy Failed', res.message);
+            }
+        } catch (err: any) {
+            showMessage('error', 'Error', err?.response?.data?.message || 'Failed to copy modules.');
+        } finally {
+            setIsCopying(false);
+        }
+    };
+
     const filteredClientList = useMemo(() => {
-        if (!copyClientSearch.trim()) return clientList;
+        // Filter out the currently selected client (source) to prevent copying to self
+        const baseList = clientList.filter(c => c.companyUserID !== selectedRow?.companyUserID);
+        
+        if (!copyClientSearch.trim()) return baseList;
         const q = copyClientSearch.toLowerCase();
-        return clientList.filter(c => c.companyName.toLowerCase().includes(q) || c.companyUserID.toLowerCase().includes(q));
-    }, [clientList, copyClientSearch]);
+        return baseList.filter(c => 
+            c.companyName.toLowerCase().includes(q) || 
+            c.companyUserID.toLowerCase().includes(q)
+        );
+    }, [clientList, copyClientSearch, selectedRow]);
 
     // ─── Module Group Authority Handlers ───
     const loadModuleGroups = useCallback(async (appName: string) => {
@@ -774,27 +834,22 @@ const CompanySubscription: React.FC = () => {
         setIsModuleSaving(true);
         try {
             // Check if client database already has modules
-            const checkRes = await checkModulesExist(formData.conn_String);
+            const checkRes = await checkModulesExist(formData.conn_String || '');
 
             if (checkRes.hasModules) {
-                // Show warning confirmation
-                const confirmed = window.confirm(
-                    `⚠️ Warning: This client database already has ${checkRes.moduleCount} module(s).\n\n` +
-                    `Are you sure you want to delete the existing modules and add new modules from "${selectedGroup}"?\n\n` +
-                    `Click OK to proceed or Cancel to abort.`
-                );
-
-                if (!confirmed) {
-                    setIsModuleSaving(false);
-                    return;
-                }
+                // Trigger custom confirmation modal instead of window.confirm
+                setOverrideModuleCount(checkRes.moduleCount);
+                generateOverrideCaptcha();
+                setShowModuleOverrideConfirm(true);
+                setIsModuleSaving(false);
+                return;
             }
 
             // Proceed with apply
             const res = await applyModuleGroupToClient({
                 applicationName: groupAppName,
                 moduleGroupName: selectedGroup,
-                connectionString: formData.conn_String
+                connectionString: formData.conn_String || ''
             });
 
             if (res.success) {
@@ -804,6 +859,34 @@ const CompanySubscription: React.FC = () => {
             }
         } catch (err: any) {
             showMessage('error', 'Error', err?.response?.data?.message || 'Failed to apply module group to client database.');
+        } finally {
+            setIsModuleSaving(false);
+        }
+    };
+
+    const confirmModuleOverride = async () => {
+        if (parseInt(overrideCaptchaInput) !== overrideCaptchaQuestion.answer) {
+            setOverrideCaptchaError(true);
+            showMessage('error', 'Invalid Verification', 'The answer you entered is incorrect. Please try again.');
+            return;
+        }
+
+        setShowModuleOverrideConfirm(false);
+        setIsModuleSaving(true);
+        try {
+            const res = await applyModuleGroupToClient({
+                applicationName: groupAppName,
+                moduleGroupName: selectedGroup,
+                connectionString: formData.conn_String || ''
+            });
+
+            if (res.success) {
+                showMessage('success', 'Applied Successfully', res.message);
+            } else {
+                showMessage('error', 'Apply Failed', res.message);
+            }
+        } catch (err: any) {
+            showMessage('error', 'Error', err?.response?.data?.message || 'Failed to apply module group.');
         } finally {
             setIsModuleSaving(false);
         }
@@ -1693,6 +1776,11 @@ const CompanySubscription: React.FC = () => {
                                         </div>
                                         <div className="h-px bg-gray-200 dark:bg-gray-700" />
                                         <div className="flex items-center justify-between">
+                                            <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">URL</span>
+                                            <span className="text-[12px] font-bold text-gray-900 dark:text-white px-3 py-1 rounded-lg">https://estimo.indusanalytics.co.in/CompanyLogin.aspx</span>
+                                        </div>
+                                        <div className="h-px bg-gray-200 dark:bg-gray-700" />
+                                        <div className="flex items-center justify-between">
                                             <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Company Login Name</span>
                                             <span className="text-[12px] font-bold text-gray-900 dark:text-white bg-indigo-100 dark:bg-indigo-900/30 px-3 py-1 rounded-lg">{setupComplete.companyUserID}</span>
                                         </div>
@@ -1719,7 +1807,8 @@ const CompanySubscription: React.FC = () => {
                                     <div className="mt-4 flex justify-center">
                                         <button 
                                             onClick={() => {
-                                                const text = `Company Name: ${companyMaster.companyName || formData.companyName}\nCompany Login Name: ${setupComplete.companyUserID}\nPassword: ${setupComplete.password}\nUser Name: ${setupComplete.userName || 'Admin'}\nPassword: ${setupComplete.userPassword || ''}`;
+                                                const loginUrl = 'https://estimo.indusanalytics.co.in/CompanyLogin.aspx';
+                                                const text = `Company Name: ${companyMaster.companyName || formData.companyName}\nURL: ${loginUrl}\nCompany Login Name: ${setupComplete.companyUserID}\nPassword: ${setupComplete.password}\nUser Name: ${setupComplete.userName || 'Admin'}\nPassword: ${setupComplete.userPassword || ''}`;
                                                 navigator.clipboard.writeText(text);
                                                 showMessage('success', 'Copied', 'Credentials copied successfully');
                                             }}
@@ -2370,6 +2459,159 @@ const CompanySubscription: React.FC = () => {
                                     className="h-9 px-4 text-[13px] font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-emerald-600/20">
                                     {isCreatingGroup ? <Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1" /> : <Save className="w-3.5 h-3.5 inline mr-1" />}
                                     {isCreatingGroup ? 'Creating...' : 'Create Group'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+            {/* Copy Modules Confirmation Modal */}
+            {showCopyConfirmModal && (
+                <>
+                    <style>{`@keyframes copyConfirmModalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }`}</style>
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                        <div className="w-[520px] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border-2 border-indigo-500 overflow-hidden"
+                             style={{ animation: 'copyConfirmModalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                            
+                            {/* Header Area */}
+                            <div className="p-6 text-center border-b border-gray-100 dark:border-gray-800">
+                                <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Copy className="w-8 h-8 text-indigo-600 animate-pulse" />
+                                </div>
+                                <h3 className="text-lg font-black text-indigo-600 uppercase tracking-tight mb-2">WARNING - Data Overwrite</h3>
+                                <p className="text-[14px] font-medium text-gray-600 dark:text-gray-300 px-4 leading-relaxed">
+                                    Are you sure you want to copy all the modules of <span className="text-indigo-600 font-bold">{selectedRow?.companyName}</span> to save the <span className="text-amber-600 font-bold">{targetClientNameForCopy}</span>?
+                                </p>
+                                <p className="text-[11px] text-red-500 font-bold mt-2 uppercase tracking-wide">
+                                    Note: This will delete all existing modules for {targetClientNameForCopy}.
+                                </p>
+                            </div>
+
+                            {/* Captcha Body */}
+                            <div className="p-6 bg-gray-50/50 dark:bg-gray-800/30">
+                                <div className="bg-white dark:bg-gray-900 border border-indigo-100 dark:border-indigo-800/50 rounded-xl p-5 shadow-sm">
+                                    <div className="text-center mb-4">
+                                        <span className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest block mb-3">Security Verification - Solve this:</span>
+                                        <div className="flex items-center justify-center gap-4 text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                                            <span>{copyCaptchaQuestion.num1}</span>
+                                            <span className="text-gray-400">-</span>
+                                            <span>{copyCaptchaQuestion.num2}</span>
+                                            <span className="text-gray-400">=</span>
+                                            <span className="text-indigo-600/50">?</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="relative">
+                                        <input 
+                                            type="number" 
+                                            value={copyCaptchaInput}
+                                            onChange={(e) => {
+                                                setCopyCaptchaInput(e.target.value);
+                                                setCopyCaptchaError(false);
+                                            }}
+                                            onKeyDown={(e) => e.key === 'Enter' && confirmCopyModules()}
+                                            placeholder="Enter answer"
+                                            className={`w-full h-12 text-center text-lg font-bold rounded-xl border-2 transition-all outline-none ${
+                                                copyCaptchaError 
+                                                ? 'border-red-500 bg-red-50 dark:bg-red-900/10 text-red-600' 
+                                                : 'border-indigo-100 dark:border-indigo-800 focus:border-indigo-500 dark:focus:border-indigo-500 bg-gray-50 dark:bg-gray-800'
+                                            }`}
+                                        />
+                                        {copyCaptchaError && (
+                                            <p className="text-[10px] font-bold text-red-500 text-center mt-2 uppercase tracking-wide">Invalid verification answer</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="p-5 flex items-center justify-center gap-3 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+                                <button 
+                                    onClick={() => setShowCopyConfirmModal(false)}
+                                    className="px-6 h-11 text-[13px] font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={confirmCopyModules}
+                                    className="px-8 h-11 bg-indigo-600 hover:bg-indigo-700 text-white text-[13px] font-bold rounded-xl shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/40 transform active:scale-95 transition-all"
+                                >
+                                    Yes, Continue
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+            {/* Module Override Confirmation Modal */}
+            {showModuleOverrideConfirm && (
+                <>
+                    <style>{`@keyframes overrideModalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }`}</style>
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                        <div className="w-[480px] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border-2 border-red-500 overflow-hidden"
+                             style={{ animation: 'overrideModalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+                            
+                            {/* Header Area */}
+                            <div className="p-6 text-center border-b border-gray-100 dark:border-gray-800">
+                                <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <AlertTriangle className="w-8 h-8 text-red-600 animate-pulse" />
+                                </div>
+                                <h3 className="text-lg font-black text-red-600 uppercase tracking-tight mb-2">WARNING - Module Override</h3>
+                                <p className="text-[13px] font-medium text-gray-600 dark:text-gray-300 px-4">
+                                    Are you sure you want to delete existing <span className="text-red-600 font-bold">{overrideModuleCount}</span> modules and add <span className="text-indigo-600 font-bold">{selectedGroup}</span> modules?
+                                </p>
+                            </div>
+
+                            {/* Captcha Body */}
+                            <div className="p-6 bg-gray-50/50 dark:bg-gray-800/30">
+                                <div className="bg-white dark:bg-gray-900 border border-indigo-100 dark:border-indigo-800/50 rounded-xl p-5 shadow-sm">
+                                    <div className="text-center mb-4">
+                                        <span className="text-[11px] font-bold text-indigo-500 uppercase tracking-widest block mb-3">Security Verification - Solve this:</span>
+                                        <div className="flex items-center justify-center gap-4 text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                                            <span>{overrideCaptchaQuestion.num1}</span>
+                                            <span className="text-gray-400">-</span>
+                                            <span>{overrideCaptchaQuestion.num2}</span>
+                                            <span className="text-gray-400">=</span>
+                                            <span className="text-indigo-600/50">?</span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="relative">
+                                        <input 
+                                            type="number" 
+                                            value={overrideCaptchaInput}
+                                            onChange={(e) => {
+                                                setOverrideCaptchaInput(e.target.value);
+                                                setOverrideCaptchaError(false);
+                                            }}
+                                            onKeyDown={(e) => e.key === 'Enter' && confirmModuleOverride()}
+                                            placeholder="Enter answer"
+                                            className={`w-full h-12 text-center text-lg font-bold rounded-xl border-2 transition-all outline-none ${
+                                                overrideCaptchaError 
+                                                ? 'border-red-500 bg-red-50 dark:bg-red-900/10 text-red-600' 
+                                                : 'border-indigo-100 dark:border-indigo-800 focus:border-indigo-500 dark:focus:border-indigo-500 bg-gray-50 dark:bg-gray-800'
+                                            }`}
+                                        />
+                                        {overrideCaptchaError && (
+                                            <p className="text-[10px] font-bold text-red-500 text-center mt-2 uppercase tracking-wide">Invalid verification answer</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="p-5 flex items-center justify-center gap-3 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800">
+                                <button 
+                                    onClick={() => setShowModuleOverrideConfirm(false)}
+                                    className="px-6 h-11 text-[13px] font-bold text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={confirmModuleOverride}
+                                    className="px-8 h-11 bg-red-600 hover:bg-red-700 text-white text-[13px] font-bold rounded-xl shadow-lg shadow-red-600/20 hover:shadow-red-600/40 transform active:scale-95 transition-all"
+                                >
+                                    Yes, Continue
                                 </button>
                             </div>
                         </div>

@@ -487,8 +487,10 @@ public class ItemStockService : IItemStockService
                     ValidationMessage = "ReceiptQuantity must be greater than 0"
                 });
             }
-            // PAPER group: ReceiptQuantity must be a whole number (no decimals)
-            else if (isPaperGroup && row.ReceiptQuantity != Math.Floor(row.ReceiptQuantity))
+            // PAPER group: ReceiptQuantity must be a whole number (no decimals).
+            // Use tolerance (< 0.001) to ignore floating-point noise from SQL SUM arithmetic
+            // e.g. 110 → 110.0000000000001 after SUM — should not be flagged as decimal.
+            else if (isPaperGroup && Math.Abs(row.ReceiptQuantity - Math.Round(row.ReceiptQuantity)) >= 0.001m)
             {
                 cellIssues.Add(new ItemStockCellValidation
                 {
@@ -1084,7 +1086,7 @@ public class ItemStockService : IItemStockService
                 ROUND(
                     ISNULL(SUM(ISNULL(ITD.ReceiptQuantity, 0)), 0)
                   - ISNULL(SUM(ISNULL(ITD.IssueQuantity, 0)), 0)
-                  - ISNULL(SUM(ISNULL(ITD.RejectedQuantity, 0)), 0), 2
+                  - ISNULL(SUM(ISNULL(ITD.RejectedQuantity, 0)), 0), 0
                 ) AS ReceiptQuantity,
                 MAX(ISNULL(ITD.LandedRate, 0)) AS LandedRate,
                 MAX(NULLIF(ITD.BatchNo, '')) AS BatchNo,
