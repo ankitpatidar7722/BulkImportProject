@@ -90,7 +90,14 @@ All services inject `SqlConnection` (already configured with correct tenant conn
 
 Example: `ExcelController.cs` → `IExcelService.cs` → `ExcelService.cs`
 
-### 5. Frontend API Layer — Monolithic api.ts
+`PasswordEncoder.cs` is a standalone utility (no interface) for password hashing — not part of the DI service pattern.
+
+### 5. Frontend Pages vs Components
+
+- `Frontend/src/pages/` — full-page views routed in `App.tsx`: `Dashboard`, `ImportMaster`, `CompanyMaster`, `CompanyLogin`, `CompanySubscription`, `CreateModule`, `DynamicModule`, `ERPTransactionDelete`, `ModuleAuthority`, `ModuleGroupAuthority`, `StockUpload`
+- `Frontend/src/components/` — reusable UI: `*Enhanced.tsx` master grids, `*StockUpload.tsx` stock import forms, `ActivityLogViewer`, `SearchableSelect`, `PrivateRoute`, `Login`, `Header`, `Sidebar`
+
+### 6. Frontend API Layer — Monolithic api.ts
 
 **`Frontend/src/services/api.ts` (~2,200 lines)** is the single API service file containing:
 - Axios instance with interceptors (JWT injection, global loader toggling, 401 redirect)
@@ -99,14 +106,14 @@ Example: `ExcelController.cs` → `IExcelService.cs` → `ExcelService.cs`
 
 When adding new API endpoints, add the function and any new interfaces to this file.
 
-### 6. Frontend Context Providers
+### 7. Frontend Context Providers
 
 Three React contexts wrap the app:
 - **AuthContext** (`context/AuthContext.tsx`): Two-step login state, JWT token, user info, loginType
 - **ThemeContext** (`context/ThemeContext.tsx`): Dark/light mode toggle (Tailwind `class` strategy)
 - **LoaderContext** (`context/LoaderContext.tsx`): Global loading overlay state, integrated with Axios interceptors
 
-### 7. Excel Import System
+### 8. Excel Import System
 
 **EPPlus-based Excel processing with preview and validation:**
 
@@ -116,7 +123,7 @@ Three React contexts wrap the app:
 - Max file size: 500MB (configured in Program.cs)
 - **EPPlus NonCommercial license** set in Program.cs
 
-### 8. Master Data Components
+### 9. Master Data Components
 
 Each master entity follows the same pattern:
 - Backend: DTO + Service interface + Service implementation + Controller
@@ -126,17 +133,28 @@ Each master entity follows the same pattern:
 
 **Stock uploads:** `ItemStockUpload.tsx`, `SparePartMasterStockUpload.tsx`, `ToolStockUpload.tsx` — bulk Excel upload with warehouse/bin validation.
 
-### 9. Activity Logging
+### 10. Activity Logging
 
 All data modifications (Insert, Update, Delete, Clear) are logged via `ActivityLogService.cs`. Frontend viewer: `ActivityLogViewer.tsx`.
 
-### 10. Database Backup/Restore System
+### 11. Database Backup/Restore System
 
 Supports two workflows for company database provisioning:
 1. **Download backup** — `GET /api/DatabaseBackupRestore/download-backup` streams a compressed .bak as .zip
 2. **Backup & transfer** — `POST /api/DatabaseBackupRestore/backup-and-transfer` runs async with progress polling via `/status/{operationId}`
 
 Key files: `DatabaseBackupRestoreService.cs`, `DatabaseBackupRestoreController.cs`, `DatabaseBackupRestoreDto.cs`. Server-to-server endpoints use API key auth via `ValidateBackupApiKeyAttribute.cs`.
+
+## DbFix Utility
+
+`Backend/DbFix/` is a standalone .NET console project for one-off database fixes that don't fit into the auto-migration system. Run it directly:
+
+```bash
+cd Backend/DbFix
+dotnet run
+```
+
+It has a hardcoded connection string — update it before running. **Do not use this for routine schema changes; add those to Program.cs migrations instead.**
 
 ## Important Configuration
 

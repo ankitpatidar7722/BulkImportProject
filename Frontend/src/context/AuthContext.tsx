@@ -38,47 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Check for session restoration preference
-        const enableAutoLogin = localStorage.getItem('enableAutoLogin') === 'true';
-
-        if (enableAutoLogin) {
-            // Restore session from localStorage on page load / refresh (ONLY if enabled)
-            const authToken = localStorage.getItem('authToken');
-            const companyToken = localStorage.getItem('companyToken');
-            const storedCompanyName = localStorage.getItem('companyName');
-            const storedUserName = localStorage.getItem('userName');
-            const storedFYear = localStorage.getItem('fYear');
-            const storedLoginType = localStorage.getItem('loginType') as LoginType;
-
-            if (authToken && storedUserName) {
-                // User is fully authenticated (Step 2)
-                setCompanyName(storedCompanyName || '');
-                setUserName(storedUserName);
-                setFYear(storedFYear || '');
-                setLoginType(storedLoginType || 'customer');
-                setLoginStep(2);
-            } else if (companyToken && storedCompanyName) {
-                // Company login completed, awaiting user login (Step 1)
-                setCompanyName(storedCompanyName);
-                setLoginStep(1);
-            } else {
-                // No authentication, start from CompanyLogin (Step 0)
-                setLoginStep(0);
-            }
-        } else {
-            // Auto-login disabled: Clear old sessions and start fresh
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('companyToken');
-            localStorage.removeItem('companyName');
-            localStorage.removeItem('userName');
-            localStorage.removeItem('fYear');
-            localStorage.removeItem('loginType');
-            setLoginStep(0);
-        }
-
-        setIsLoading(false);
-
-        // Listen for 401 Unauthorized events from API interceptor
+        // Register 401 handler FIRST — before any API calls — so it catches session-expired responses
         const handleUnauthorized = () => {
             localStorage.clear();
             setLoginStep(0);
@@ -88,8 +48,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setFYear('');
             window.location.href = '/CompanyLogin';
         };
-
         window.addEventListener('auth:unauthorized', handleUnauthorized);
+
+        const restoreSession = async () => {
+            const enableAutoLogin = localStorage.getItem('enableAutoLogin') === 'true';
+
+            if (enableAutoLogin) {
+                const authToken = localStorage.getItem('authToken');
+                const companyToken = localStorage.getItem('companyToken');
+                const storedCompanyName = localStorage.getItem('companyName');
+                const storedUserName = localStorage.getItem('userName');
+                const storedFYear = localStorage.getItem('fYear');
+                const storedLoginType = localStorage.getItem('loginType') as LoginType;
+
+                if (authToken && storedUserName) {
+                    // Verify token is still valid on the server before restoring session.
+                    // This catches the case where the app pool recycled / server restarted and
+                    // wiped the in-memory CompanySessionStore — JWT is still valid but session is gone.
+                    const isValid = await checkSessionApi();
+                    if (isValid) {
+                        setCompanyName(storedCompanyName || '');
+                        setUserName(storedUserName);
+                        setFYear(storedFYear || '');
+                        setLoginType(storedLoginType || 'customer');
+                        setLoginStep(2);
+                    }
+                    // If !isValid: the 401 interceptor already fired auth:unauthorized above,
+                    // which clears localStorage and redirects to /CompanyLogin.
+                } else if (companyToken && storedCompanyName) {
+                    // Company login done, user login pending (Step 1)
+                    setCompanyName(storedCompanyName);
+                    setLoginStep(1);
+                } else {
+                    setLoginStep(0);
+                }
+            } else {
+                // Auto-login disabled: clear any stale tokens and start fresh
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('companyToken');
+                localStorage.removeItem('companyName');
+                localStorage.removeItem('userName');
+                localStorage.removeItem('fYear');
+                localStorage.removeItem('loginType');
+                setLoginStep(0);
+            }
+
+            setIsLoading(false);
+        };
+
+        restoreSession();
 
         return () => {
             window.removeEventListener('auth:unauthorized', handleUnauthorized);

@@ -103,6 +103,24 @@ public class HSNService : IHSNService
                 }
             }
 
+            // 1b. ProductCategory Mismatch Check — must be one of the allowed dropdown values
+            var validProductCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Raw Material", "Finish Goods", "Spare Parts", "Service", "Tool"
+            };
+            if (!string.IsNullOrWhiteSpace(hsn.ProductCategory) && !validProductCategories.Contains(hsn.ProductCategory))
+            {
+                rowValidation.CellValidations.Add(new CellValidation
+                {
+                    ColumnName = "productCategory",
+                    ValidationMessage = $"'{hsn.ProductCategory}' is not a valid Product Type. Must be one of: Raw Material, Finish Goods, Spare Parts, Service, Tool.",
+                    Status = ValidationStatus.Mismatch
+                });
+                if (rowValidation.RowStatus != ValidationStatus.Duplicate && rowValidation.RowStatus != ValidationStatus.MissingData)
+                    rowValidation.RowStatus = ValidationStatus.Mismatch;
+                hasHSNMismatch = true;
+            }
+
             // Conditional Validation: Item Group Name
             bool isRawMaterial = string.Equals(hsn.ProductCategory, "Raw Material", StringComparison.OrdinalIgnoreCase);
             

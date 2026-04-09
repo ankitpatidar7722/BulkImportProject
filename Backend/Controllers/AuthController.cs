@@ -90,13 +90,10 @@ public class AuthController : ControllerBase
                 return Ok(new { Success = true, Message = "Session is valid", LoginType = loginType ?? "customer" });
             }
         }
-        
-        // Final fallback for cases where session might be in-memory but sessionId is missing (unlikely given current GenerateToken logic)
-        if (User.Identity?.IsAuthenticated == true)
-        {
-             return Ok(new { Success = true, Message = "Authenticated via Token", LoginType = loginType });
-        }
 
-        return Unauthorized(new { Success = false, Message = "Session expired or invalid" });
+        // Session not found in server-side store (e.g. app pool recycled / server restarted).
+        // JWT may still be cryptographically valid, but without the in-memory session the
+        // connection string is gone — return 401 so the frontend redirects to login.
+        return Unauthorized(new { Success = false, Message = "Session expired. Please login again." });
     }
 }

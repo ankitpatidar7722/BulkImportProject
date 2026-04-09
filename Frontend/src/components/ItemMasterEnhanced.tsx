@@ -27,6 +27,7 @@ import {
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import { useLoader } from '../context/LoaderContext';
+import { getItemMasterStandardColumns, validateExcelColumns } from '../utils/excelColumnValidator';
 
 // AG Grid Imports
 import { AgGridReact } from 'ag-grid-react';
@@ -237,18 +238,29 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
             const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
 
-            // Validate PaperGroup column exists for PAPER and REEL groups
-            if ((itemGroupName === 'PAPER' || itemGroupName === 'REEL') && jsonData.length > 0) {
-                const firstRow = jsonData[0];
-                const hasColumn = Object.keys(firstRow).some(k => k === 'PaperGroup' || k === 'paperGroup' || k === 'papergroup' || k === 'PAPERGROUP');
-                if (!hasColumn) {
-                    showMessage('error', 'Incorrect Format',
-                        `You are uploading incorrect format.\nColumn 'PaperGroup' is missing in the Excel file.\nPlease export the correct format and upload again.`);
-                    setIsLoading(false);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                    return;
+            // ── Column format validation ──────────────────────────────────
+            // Read headers directly from row 1 cells — includes headers even when columns have no data rows
+            const uploadedColumns: string[] = (() => {
+                const ref = worksheet['!ref'];
+                if (!ref) return jsonData.length > 0 ? Object.keys(jsonData[0] as object) : [];
+                const { s, e } = XLSX.utils.decode_range(ref);
+                const cols: string[] = [];
+                for (let c = s.c; c <= e.c; c++) {
+                    const cell = worksheet[XLSX.utils.encode_cell({ r: s.r, c })];
+                    if (cell?.v !== undefined && String(cell.v).trim() !== '') cols.push(String(cell.v));
                 }
+                return cols;
+            })();
+
+            const standardColumns = getItemMasterStandardColumns(itemGroupName || '');
+            const colValidation = validateExcelColumns(uploadedColumns, standardColumns);
+            if (!colValidation.isValid) {
+                showMessage('error', 'Invalid Excel Format', colValidation.message);
+                setIsLoading(false);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                return;
             }
+            // ─────────────────────────────────────────────────────────────
 
             // Helper function to safely convert values to string or undefined
             const toStringOrUndefined = (value: any): string | undefined => {

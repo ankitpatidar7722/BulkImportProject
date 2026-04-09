@@ -21,6 +21,8 @@ import {
     ValidationStatus
 } from '../services/api';
 import { useLoader } from '../context/LoaderContext';
+import { useTheme } from '../context/ThemeContext';
+import { getHSNMasterStandardColumns, validateExcelColumns } from '../utils/excelColumnValidator';
 
 // AG Grid Imports
 import { AgGridReact } from 'ag-grid-react';
@@ -38,6 +40,7 @@ interface HSNMasterEnhancedProps {
 const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     const { showMessage, ModalRenderer } = useMessageModal();
     const { showLoader, hideLoader } = useLoader();
+    const { isDark } = useTheme();
 
     const [hsnData, setHsnData] = useState<HSNMasterDto[]>([]);
     const [itemGroups, setItemGroups] = useState<string[]>([]); // Added state for Item Groups
@@ -134,6 +137,13 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         });
         return map;
     }, [validationResult]);
+
+    // Force redraw when validation result changes to ensure highlights are cleared/updated
+    useEffect(() => {
+        if (gridApiRef.current) {
+            gridApiRef.current.redrawRows();
+        }
+    }, [validationResult, hsnData, validationMap]);
 
     const handleCellEdit = useCallback((rowIndex: number, field: keyof HSNMasterDto, newValue: any) => {
         setHsnData(prevData => {
@@ -245,35 +255,54 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         );
     };
 
-    const getCellClassRules = () => {
-        return {
-            'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 border-purple-300': (params: any) => {
-                const rowIndex = hsnData.indexOf(params.data);
-                if (rowIndex === -1) return false;
-                const rowVal = validationMap.get(rowIndex);
-                // Check if this specific column has InvalidContent
-                return rowVal?.cellValidations?.some(c => c.columnName === params.colDef.field && c.status === ValidationStatus.InvalidContent) || false;
-            },
-            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300 border-yellow-300': (params: any) => {
-                const rowIndex = hsnData.indexOf(params.data);
-                if (rowIndex === -1) return false;
-                const rowVal = validationMap.get(rowIndex);
-                // Check if this specific column has Mismatch
-                return rowVal?.cellValidations?.some(c => c.columnName === params.colDef.field && c.status === ValidationStatus.Mismatch) || false;
-            },
-            'bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border-blue-300': (params: any) => {
-                const rowIndex = hsnData.indexOf(params.data);
-                if (rowIndex === -1) return false;
-                const rowVal = validationMap.get(rowIndex);
-                // Check if this specific column has MissingData
-                return rowVal?.cellValidations?.some(c => c.columnName === params.colDef.field && c.status === ValidationStatus.MissingData) || false;
+    const defaultColDef = useMemo(() => ({
+        sortable: true,
+        filter: true,
+        resizable: true,
+        minWidth: 50,
+        cellStyle: (params: any) => {
+            const rowIndex = hsnData.indexOf(params.data);
+            if (rowIndex === -1) return null;
+
+            const colors = {
+                duplicate: isDark ? 'rgba(220, 38, 38, 0.2)' : '#fee2e2',
+                missing:   isDark ? 'rgba(37, 99, 235, 0.2)'  : '#dbeafe',
+                mismatch:  isDark ? 'rgba(202, 138, 4, 0.2)'  : '#fef9c3',
+                invalid:   isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff'
+            };
+
+            const rowVal = validationMap.get(rowIndex);
+            if (!rowVal) return null;
+
+            // Whole-row red for duplicate
+            if (rowVal.rowStatus === ValidationStatus.Duplicate) {
+                return { backgroundColor: colors.duplicate };
             }
-        };
-    };
+
+            // Cell-level coloring: match by field (camelCase), headerName, or PascalCase property name
+            // Backend sends ColumnName as PascalCase (e.g. "ProductHSNName"), camelCase (e.g. "itemGroupName"),
+            // so we need case-insensitive matching against both field and headerName
+            const colField = params.colDef.field ?? '';
+            const colHeader = params.colDef.headerName ?? '';
+            if (rowVal.cellValidations) {
+                const cellVal = rowVal.cellValidations.find((cv: any) => {
+                    const cn = cv.columnName ?? '';
+                    return cn.toLowerCase() === colField.toLowerCase()
+                        || cn.toLowerCase() === colHeader.toLowerCase()
+                        || cn.toLowerCase() === colHeader.replace(/\s+/g, '').toLowerCase();
+                });
+                if (cellVal) {
+                    if (cellVal.status === ValidationStatus.MissingData)    return { backgroundColor: colors.missing };
+                    if (cellVal.status === ValidationStatus.Mismatch)       return { backgroundColor: colors.mismatch };
+                    if (cellVal.status === ValidationStatus.InvalidContent) return { backgroundColor: colors.invalid };
+                }
+            }
+            return null;
+        }
+    }), [isDark, validationMap, hsnData]);
 
     const columnDefs: ColDef[] = useMemo(() => {
         const isEditable = mode === 'preview' || mode === 'validated';
-        const commonCellRules = getCellClassRules();
 
         return [
             {
@@ -286,7 +315,8 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 pinned: 'left',
                 lockPosition: true,
                 resizable: false,
-                suppressMenu: true
+                suppressMenu: true,
+                cellStyle: undefined  // no coloring on checkbox column
             },
             {
                 headerName: '#',
@@ -295,11 +325,12 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 pinned: 'left',
                 lockPosition: true,
                 resizable: true,
-                suppressMenu: true
+                suppressMenu: true,
+                cellStyle: undefined  // no coloring on row-number column
             },
-            { field: 'productHSNName', headerName: 'Group Name', minWidth: 150, editable: isEditable, cellClassRules: commonCellRules },
-            { field: 'displayName', headerName: 'Display Name', minWidth: 200, editable: isEditable, cellClassRules: commonCellRules },
-            { field: 'hsnCode', headerName: 'HSN Code', width: 120, editable: isEditable, cellClassRules: commonCellRules },
+            { field: 'productHSNName', headerName: 'Group Name', minWidth: 150, editable: isEditable },
+            { field: 'displayName', headerName: 'Display Name', minWidth: 200, editable: isEditable },
+            { field: 'hsnCode', headerName: 'HSN Code', width: 120, editable: isEditable },
             {
                 field: 'productCategory',
                 headerName: 'Product Type',
@@ -308,58 +339,35 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: getDropdownParams(['Raw Material', 'Finish Goods', 'Spare Parts', 'Service', 'Tool']),
                 cellRenderer: DropdownCellRenderer,
-                cellClassRules: commonCellRules
             },
-            { field: 'gstTaxPercentage', headerName: 'GST %', width: 90, editable: isEditable, cellClassRules: commonCellRules },
-            { field: 'cgstTaxPercentage', headerName: 'CGST %', width: 90, editable: isEditable, cellClassRules: commonCellRules },
-            { field: 'sgstTaxPercentage', headerName: 'SGST %', width: 90, editable: isEditable, cellClassRules: commonCellRules },
-            { field: 'igstTaxPercentage', headerName: 'IGST %', width: 90, editable: isEditable, cellClassRules: commonCellRules },
+            { field: 'gstTaxPercentage', headerName: 'GST %', width: 90, editable: isEditable },
+            { field: 'cgstTaxPercentage', headerName: 'CGST %', width: 90, editable: isEditable },
+            { field: 'sgstTaxPercentage', headerName: 'SGST %', width: 90, editable: isEditable },
+            { field: 'igstTaxPercentage', headerName: 'IGST %', width: 90, editable: isEditable },
             {
                 field: 'itemGroupName',
                 headerName: 'Item Group Name',
                 minWidth: 150,
-                // Only editable if Product Type is 'Raw Material'
                 editable: (params) => {
                     if (!isEditable) return false;
-                    const productType = (params.data?.productCategory || '').trim();
-                    // Case-insensitive check
-                    return productType.toLowerCase() === 'raw material';
+                    return (params.data?.productCategory || '').trim().toLowerCase() === 'raw material';
                 },
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: getDropdownParams(itemGroups),
                 cellRenderer: ItemGroupRenderer,
-                cellClassRules: commonCellRules
             }
         ];
-    }, [mode, itemGroups, validationMap]); // Added validationMap dependency
+    }, [mode, itemGroups]);
 
     const rowClassRules: RowClassRules = useMemo(() => {
         return {
+            // Only color the entire row for Duplicates (red) — all other issues highlight only the specific cell
             'bg-red-50 dark:bg-red-900/10': (params) => {
                 if (!validationResult) return false;
                 const rowIndex = hsnData.indexOf(params.data);
                 if (rowIndex === -1) return false;
                 const rowVal = validationMap.get(rowIndex);
                 return rowVal?.rowStatus === ValidationStatus.Duplicate;
-            },
-            'bg-blue-50 dark:bg-blue-900/10': (params) => {
-                const rowIndex = hsnData.indexOf(params.data);
-                if (rowIndex === -1) return false;
-                const rowVal = validationMap.get(rowIndex);
-                return rowVal?.rowStatus === ValidationStatus.MissingData;
-            },
-            'bg-yellow-50 dark:bg-yellow-900/10': (params) => {
-                const rowIndex = hsnData.indexOf(params.data);
-                if (rowIndex === -1) return false;
-                const rowVal = validationMap.get(rowIndex);
-                return rowVal?.rowStatus === ValidationStatus.Mismatch;
-            },
-            // REMOVED 'bg-purple-50' rule to stop full row highlighting for InvalidContent
-            'font-medium': (params) => {
-                const rowIndex = hsnData.indexOf(params.data);
-                if (rowIndex === -1) return false;
-                const rowVal = validationMap.get(rowIndex);
-                return rowVal?.rowStatus !== ValidationStatus.Valid && rowVal?.rowStatus !== undefined;
             }
         };
     }, [validationMap, hsnData, validationResult]);
@@ -585,6 +593,27 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 const ws = wb.Sheets[wsname];
                 const data = XLSX.utils.sheet_to_json(ws);
 
+                // ── Column format validation ──────────────────────────────
+                // Read headers directly from row 1 cells — includes headers even when columns have no data rows
+                const uploadedColumns: string[] = (() => {
+                    const ref = ws['!ref'];
+                    if (!ref) return data.length > 0 ? Object.keys(data[0] as object) : [];
+                    const { s, e } = XLSX.utils.decode_range(ref);
+                    const cols: string[] = [];
+                    for (let c = s.c; c <= e.c; c++) {
+                        const cell = ws[XLSX.utils.encode_cell({ r: s.r, c })];
+                        if (cell?.v !== undefined && String(cell.v).trim() !== '') cols.push(String(cell.v));
+                    }
+                    return cols;
+                })();
+                const colValidation = validateExcelColumns(uploadedColumns, getHSNMasterStandardColumns());
+                if (!colValidation.isValid) {
+                    showMessage('error', 'Invalid Excel Format', colValidation.message);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    return;
+                }
+                // ─────────────────────────────────────────────────────────
+
                 // Map Excel columns to DTO
                 const safeParseFloat = (value: any): number => {
                     if (value === null || value === undefined) return 0;
@@ -624,7 +653,12 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
 
     const handleValidate = async () => {
         if (hsnData.length === 0) return;
+
+        // Clear stale validation state before re-validating
+        setValidationResult(null);
+        setValidationModalContent(null);
         setIsLoading(true);
+
         try {
             const result = await validateHSNs(hsnData);
             setValidationResult(result);
@@ -633,7 +667,51 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
             if (result.isValid) {
                 showMessage('success', 'Validation Passed', 'All records passed validation successfully. The data is ready to be imported.');
             } else {
-                showError(`Validation Failed: Found ${result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount} errors.`);
+                const totalIssues = result.summary.duplicateCount + result.summary.missingDataCount + result.summary.mismatchCount + result.summary.invalidContentCount;
+
+                // Map backend PascalCase/camelCase column names to human-readable labels
+                const colDisplayNames: Record<string, string> = {
+                    producthsnname: 'Group Name',
+                    displayname:    'Display Name',
+                    hsncode:        'HSN Code',
+                    productcategory:'Product Type',
+                    gsttaxpercentage: 'GST %',
+                    itemgroupname:  'Item Group Name'
+                };
+                const toDisplayName = (raw: string) =>
+                    colDisplayNames[raw.toLowerCase()] ?? raw;
+
+                // Aggregate failures by column (same as ItemMasterEnhanced)
+                const columnFailures = new Map<string, Set<string>>();
+                result.rows.forEach((row: HSNRowValidation) => {
+                    if (row.rowStatus === ValidationStatus.Duplicate) {
+                        const col = 'HSN Code';
+                        if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                        columnFailures.get(col)!.add('Duplicate data found');
+                    }
+                    if (row.cellValidations && row.cellValidations.length > 0) {
+                        row.cellValidations.forEach((cell: any) => {
+                            const col = toDisplayName(cell.columnName || 'Unknown');
+                            if (!columnFailures.has(col)) columnFailures.set(col, new Set());
+                            let reason = 'Invalid';
+                            if (cell.status === ValidationStatus.MissingData) reason = 'Missing';
+                            else if (cell.status === ValidationStatus.Mismatch) reason = 'Master Mismatch';
+                            else if (cell.status === ValidationStatus.InvalidContent) reason = 'Invalid Format';
+                            columnFailures.get(col)!.add(reason);
+                        });
+                    }
+                });
+
+                const messages: string[] = [];
+                columnFailures.forEach((reasons, col) => {
+                    messages.push(`${col} – ${Array.from(reasons).join(', ')}`);
+                });
+
+                setValidationModalContent({
+                    title: `Validation Failed: ${totalIssues} Issue${totalIssues !== 1 ? 's' : ''} Found`,
+                    messages: messages.length > 0 ? messages : ['Please review the grid for specific issues.']
+                });
+                setShowValidationModal(true);
             }
         } catch (error) {
             console.error(error);
@@ -774,13 +852,15 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
             }
         } else {
             // Local remove from Excel Preview
-            const selectedIndicesList = selectedNodes.map(n => n.rowIndex as number).sort((a, b) => b - a);
-            const selectedIndicesSet = new Set(selectedIndicesList);
+            const selectedData = selectedNodes.map(node => node.data);
+            const selectedIndices = new Set(selectedData.map(d => hsnData.indexOf(d)).filter(i => i !== -1));
+            const selectedIndicesList = Array.from(selectedIndices).sort((a, b) => b - a);
 
             // 1. Update data
-            const newData = hsnData.filter((_, idx) => !selectedIndicesSet.has(idx));
+            const newData = hsnData.filter((_, idx) => !selectedIndices.has(idx));
             setHsnData(newData);
             setSelectedRows(new Set());
+            gridApiRef.current?.deselectAll();
 
             // 2. Update validationResult (if exists)
             if (validationResult) {
@@ -792,7 +872,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 const indexMap = new Map<number, number>();
                 let shift = 0;
                 for (let i = 0; i < hsnData.length; i++) {
-                    if (selectedIndicesSet.has(i)) {
+                    if (selectedIndices.has(i)) {
                         shift++;
                     } else {
                         indexMap.set(i, i - shift);
@@ -801,7 +881,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
 
                 // Filter and re-index rows
                 oldRows.forEach(row => {
-                    if (selectedIndicesSet.has(row.rowIndex)) {
+                    if (selectedIndices.has(row.rowIndex)) {
                         // This row was deleted - decrement summary counts
                         summary.totalRows--;
                         if (row.rowStatus === ValidationStatus.Duplicate) summary.duplicateCount--;
@@ -1077,7 +1157,7 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                         onGridReady={(params) => gridApiRef.current = params.api}
                         rowData={hsnData}
                         columnDefs={columnDefs}
-                        defaultColDef={{ sortable: true, filter: true, resizable: true, minWidth: 50 }}
+                        defaultColDef={defaultColDef}
                         rowClassRules={rowClassRules}
                         rowSelection="multiple"
                         onSelectionChanged={() => {
@@ -1373,20 +1453,28 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
             {/* Standardized Message Modal */}
             {ModalRenderer}
 
-            {/* Validation Error Modal */}
+            {/* Validation Result Modal */}
             {showValidationModal && validationModalContent && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-[#1e293b] rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col">
-                        <div className="p-6 border-b flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-red-600">Import Errors</h3>
-                            <button onClick={() => setShowValidationModal(false)} className="text-gray-500 hover:text-gray-700">×</button>
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-700 max-h-[90vh] flex flex-col">
+                        <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400 shrink-0">
+                            <AlertCircle className="w-8 h-8" />
+                            <h3 className="text-xl font-bold">{validationModalContent.title}</h3>
                         </div>
-                        <div className="p-6 overflow-y-auto">
-                            <ul className="space-y-2">
-                                {validationModalContent.messages.map((msg, i) => (
-                                    <li key={i} className="text-sm text-red-600">• {msg}</li>
+                        <div className="flex-1 overflow-y-auto mb-6 pr-2">
+                            <ul className="list-disc list-inside space-y-2 text-gray-700 dark:text-gray-300 text-lg">
+                                {validationModalContent.messages.map((msg, idx) => (
+                                    <li key={idx} className="whitespace-pre-wrap leading-relaxed">{msg}</li>
                                 ))}
                             </ul>
+                        </div>
+                        <div className="flex justify-center shrink-0">
+                            <button
+                                onClick={() => setShowValidationModal(false)}
+                                className="px-8 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-lg min-w-[120px]"
+                            >
+                                Ok
+                            </button>
                         </div>
                     </div>
                 </div>

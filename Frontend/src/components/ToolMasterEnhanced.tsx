@@ -25,6 +25,7 @@ import {
 } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import { useLoader } from '../context/LoaderContext';
+import { getToolMasterStandardColumns, validateExcelColumns } from '../utils/excelColumnValidator';
 
 // AG Grid Imports
 import { AgGridReact } from 'ag-grid-react';
@@ -759,6 +760,27 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                // ── Column format validation ──────────────────────────────
+                // Read headers directly from row 1 cells — includes headers even when columns have no data rows
+                const uploadedColumns: string[] = (() => {
+                    const ref = worksheet['!ref'];
+                    if (!ref) return jsonData.length > 0 ? Object.keys(jsonData[0] as object) : [];
+                    const { s, e } = XLSX.utils.decode_range(ref);
+                    const cols: string[] = [];
+                    for (let c = s.c; c <= e.c; c++) {
+                        const cell = worksheet[XLSX.utils.encode_cell({ r: s.r, c })];
+                        if (cell?.v !== undefined && String(cell.v).trim() !== '') cols.push(String(cell.v));
+                    }
+                    return cols;
+                })();
+                const colValidation = validateExcelColumns(uploadedColumns, getToolMasterStandardColumns(toolGroupId || 0));
+                if (!colValidation.isValid) {
+                    showMessage('error', 'Invalid Excel Format', colValidation.message);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                    return;
+                }
+                // ─────────────────────────────────────────────────────────
 
                 const toStr = (v: any) => {
                     if (v === undefined || v === null || v === '') return undefined;

@@ -1058,7 +1058,7 @@ public class ItemService : IItemService
                 r.ProductHSNID > 0 ? (object)r.ProductHSNID : DBNull.Value,
                 N(it.StockUnit), N(it.PurchaseUnit), N(it.EstimationUnit),
                 N(it.EstimationRate), N(it.UnitPerPacking), N(it.WtPerPacking), N(it.ConversionFactor),
-                r.ItemSubGroupID > 0 ? (object)r.ItemSubGroupID : DBNull.Value,
+                r.ItemSubGroupID != 0 ? (object)r.ItemSubGroupID : DBNull.Value,
                 N(it.StockType), N(it.StockCategory), r.ItemType,
                 N(it.SizeW), N(it.SizeL), N(r.ItemSize),
                 N(it.PurchaseRate), N(it.StockRefCode), N(r.ItemDescription),
@@ -1148,7 +1148,7 @@ public class ItemService : IItemService
             AddDetail("InkColour",             it.InkColour);
             AddDetail("PantoneCode",           it.PantoneCode);
             AddDetail("ItemType",              r.ItemType);
-            if (r.ItemSubGroupID > 0) AddDetail("ItemSubGroupID", r.ItemSubGroupID.ToString());
+            if (r.ItemSubGroupID != 0) AddDetail("ItemSubGroupID", r.ItemSubGroupID.ToString());
             AddDetail("StockType",             it.StockType);
             if (it.PurchaseOrderQuantity.HasValue) AddDetail("PurchaseOrderQuantity", it.PurchaseOrderQuantity.ToString());
             AddDetail("Quality",               it.Quality);
