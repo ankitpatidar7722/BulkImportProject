@@ -36,7 +36,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     }, [showUserMenu]);
 
     return (
-        <header className="h-16 bg-[#0B1120] border-b border-gray-800 flex-shrink-0 z-40">
+        <header className="h-16 bg-[#0F294D] border-b border-gray-800 flex-shrink-0 z-40">
             <div className="h-full px-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <button

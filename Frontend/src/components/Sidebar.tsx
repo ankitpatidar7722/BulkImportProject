@@ -55,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
             )}
 
             <aside className={`
-                ${isCollapsed ? 'w-20' : 'w-64'} bg-[#0B1120] text-white border-r border-gray-800 h-screen sticky top-0 
+                ${isCollapsed ? 'w-20' : 'w-64'} bg-[#0F294D] text-white border-r border-gray-800 h-screen sticky top-0 
                 overflow-y-auto custom-scrollbar flex flex-col z-50 transition-all duration-300 ease-in-out
                 ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
             `}>

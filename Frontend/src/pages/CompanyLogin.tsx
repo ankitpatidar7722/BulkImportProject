@@ -66,15 +66,14 @@ const CompanyLogin: React.FC = () => {
     const [indusUser, setIndusUser] = useState('');
     const [indusPass, setIndusPass] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [recentCompanies, setRecentCompanies] = useState<string[]>([]);
-    const [recentIndusUsers, setRecentIndusUsers] = useState<string[]>([]);
-
-    useEffect(() => {
-        const savedCompanies = JSON.parse(localStorage.getItem('recent_companies') || '[]');
-        const savedIndusUsers = JSON.parse(localStorage.getItem('recent_indus_users') || '[]');
-        setRecentCompanies(savedCompanies);
-        setRecentIndusUsers(savedIndusUsers);
-    }, []);
+    const [recentCompanies, setRecentCompanies] = useState<string[]>(() =>
+        JSON.parse(localStorage.getItem('recent_companies') || '[]')
+    );
+    const [recentIndusUsers, setRecentIndusUsers] = useState<string[]>(() =>
+        JSON.parse(localStorage.getItem('recent_indus_users') || '[]')
+    );
+    const [showCompSuggestions, setShowCompSuggestions] = useState(false);
+    const [showIndusSuggestions, setShowIndusSuggestions] = useState(false);
 
     const saveRecentInput = (type: 'company' | 'indus', val: string) => {
         if (!val.trim()) return;
@@ -90,8 +89,8 @@ const CompanyLogin: React.FC = () => {
         e.preventDefault();
         setIsSubmitting(true);
         try {
-            await companyLogin({ companyUserID: companyUser, password: companyPass });
             saveRecentInput('company', companyUser);
+            await companyLogin({ companyUserID: companyUser, password: companyPass });
         } catch (error: any) {
             showMessage('error', 'Login Failed', error.message || 'Invalid company credentials. Please try again.');
         } finally {
@@ -103,8 +102,8 @@ const CompanyLogin: React.FC = () => {
         e.preventDefault();
         setIsSubmitting(true);
         try {
-            await indusLogin({ webUserName: indusUser, password: indusPass });
             saveRecentInput('indus', indusUser);
+            await indusLogin({ webUserName: indusUser, password: indusPass });
         } catch (error: any) {
             showMessage('error', 'Login Failed', error.message || 'Invalid Indus credentials. Please try again.');
         } finally {
@@ -199,17 +198,40 @@ const CompanyLogin: React.FC = () => {
                                     </div>
                                     <input
                                         type="text"
-                                        list="recent-companies-list"
                                         value={companyUser}
-                                        onChange={(e) => setCompanyUser(e.target.value)}
+                                        onChange={(e) => {
+                                            setCompanyUser(e.target.value);
+                                            setShowCompSuggestions(true);
+                                        }}
+                                        onFocus={() => setShowCompSuggestions(true)}
+                                        onBlur={() => setTimeout(() => setShowCompSuggestions(false), 200)}
                                         className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
                                         placeholder="Ex: COMP001"
                                         required
                                         autoFocus
+                                        autoComplete="off"
                                     />
-                                    <datalist id="recent-companies-list">
-                                        {recentCompanies.map(c => <option key={c} value={c} />)}
-                                    </datalist>
+                                    
+                                    {/* Custom Suggestions Dropdown */}
+                                    {showCompSuggestions && recentCompanies.filter(c => c.toLowerCase().includes(companyUser.toLowerCase())).length > 0 && (
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto py-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                                            {recentCompanies
+                                                .filter(c => c.toLowerCase().includes(companyUser.toLowerCase()))
+                                                .map((c, index) => (
+                                                    <div
+                                                        key={index}
+                                                        className="px-4 py-2.5 hover:bg-orange-50 cursor-pointer text-[14px] text-gray-700 font-medium flex items-center gap-3 transition-colors"
+                                                        onClick={() => {
+                                                            setCompanyUser(c);
+                                                            setShowCompSuggestions(false);
+                                                        }}
+                                                    >
+                                                        <Building2 className="w-4 h-4 text-orange-400" />
+                                                        {c}
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -265,17 +287,39 @@ const CompanyLogin: React.FC = () => {
                                     </div>
                                     <input
                                         type="text"
-                                        list="recent-indus-list"
                                         value={indusUser}
-                                        onChange={(e) => setIndusUser(e.target.value)}
+                                        onChange={(e) => {
+                                            setIndusUser(e.target.value);
+                                            setShowIndusSuggestions(true);
+                                        }}
+                                        onFocus={() => setShowIndusSuggestions(true)}
+                                        onBlur={() => setTimeout(() => setShowIndusSuggestions(false), 200)}
                                         className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
                                         placeholder="Enter username"
                                         required
-                                        autoFocus
+                                        autoComplete="off"
                                     />
-                                    <datalist id="recent-indus-list">
-                                        {recentIndusUsers.map(u => <option key={u} value={u} />)}
-                                    </datalist>
+
+                                    {/* Custom Suggestions Dropdown */}
+                                    {showIndusSuggestions && recentIndusUsers.filter(u => u.toLowerCase().includes(indusUser.toLowerCase())).length > 0 && (
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto py-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                                            {recentIndusUsers
+                                                .filter(u => u.toLowerCase().includes(indusUser.toLowerCase()))
+                                                .map((u, index) => (
+                                                    <div
+                                                        key={index}
+                                                        className="px-4 py-2.5 hover:bg-indigo-50 cursor-pointer text-[14px] text-gray-700 font-medium flex items-center gap-3 transition-colors"
+                                                        onClick={() => {
+                                                            setIndusUser(u);
+                                                            setShowIndusSuggestions(false);
+                                                        }}
+                                                    >
+                                                        <User className="w-4 h-4 text-indigo-400" />
+                                                        {u}
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

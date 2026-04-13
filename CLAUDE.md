@@ -69,7 +69,8 @@ There is no automated test suite. Testing is manual via Swagger UI and frontend.
 - **Step 1**: `Login.tsx` — User enters credentials, JWT issued with `sessionId`
 - **AuthContext.tsx**: Manages `loginStep` (0→1→2), `loginType` (indus/company), JWT token storage
 - **PrivateRoute.tsx**: Guards all authenticated routes
-- Two login types: "indus" (admin, sees CompanySubscription page) and "company" (regular user)
+- Two login types: "indus" (admin) and "company" (regular user)
+- **Route guards by loginType**: `indus` users default to `/company-subscription` and are blocked from `/dashboard`; `company` users default to `/dashboard` and are blocked from `/company-subscription`. Both redirects are enforced in `App.tsx` route definitions.
 
 ### 3. Auto-Migration System
 
@@ -91,6 +92,8 @@ All services inject `SqlConnection` (already configured with correct tenant conn
 Example: `ExcelController.cs` → `IExcelService.cs` → `ExcelService.cs`
 
 `PasswordEncoder.cs` is a standalone utility (no interface) for password hashing — not part of the DI service pattern.
+
+**Exception:** `TransactionDeleteController` intentionally bypasses the service pattern. It directly injects `ICompanySessionStore` and `IHttpContextAccessor` to build its own `SqlConnection`, rather than receiving one from DI. This is intentional — do not refactor it to use the standard pattern without understanding why.
 
 ### 5. Frontend Pages vs Components
 

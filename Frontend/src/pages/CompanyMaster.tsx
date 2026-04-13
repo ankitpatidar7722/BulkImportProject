@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Building2, Save, Edit2, Loader2, X } from 'lucide-react';
+import { 
+    Building2, Save, Edit2, Loader2, X, Info, Factory, Receipt, 
+    Calculator, Settings2, CheckCircle2, Wrench, Cpu, RefreshCw, 
+    MessageSquare, Megaphone, Printer, Tag, MapPin, Phone, 
+    ShieldCheck, Settings, BarChart3, Monitor, Zap, Layers
+} from 'lucide-react';
 import { getCompany, updateCompany, CompanyDto } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
 
@@ -37,8 +42,8 @@ const FormField: React.FC<FormFieldProps> = ({ label, name, type = 'text', requi
     const val = formData[name];
     const dispVal = company[name];
     return (
-        <div className="space-y-1.5">
-            <label className="flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        <div className="space-y-2">
+            <label className="flex items-center gap-1.5 text-[11px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
                 {label}
                 {required && <span className="text-red-500">*</span>}
             </label>
@@ -50,7 +55,7 @@ const FormField: React.FC<FormFieldProps> = ({ label, name, type = 'text', requi
                         onChange={onChange}
                         rows={3}
                         placeholder={`Enter ${label.toLowerCase()}`}
-                        className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all resize-none"
+                        className="w-full px-4 py-3 text-sm bg-blue-50/30 dark:bg-white/5 border border-blue-100 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all resize-none shadow-inner"
                     />
                 ) : (
                     <input
@@ -59,24 +64,24 @@ const FormField: React.FC<FormFieldProps> = ({ label, name, type = 'text', requi
                         value={val as string || ''}
                         onChange={onChange}
                         placeholder={`Enter ${label.toLowerCase()}`}
-                        className="w-full px-3 py-2 text-sm bg-white dark:bg-[#1e293b] border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all"
+                        className="w-full h-11 px-4 text-sm bg-blue-50/30 dark:bg-white/5 border border-blue-100 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400 transition-all shadow-inner"
                     />
                 )
             ) : (
-                <div className="text-sm font-medium w-full text-gray-900 dark:text-white bg-gray-50 dark:bg-[#1e293b] px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800 min-h-[38px] flex items-center">
+                <div className="text-[14px] font-semibold w-full text-gray-800 dark:text-gray-200 bg-gray-50/80 dark:bg-white/5 px-4 py-3 rounded-xl border border-gray-100 dark:border-white/5 min-h-[46px] flex items-center shadow-sm">
                     {dispVal ? (
                         name === 'applicationConfiguration' ? (
-                            <span className="text-emerald-700 dark:text-emerald-400 font-semibold text-[13px] tracking-wide flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Configuration Active
+                            <span className="text-emerald-700 dark:text-emerald-400 font-bold text-[13px] tracking-wide flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse"></span> Configuration Active
                             </span>
                         ) : type === 'password' ? (
-                            <span className="tracking-widest opacity-60">••••••••</span>
+                            <span className="tracking-widest opacity-40">••••••••</span>
                         ) : (
                             <span className={`w-full ${type === 'textarea' ? 'line-clamp-3 break-words' : 'truncate'}`} title={String(dispVal)}>
                                 {String(dispVal)}
                             </span>
                         )
-                    ) : <span className="text-gray-400 italic text-xs">Not set</span>}
+                    ) : <span className="text-gray-400 italic text-xs font-medium">Not configured</span>}
                 </div>
             )}
         </div>
@@ -106,25 +111,29 @@ const ToggleField: React.FC<ToggleFieldProps> = ({ label, name, formData, compan
     );
 };
 
-const Section: React.FC<{ title: string; icon: string; children: React.ReactNode; cols?: 1 | 2 | 3 }> = ({ title, icon, children, cols = 2 }) => (
-    <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border-b border-gray-100 dark:border-gray-800">
-            <span className="text-lg">{icon}</span>
-            <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-tight">{title}</h4>
+const Section: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode; cols?: 1 | 2 | 3 }> = ({ title, icon, children, cols = 2 }) => (
+    <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden group/section">
+        <div className="flex items-center gap-3.5 px-6 py-4 bg-gradient-to-r from-gray-50/80 to-transparent dark:from-blue-900/10 dark:to-transparent border-b border-gray-100 dark:border-gray-800">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400 group-hover/section:scale-110 transition-transform duration-300">
+                {icon}
+            </div>
+            <h4 className="text-[15px] font-black text-gray-800 dark:text-white uppercase tracking-tight">{title}</h4>
         </div>
-        <div className={`p-5 grid grid-cols-1 ${cols === 2 ? 'md:grid-cols-2' : cols === 3 ? 'md:grid-cols-3' : ''} gap-4`}>
+        <div className={`p-6 grid grid-cols-1 ${cols === 2 ? 'md:grid-cols-2' : cols === 3 ? 'md:grid-cols-3' : ''} gap-6`}>
             {children}
         </div>
     </div>
 );
 
-const ToggleGrid: React.FC<{ title: string; icon: string; children: React.ReactNode }> = ({ title, icon, children }) => (
-    <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-gray-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border-b border-gray-100 dark:border-gray-800">
-            <span className="text-lg">{icon}</span>
-            <h4 className="text-sm font-bold text-gray-800 dark:text-white tracking-tight">{title}</h4>
+const ToggleGrid: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode }> = ({ title, icon, children }) => (
+    <div className="bg-white dark:bg-[#0f172a] rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm overflow-hidden group/section">
+        <div className="flex items-center gap-3.5 px-6 py-4 bg-gradient-to-r from-gray-50/80 to-transparent dark:from-orange-900/10 dark:to-transparent border-b border-gray-100 dark:border-gray-800">
+            <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center text-orange-600 dark:text-orange-400 group-hover/section:scale-110 transition-transform duration-300">
+                {icon}
+            </div>
+            <h4 className="text-[15px] font-black text-gray-800 dark:text-white uppercase tracking-tight">{title}</h4>
         </div>
-        <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-3">
             {children}
         </div>
     </div>
@@ -201,19 +210,19 @@ const CompanyMaster: React.FC = () => {
 
     // ── Tab Definitions ───────────────────────────────────────────────
     const tabs = [
-        { id: 0,  label: 'Company Info',        icon: '🏢' },
-        { id: 1,  label: 'Production Unit',     icon: '🏭' },
-        { id: 2,  label: 'Tax Config',          icon: '🧾' },
-        { id: 3,  label: 'Estimation',          icon: '🧮' },
-        { id: 4,  label: 'Domain Features',     icon: '⚙️'  },
-        { id: 5,  label: 'Approvals',           icon: '✅' },
-        { id: 6,  label: 'Production Settings', icon: '🔩' },
-        { id: 7,  label: 'System Config',       icon: '🌐' },
-        { id: 8,  label: 'Workflow',            icon: '🔄' },
-        { id: 9,  label: 'Communication',       icon: '💬' },
-        { id: 10, label: 'Client Comm.',        icon: '📢' },
-        { id: 11, label: 'Printing & Docs',     icon: '🖨️' },
-        { id: 12, label: 'Prefixes',            icon: '🏷️' },
+        { id: 0,  label: 'Company Info',        icon: <Info className="w-4 h-4" /> },
+        { id: 1,  label: 'Production Unit',     icon: <Factory className="w-4 h-4" /> },
+        { id: 2,  label: 'Tax Config',          icon: <Receipt className="w-4 h-4" /> },
+        { id: 3,  label: 'Estimation',          icon: <Calculator className="w-4 h-4" /> },
+        { id: 4,  label: 'Domain Features',     icon: <Settings2 className="w-4 h-4" />  },
+        { id: 5,  label: 'Approvals',           icon: <CheckCircle2 className="w-4 h-4" /> },
+        { id: 6,  label: 'Production Settings', icon: <Wrench className="w-4 h-4" /> },
+        { id: 7,  label: 'System Config',       icon: <Cpu className="w-4 h-4" /> },
+        { id: 8,  label: 'Workflow',            icon: <RefreshCw className="w-4 h-4" /> },
+        { id: 9,  label: 'Communication',       icon: <MessageSquare className="w-4 h-4" /> },
+        { id: 10, label: 'Client Comm.',        icon: <Megaphone className="w-4 h-4" /> },
+        { id: 11, label: 'Printing & Docs',     icon: <Printer className="w-4 h-4" /> },
+        { id: 12, label: 'Prefixes',            icon: <Tag className="w-4 h-4" /> },
     ];
 
     // Helper functions for concise rendering with props
@@ -285,21 +294,35 @@ const CompanyMaster: React.FC = () => {
                 </div>
 
                 {/* Tabs Row */}
-                <div className="px-6 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
-                    <div className="flex gap-1 min-w-max pb-0">
-                        {tabs.map(tab => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-all ${activeTab === tab.id
-                                    ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
-                                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
-                                }`}
-                            >
-                                <span>{tab.icon}</span>
-                                <span>{tab.label}</span>
-                            </button>
-                        ))}
+                <div className="px-6 py-2 bg-gray-50/50 dark:bg-[#020617]/50 overflow-x-auto custom-scrollbar-thin">
+                    <div className="flex gap-2 min-w-max">
+                        {tabs.map(tab => {
+                            const isActive = activeTab === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    className={`
+                                        group flex items-center gap-3 px-4 py-2 rounded-xl text-[13px] font-bold transition-all duration-300
+                                        ${isActive 
+                                            ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-lg shadow-blue-500/10 dark:shadow-blue-500/20 scale-[1.02]' 
+                                            : 'text-gray-500 dark:text-gray-400 hover:bg-white/50 dark:hover:bg-gray-800 hover:text-gray-800 dark:hover:text-gray-200'
+                                        }
+                                    `}
+                                >
+                                    <div className={`
+                                        flex items-center justify-center w-8 h-8 rounded-lg transition-colors
+                                        ${isActive 
+                                            ? 'bg-blue-50 dark:bg-white/20 text-blue-600 dark:text-white' 
+                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-400 group-hover:bg-white dark:group-hover:bg-gray-700'
+                                        }
+                                    `}>
+                                        {tab.icon}
+                                    </div>
+                                    <span className="whitespace-nowrap tracking-tight">{tab.label}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
@@ -311,12 +334,12 @@ const CompanyMaster: React.FC = () => {
                     {/* Tab 0: Company Information */}
                     {activeTab === 0 && (
                         <>
-                            <Section title="Identity" icon="🏢" cols={3}>
+                            <Section title="Identity" icon={<Building2 className="w-5 h-5" />} cols={3}>
                                 {F('Company Name', 'companyName', 'text', true)}
                                 {F('Production Unit Name', 'productionUnitName')}
                                 {F('Tally Company Name', 'tallyCompanyName')}
                             </Section>
-                            <Section title="Address" icon="📍" cols={2}>
+                            <Section title="Address" icon={<MapPin className="w-5 h-5" />} cols={2}>
                                 {F('Address Line 1', 'address1')}
                                 {F('Address Line 2', 'address2')}
                                 {F('Address Line 3', 'address3')}
@@ -325,17 +348,17 @@ const CompanyMaster: React.FC = () => {
                                 {F('Country', 'country')}
                                 {F('Pincode', 'pincode')}
                             </Section>
-                            <Section title="Contact" icon="📞" cols={2}>
+                            <Section title="Contact" icon={<Phone className="w-5 h-5" />} cols={2}>
                                 {F('Mobile Number', 'mobileNO')}
                                 {F('Email', 'email', 'email')}
                             </Section>
-                            <Section title="Statutory Numbers" icon="🧾" cols={2}>
+                            <Section title="Statutory Numbers" icon={<Receipt className="w-5 h-5" />} cols={2}>
                                 {F('PAN', 'pan')}
                                 {F('CIN Number', 'cinNo')}
                                 {F('GSTIN', 'gstin')}
                                 {F('State TIN No', 'stateTinNo')}
                             </Section>
-                            <ToggleGrid title="Status" icon="⚡">
+                            <ToggleGrid title="Status" icon={<Zap className="w-5 h-5" />}>
                                 {T('Is Active', 'isActive')}
                             </ToggleGrid>
                         </>
@@ -344,11 +367,11 @@ const CompanyMaster: React.FC = () => {
                     {/* Tab 1: Production Unit */}
                     {activeTab === 1 && (
                         <>
-                            <Section title="Production Unit Details" icon="🏭" cols={2}>
+                            <Section title="Production Unit Details" icon={<Factory className="w-5 h-5" />} cols={2}>
                                 {F('Production Unit Address', 'productionUnitAddress', 'textarea')}
                                 {F('Production Entry Back Day', 'productionEntryBackDay', 'text')}
                             </Section>
-                            <ToggleGrid title="Production Unit Settings" icon="⚙️">
+                            <ToggleGrid title="Production Unit Settings" icon={<Settings className="w-5 h-5" />}>
                                 {T('Manual Production Entry Time', 'manualProductionEntryTime')}
                                 {T('Job Schedule Release Required', 'jobScheduleReleaseRequired')}
                                 {T('Generate Voucher No By Production Unit', 'generateVoucherNoByProductionUnit')}
@@ -361,10 +384,10 @@ const CompanyMaster: React.FC = () => {
                     {/* Tab 2: Tax Configuration */}
                     {activeTab === 2 && (
                         <>
-                            <Section title="Purchase Tolerance" icon="🎯" cols={2}>
+                            <Section title="Purchase Tolerance" icon={<ShieldCheck className="w-5 h-5" />} cols={2}>
                                 {F('Purchase Tolerance (%)', 'purchaseTolerance', 'number')}
                             </Section>
-                            <ToggleGrid title="Tax Settings" icon="🧾">
+                            <ToggleGrid title="Tax Settings" icon={<Receipt className="w-5 h-5" />}>
                                 {T('Sales Tax', 'isSalesTax')}
                                 {T('GST Applicable', 'isGstApplicable')}
                                 {T('VAT Applicable', 'isVatApplicable')}
@@ -377,7 +400,7 @@ const CompanyMaster: React.FC = () => {
                     {/* Tab 3: Estimation & Calculation */}
                     {activeTab === 3 && (
                         <>
-                            <Section title="Decimal Place Settings" icon="🔢" cols={3}>
+                            <Section title="Decimal Place Settings" icon={<Calculator className="w-5 h-5" />} cols={3}>
                                 {F('Estimation RoundOff Decimal Place', 'estimationRoundOffDecimalPlace', 'number')}
                                 {F('Purchase RoundOff Decimal Place', 'purchaseRoundOffDecimalPlace', 'number')}
                                 {F('Invoice RoundOff Decimal Place', 'invoiceRoundOffDecimalPlace', 'number')}
@@ -385,7 +408,7 @@ const CompanyMaster: React.FC = () => {
                                 {F('RoundOff Impression Value', 'roundOffImpressionValue', 'number')}
                                 {F('Wt. Calculate On Estimation', 'wtCalculateOnEstimation', 'text')}
                             </Section>
-                            <ToggleGrid title="Calculation Flags" icon="⚙️">
+                            <ToggleGrid title="Calculation Flags" icon={<Settings className="w-5 h-5" />}>
                                 {T('Auto RoundOff Not Applicable', 'autoRoundOffNotApplicable')}
                             </ToggleGrid>
                         </>
@@ -394,13 +417,13 @@ const CompanyMaster: React.FC = () => {
                     {/* Tab 4: Domain Features */}
                     {activeTab === 4 && (
                         <>
-                            <ToggleGrid title="Domain Modules" icon="🏗️">
+                            <ToggleGrid title="Domain Modules" icon={<Layers className="w-5 h-5" />}>
                                 {T('Flexo Domain Enable', 'flexoDomainEnable')}
                                 {T('Offset Domain Enable', 'offsetDomainEnable')}
                                 {T('Corrugation Domain Enable', 'corrugationDomainEnable')}
                                 {T('Roto Domain Enable', 'rotoDomainEnable')}
                             </ToggleGrid>
-                            <ToggleGrid title="Planning Features" icon="📋">
+                            <ToggleGrid title="Planning Features" icon={<BarChart3 className="w-5 h-5" />}>
                                 {T('Book Planning Feature Enable', 'bookPlanningFeatureEnable')}
                                 {T('Rigid Box Planning Feature Enable', 'rigidBoxPlanningFeatureEnable')}
                                 {T('Shipper Planning Feature Enable', 'shipperPlanningFeatureEnable')}
@@ -410,7 +433,7 @@ const CompanyMaster: React.FC = () => {
 
                     {/* Tab 5: Approval Settings */}
                     {activeTab === 5 && (
-                        <ToggleGrid title="Approval Workflows" icon="✅">
+                        <ToggleGrid title="Approval Workflows" icon={<CheckCircle2 className="w-5 h-5" />}>
                             {T('Internal Approval Required', 'isInternalApprovalRequired')}
                             {T('Requisition Approval', 'isRequisitionApproval')}
                             {T('PO Approval Required', 'isPOApprovalRequired')}
@@ -423,10 +446,10 @@ const CompanyMaster: React.FC = () => {
                     {/* Tab 6: Production Settings */}
                     {activeTab === 6 && (
                         <>
-                            <Section title="Production Values" icon="📊" cols={2}>
+                            <Section title="Production Values" icon={<BarChart3 className="w-5 h-5" />} cols={2}>
                                 {F('Show Plan Upto Wastage %', 'showPlanUptoWastagePerc', 'number')}
                             </Section>
-                            <ToggleGrid title="Production Settings" icon="🔩">
+                            <ToggleGrid title="Production Settings" icon={<Wrench className="w-5 h-5" />}>
                                 {T('Wastage Add In Printing Rate', 'isWastageAddInPrintingRate')}
                                 {T('Material Consumption Details Flag', 'materialConsumptionDetailsFlage')}
                                 {T('Production Process Wise Tolerance Required', 'productionProcessWiseToleranceRequired')}
@@ -437,13 +460,13 @@ const CompanyMaster: React.FC = () => {
                     {/* Tab 7: System Configuration */}
                     {activeTab === 7 && (
                         <>
-                            <Section title="Application Config" icon="🖥️" cols={2}>
+                            <Section title="Application Config" icon={<Monitor className="w-5 h-5" />} cols={2}>
                                 {F('Application Configuration', 'applicationConfiguration', 'textarea')}
                                 {F('API Basic Auth Username', 'apiBasicAuthUserName')}
                                 {F('API Basic Auth Password', 'apiBasicAuthPassword', 'password')}
                                 {F('OTP Verification Excluded Devices', 'otpVerificationExcludedDevices', 'textarea')}
                             </Section>
-                            <ToggleGrid title="System Flags" icon="🔧">
+                            <ToggleGrid title="System Flags" icon={<Cpu className="w-5 h-5" />}>
                                 {T('OTP Verification Feature Enabled', 'otpVerificationFeatureEnabled')}
                                 {T('Multiple FYear Not Required', 'multipleFYearNotRequired')}
                                 {T('Is Product Catalog Created', 'isProductCatalogCreated')}
@@ -454,10 +477,10 @@ const CompanyMaster: React.FC = () => {
                     {/* Tab 8: Workflow Automation */}
                     {activeTab === 8 && (
                         <>
-                            <Section title="Automation Data" icon="📊" cols={2}>
+                            <Section title="Automation Data" icon={<Monitor className="w-5 h-5" />} cols={2}>
                                 {F('Auto Requisition Creation', 'isAutoRequisitionCreation', 'number')}
                             </Section>
-                            <ToggleGrid title="Workflow Automation" icon="🔄">
+                            <ToggleGrid title="Workflow Automation" icon={<RefreshCw className="w-5 h-5" />}>
                                 {T('Auto Indent Feature Required', 'autoIndentFeatureRequired')}
                                 {T('Picklist Feature Required', 'isPicklistFeatureRequired')}
                                 {T('Supplier Item Allocation Required', 'isSupplierItemAllocationRequired')}
@@ -468,7 +491,7 @@ const CompanyMaster: React.FC = () => {
 
                     {/* Tab 9: Communication & CRM */}
                     {activeTab === 9 && (
-                        <ToggleGrid title="Communication & CRM" icon="💬">
+                        <ToggleGrid title="Communication & CRM" icon={<MessageSquare className="w-5 h-5" />}>
                             {T('CRM Activated', 'isCrmActivated')}
                             {T('WhatsApp Activated', 'isWhatsAppActivated')}
                             {T('Email Activated', 'isEmailActivated')}
@@ -478,7 +501,7 @@ const CompanyMaster: React.FC = () => {
 
                     {/* Tab 10: Client Communication */}
                     {activeTab === 10 && (
-                        <ToggleGrid title="Client Notifications" icon="📢">
+                        <ToggleGrid title="Client Notifications" icon={<Megaphone className="w-5 h-5" />}>
                             {T('Job Scheduled → Send To Client', 'isJobScheduled_SendToClient')}
                             {T('Order Ready (QC & Packing) → Send To Client', 'isOrderReady_QcAndPacking_SendToClient')}
                             {T('Invoice Ready → Send To Client', 'isInvoice_Ready_SendToClient')}
@@ -488,7 +511,7 @@ const CompanyMaster: React.FC = () => {
 
                     {/* Tab 11: Printing & Documents */}
                     {activeTab === 11 && (
-                        <ToggleGrid title="Printing & Document Settings" icon="🖨️">
+                        <ToggleGrid title="Printing & Document Settings" icon={<Printer className="w-5 h-5" />}>
                             {T('Invoice Print Product Wise', 'isInvoicePrintProductWise')}
                             {T('Invoice Block Feature Required', 'isInvoiceBlockFeatureRequired')}
                             {T('Quotation Visible After SO', 'isQuotationVisibleAfterSO')}
@@ -498,7 +521,7 @@ const CompanyMaster: React.FC = () => {
 
                     {/* Tab 12: Prefix Settings */}
                     {activeTab === 12 && (
-                        <Section title="Document Prefixes" icon="🏷️" cols={2}>
+                        <Section title="Document Prefixes" icon={<Tag className="w-5 h-5" />} cols={2}>
                             {F('Product Catalog Prefix', 'productCatlogPrefix')}
                             {F('Job Card Prefix', 'jobCardPrefix')}
                         </Section>

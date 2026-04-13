@@ -64,11 +64,27 @@ const Login: React.FC = () => {
     const [fYear, setFYear] = useState('2025-2026');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [animating, setAnimating] = useState(false);
+    const [recentUsers, setRecentUsers] = useState<string[]>([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    useEffect(() => {
+        const savedUsers = JSON.parse(localStorage.getItem('recent_users') || '[]');
+        setRecentUsers(savedUsers);
+    }, []);
+
+    const saveRecentUser = (val: string) => {
+        if (!val.trim()) return;
+        const current = JSON.parse(localStorage.getItem('recent_users') || '[]');
+        const updated = [val, ...current.filter((i: string) => i !== val)].slice(0, 8);
+        localStorage.setItem('recent_users', JSON.stringify(updated));
+        setRecentUsers(updated);
+    };
 
     const handleUserLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
         try {
+            saveRecentUser(userName);
             await userLogin({ userName, password: userPass, fYear });
         } catch (error: any) {
             showMessage('error', 'Login Failed', error.message || 'Invalid credentials. Please check your username and password.');
@@ -160,12 +176,39 @@ const Login: React.FC = () => {
                                     <input
                                         type="text"
                                         value={userName}
-                                        onChange={(e) => setUserName(e.target.value)}
+                                        onChange={(e) => {
+                                            setUserName(e.target.value);
+                                            setShowSuggestions(true);
+                                        }}
+                                        onFocus={() => setShowSuggestions(true)}
+                                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                                         className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
                                         placeholder="Enter your username"
                                         required
                                         autoFocus
+                                        autoComplete="off"
                                     />
+                                    
+                                    {/* Custom Suggestions Dropdown */}
+                                    {showSuggestions && recentUsers.filter(u => u.toLowerCase().includes(userName.toLowerCase())).length > 0 && (
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto py-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                                            {recentUsers
+                                                .filter(u => u.toLowerCase().includes(userName.toLowerCase()))
+                                                .map((u, index) => (
+                                                    <div
+                                                        key={index}
+                                                        className="px-4 py-2.5 hover:bg-indigo-50 cursor-pointer text-[14px] text-gray-700 font-medium flex items-center gap-3 transition-colors"
+                                                        onClick={() => {
+                                                            setUserName(u);
+                                                            setShowSuggestions(false);
+                                                        }}
+                                                    >
+                                                        <User className="w-4 h-4 text-indigo-400" />
+                                                        {u}
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

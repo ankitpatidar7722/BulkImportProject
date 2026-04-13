@@ -355,16 +355,16 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     // Default PaperGroup to 'Paper' if not provided
                     if (!item.paperGroup) item.paperGroup = 'Paper';
 
-                    // Round SizeW to 3 decimal places
+                    // Round SizeW to 1 decimal place
                     if (item.sizeW !== undefined && item.sizeW !== null) {
                         const parsed = parseFloat(String(item.sizeW));
-                        if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(3));
+                        if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
                     }
 
-                    // Round SizeL to 3 decimal places
+                    // Round SizeL to 1 decimal place
                     if (item.sizeL !== undefined && item.sizeL !== null) {
                         const parsed = parseFloat(String(item.sizeL));
-                        if (!isNaN(parsed)) item.sizeL = parseFloat(parsed.toFixed(3));
+                        if (!isNaN(parsed)) item.sizeL = parseFloat(parsed.toFixed(1));
                     }
 
                     // Round WtPerPacking to 9 decimal places (if from Excel)
@@ -405,6 +405,12 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                 if (itemGroupName === 'REEL') {
                     // Default PaperGroup to 'Reel' if not provided
                     if (!item.paperGroup) item.paperGroup = 'Reel';
+
+                    // Round SizeW to 1 decimal place (prevents 838.199999...)
+                    if (item.sizeW !== undefined && item.sizeW !== null) {
+                        const parsed = parseFloat(String(item.sizeW));
+                        if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+                    }
 
                     // BF default: if empty, set to "0"
                     if (!item.bf || item.bf === '') {
@@ -476,6 +482,13 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     if (!item.sizeW && item.sizeW !== 0) item.sizeW = 0;
                     if (!item.thickness && item.thickness !== 0) item.thickness = 0;
                     if (!item.density && item.density !== 0) item.density = 0;
+
+                    // Round SizeW to 1 decimal place
+                    if (item.sizeW !== undefined && item.sizeW !== null) {
+                        const parsed = parseFloat(String(item.sizeW));
+                        if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+                    }
+                    
                     if (!item.shelfLife) item.shelfLife = 365;
                     if (!item.minimumStockQty && item.minimumStockQty !== 0) item.minimumStockQty = 0;
                     if (!item.stockType) item.stockType = 'JOB CONSUMABLES';
@@ -500,6 +513,13 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     if (!item.sizeW && item.sizeW !== 0) item.sizeW = 0;
                     if (!item.thickness && item.thickness !== 0) item.thickness = 0;
                     if (!item.density && item.density !== 0) item.density = 0;
+
+                    // Round SizeW to 1 decimal place
+                    if (item.sizeW !== undefined && item.sizeW !== null) {
+                        const parsed = parseFloat(String(item.sizeW));
+                        if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+                    }
+
                     if (!item.shelfLife) item.shelfLife = 365;
                     if (!item.minimumStockQty && item.minimumStockQty !== 0) item.minimumStockQty = 0;
                     if (!item.stockType) item.stockType = 'JOB CONSUMABLES';
@@ -522,6 +542,13 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     // Apply defaults
                     if (!item.itemType) item.itemType = 'Paper';
                     if (!item.sizeW && item.sizeW !== 0) item.sizeW = 0;
+
+                    // Round SizeW to 1 decimal place
+                    if (item.sizeW !== undefined && item.sizeW !== null) {
+                        const parsed = parseFloat(String(item.sizeW));
+                        if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+                    }
+
                     if (!item.thickness && item.thickness !== 0) item.thickness = 0;
                     if (!item.density && item.density !== 0) item.density = 0;
                     if (!item.shelfLife) item.shelfLife = 365;
@@ -600,6 +627,16 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         const groupLower = (itemGroupName || '').toUpperCase();
 
         if (groupLower === 'PAPER') {
+            // Round SizeW to 1 decimal place
+            if (item.sizeW !== undefined && item.sizeW !== null) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
+            // Round SizeL to 1 decimal place
+            if (item.sizeL !== undefined && item.sizeL !== null) {
+                const parsed = parseFloat(String(item.sizeL));
+                if (!isNaN(parsed)) item.sizeL = parseFloat(parsed.toFixed(1));
+            }
             // Caliper
             if (item.gsm && item.gsm > 0) {
                 item.caliper = parseFloat((item.gsm / 1000).toFixed(3));
@@ -621,6 +658,11 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             if (item.itemSize) parts.push(`${item.itemSize} MM`);
             item.itemName = parts.join(' ');
         } else if (groupLower === 'REEL') {
+            // Round SizeW to 1 decimal place on rebuild
+            if (item.sizeW !== undefined && item.sizeW !== null) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
             // Caliper
             if (item.gsm && item.gsm > 0) {
                 item.caliper = parseFloat((item.gsm / 1000).toFixed(3));
@@ -647,6 +689,11 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             if (item.quality) parts.push(item.quality);
             item.itemName = parts.join(', ');
         } else if (groupLower === 'LAMINATION FILM') {
+            // Round SizeW to 1 decimal place
+            if (item.sizeW !== undefined && item.sizeW !== null) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
             const parts: string[] = [];
             if (item.quality) parts.push(item.quality);
             if (item.sizeW) parts.push(`${item.sizeW} MM`);
@@ -654,12 +701,22 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             if (item.manufecturer) parts.push(item.manufecturer);
             item.itemName = parts.join(', ');
         } else if (groupLower === 'FOIL') {
+            // Round SizeW to 1 decimal place
+            if (item.sizeW !== undefined && item.sizeW !== null) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
             const parts: string[] = [];
             if (item.manufecturerItemCode) parts.push(item.manufecturerItemCode);
             if (item.quality) parts.push(item.quality);
             if (item.sizeW) parts.push(`${item.sizeW} mm`);
             item.itemName = parts.join(', ');
         } else if (groupLower === 'ROLL') {
+            // Round SizeW to 1 decimal place
+            if (item.sizeW !== undefined && item.sizeW !== null) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
             // TotalGSM
             item.totalGSM = (item.gsm || 0) + (item.releaseGSM || 0) + (item.adhesiveGSM || 0);
             // ItemName
@@ -725,9 +782,19 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
             // Apply decimal rounding for PAPER group before sending to API
             if (itemGroupName === 'PAPER') {
-                if (typeof cleaned.sizeW === 'number') cleaned.sizeW = parseFloat(cleaned.sizeW.toFixed(3));
-                if (typeof cleaned.sizeL === 'number') cleaned.sizeL = parseFloat(cleaned.sizeL.toFixed(3));
+                if (typeof cleaned.sizeW === 'number') cleaned.sizeW = parseFloat(cleaned.sizeW.toFixed(1));
+                if (typeof cleaned.sizeL === 'number') cleaned.sizeL = parseFloat(cleaned.sizeL.toFixed(1));
                 if (typeof cleaned.wtPerPacking === 'number') cleaned.wtPerPacking = parseFloat(cleaned.wtPerPacking.toFixed(9));
+            }
+
+            // Apply decimal rounding for REEL group before sending to API
+            if (itemGroupName === 'REEL') {
+                if (typeof cleaned.sizeW === 'number') cleaned.sizeW = parseFloat(cleaned.sizeW.toFixed(1));
+            }
+
+            // Apply decimal rounding for MM fields in other groups
+            if (['ROLL', 'LAMINATION FILM', 'FOIL'].includes(itemGroupName)) {
+                if (typeof cleaned.sizeW === 'number') cleaned.sizeW = parseFloat(cleaned.sizeW.toFixed(1));
             }
 
             if (Object.keys(rawValues).length > 0) {
@@ -2167,16 +2234,16 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         if (itemGroupName === 'PAPER') {
             const changedField = params.colDef.field;
 
-            // Round SizeW to 3 decimal places on edit
+            // Round SizeW to 1 decimal place on edit
             if (changedField === 'sizeW' && item.sizeW !== null && item.sizeW !== undefined) {
                 const parsed = parseFloat(String(item.sizeW));
-                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(3));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
             }
 
-            // Round SizeL to 3 decimal places on edit
+            // Round SizeL to 1 decimal place on edit
             if (changedField === 'sizeL' && item.sizeL !== null && item.sizeL !== undefined) {
                 const parsed = parseFloat(String(item.sizeL));
-                if (!isNaN(parsed)) item.sizeL = parseFloat(parsed.toFixed(3));
+                if (!isNaN(parsed)) item.sizeL = parseFloat(parsed.toFixed(1));
             }
 
             // Recalculate Caliper (GSM / 1000)
@@ -2227,6 +2294,12 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         if (itemGroupName === 'REEL') {
             const changedField = params.colDef.field;
 
+            // Round SizeW to 1 decimal place on edit
+            if (changedField === 'sizeW' && item.sizeW !== null && item.sizeW !== undefined) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
+
             // Recalculate Caliper (GSM / 1000)
             if (changedField === 'gsm') {
                 if (item.gsm && item.gsm > 0) {
@@ -2259,6 +2332,12 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         // ROLL Calculations - Excel-like live updates
         if (itemGroupName === 'ROLL') {
             const changedField = params.colDef.field;
+
+            // Round SizeW to 1 decimal place on edit
+            if (changedField === 'sizeW' && item.sizeW !== null && item.sizeW !== undefined) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
 
             // Recalculate TotalGSM (GSM + ReleaseGSM + AdhesiveGSM)
             if (['gsm', 'releaseGSM', 'adhesiveGSM'].includes(changedField)) {
@@ -2315,6 +2394,12 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         if (itemGroupName === 'LAMINATION FILM') {
             const changedField = params.colDef.field;
 
+            // Round SizeW to 1 decimal place on edit
+            if (changedField === 'sizeW' && item.sizeW !== null && item.sizeW !== undefined) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
+
             // Recalculate ItemName (Quality, SizeW MM, Thickness MICRON, Manufacturer)
             if (['quality', 'sizeW', 'thickness', 'manufecturer'].includes(changedField)) {
                 const parts = [];
@@ -2329,6 +2414,12 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         // FOIL Calculations - Excel-like live updates
         if (itemGroupName === 'FOIL') {
             const changedField = params.colDef.field;
+
+            // Round SizeW to 1 decimal place on edit
+            if (changedField === 'sizeW' && item.sizeW !== null && item.sizeW !== undefined) {
+                const parsed = parseFloat(String(item.sizeW));
+                if (!isNaN(parsed)) item.sizeW = parseFloat(parsed.toFixed(1));
+            }
 
             // Recalculate ItemName (ManufacturerItemCode, Quality, SizeW mm)
             if (['manufecturerItemCode', 'quality', 'sizeW'].includes(changedField)) {
