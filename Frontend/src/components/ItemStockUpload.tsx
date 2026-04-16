@@ -8,7 +8,7 @@ import "ag-grid-community/styles/ag-theme-quartz.css";
 import { useTheme } from '../context/ThemeContext';
 import { useMessageModal } from './MessageModal';
 import {
-    enrichItemStock, importItemStock, validateItemStock, loadStockData,
+    enrichItemStock, importItemStock, validateItemStock, loadStockData, loadMasterData,
     resetItemStock, resetFloorStock,
     getStockWarehouses, getStockBins,
     ItemStockEnrichedRow, ItemStockImportResult, ItemStockValidationResult,
@@ -29,7 +29,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
     // ─── State ───────────────────────────────────────────────────────────────
     const [gridData, setGridData] = useState<ItemStockEnrichedRow[]>([]);
-    const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');
+    const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated' | 'master-template'>('idle');
     const [isLoading, setIsLoading] = useState(false);
     const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
     const [gridApi, setGridApi] = useState<GridApi | null>(null);
@@ -54,9 +54,10 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
     const [captchaQuestion, setCaptchaQuestion] = useState({ num1: 0, num2: 0, answer: 0 });
     const [captchaInput, setCaptchaInput] = useState('');
     const [captchaError, setCaptchaError] = useState(false);
+    const [resetAuthError, setResetAuthError] = useState<string | null>(null);
 
     // State-switch confirmation
-    const [switchConfirm, setSwitchConfirm] = useState<{ action: 'upload' | 'load' | 'reset-item' | 'reset-floor'; message: string } | null>(null);
+    const [switchConfirm, setSwitchConfirm] = useState<{ action: 'upload' | 'load' | 'load-master' | 'reset-item' | 'reset-floor'; message: string } | null>(null);
     const pendingFileRef = useRef<File | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,7 +135,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         switch (mode) {
             case 'preview': return 'Upload Excel';
             case 'validated': return 'Upload Excel (Validated)';
-            case 'loaded': return 'Load Stock';
+            case 'loaded': return 'Check Stock';
             default: return '';
         }
     };
@@ -190,7 +191,8 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             const data = await file.arrayBuffer();
             const workbook = XLSX.read(data);
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet)
+                .filter((r: any) => r.ItemCode || r.itemCode || r.ITEMCODE);
 
             if (jsonData.length === 0) {
                 showMessage('error', 'Empty Excel', 'Excel file is empty. No rows found.');
@@ -231,6 +233,14 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                     stockUnit: String(row.StockUnit || row.stockUnit || row.STOCKUNIT || '').trim() || undefined,
                     warehouseName: String(row.WarehouseName || row.warehouseName || row.WAREHOUSENAME || '').trim() || undefined,
                     binName: String(row.BinName || row.binName || row.BINNAME || '').trim() || undefined,
+                    batchNo: String(row.BatchNo || row.batchNo || row.BATCHNO || '').trim() || undefined,
+                    supplierBatchNo: String(row.SupplierBatchNo || row.supplierBatchNo || row.SUPPLIERBATCHNO || '').trim() || undefined,
+                    quality: row.Quality || row.quality || row.QUALITY,
+                    gsm: row.GSM || row.gsm || row.GSMValue || row.GSMvalue,
+                    manufecturer: row.Manufecturer || row.manufecturer || row.Manufacturer || row.manufacturer,
+                    finish: row.Finish || row.finish || row.FINISH,
+                    sizeL: row.SizeL || row.sizeL || row.SIZEL,
+                    sizeW: row.SizeW || row.sizeW || row.SIZEW,
                 };
             });
 
@@ -239,11 +249,58 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             setGridData(enrichResult.rows);
             setMode('preview');
 
+            // Pre-load bins for all unique warehouses in the data
+            const uniqueWarehouses = [...new Set(enrichResult.rows
+                .map(r => r.warehouseName?.trim())
+                .filter(Boolean)
+            )] as string[];
+
+            for (const whName of uniqueWarehouses) {
+                if (!binsCache[whName]) {
+                    try {
+                        const bins = await getStockBins(whName);
+                        setBinsCache(prev => ({ ...prev, [whName]: bins }));
+                    } catch {
+                        // Ignore errors
+                    }
+                }
+            }
+
         } catch (error: any) {
             showMessage('error', 'Upload Error', error?.response?.data?.message || error?.message || 'Failed to process Excel file.');
         } finally {
             setIsLoading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleLoadMasterData = async () => {
+        // If data exists, ask confirmation before switching
+        if (mode !== 'idle' && gridData.length > 0) {
+            setSwitchConfirm({
+                action: 'load-master',
+                message: `You are currently in "${getModeLabel()}" mode with ${gridData.length} row(s). Switching to Load Data (Master Template) will clear the current data. Do you want to continue?`
+            });
+            return;
+        }
+
+        await processLoadMasterData();
+    };
+
+    const processLoadMasterData = async () => {
+        setIsLoading(true);
+        setValidationResult(null);
+        setFilterType('all');
+        setSelectedRows(new Set());
+
+        try {
+            const data = await loadMasterData(itemGroupId);
+            setGridData(data || []);
+            setMode('master-template'); // Master data acts as a template for new uploads
+        } catch (error: any) {
+            showMessage('error', 'Load Master Error', error?.response?.data?.message || error?.message || 'Failed to load master records.');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -357,6 +414,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 landedRate: r.landedRate,
                 stockUnit: r.stockUnit,
                 batchNo: r.batchNo,
+                supplierBatchNo: r.supplierBatchNo,
                 warehouseName: r.warehouseName,
                 binName: r.binName,
             }));
@@ -502,7 +560,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         if (mode !== 'idle' && gridData.length > 0) {
             setSwitchConfirm({
                 action: 'load',
-                message: `You are currently in "${getModeLabel()}" mode with ${gridData.length} row(s). Switching to Load Stock will clear the current data. Do you want to continue?`
+                message: `You are currently in "${getModeLabel()}" mode with ${gridData.length} row(s). Switching to Check Stock will clear the current data. Do you want to continue?`
             });
             return;
         }
@@ -595,6 +653,8 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             await processFileUpload(file);
         } else if (action === 'load') {
             await processLoadStock();
+        } else if (action === 'load-master') {
+            await processLoadMasterData();
         } else if (action === 'reset-item') {
             setResetFlowType('item');
             setResetFlowStep(1);
@@ -638,11 +698,11 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
                 handleResetCancel();
             } else {
-                // Invalid credentials or other failure — keep reset modal open
-                showMessage('error', 'Authorization Failed', result.message || `Failed to reset ${label.toLowerCase()}.`);
+                // Invalid credentials — show error INLINE inside the modal (keep modal open)
+                setResetAuthError(result.message || `Authorization failed. Please check your credentials.`);
             }
         } catch (error: any) {
-            showMessage('error', 'Reset Error', error?.response?.data?.message || error?.message || 'Failed to reset stock.');
+            setResetAuthError(error?.response?.data?.message || error?.message || 'Failed to reset stock. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -650,32 +710,46 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
     // ─── Export to Excel ─────────────────────────────────────────────────────
     const handleExport = () => {
-        const exportData = gridData.length > 0 
-            ? gridData.map(r => ({
-                ItemCode: r.itemCode || '',
-                ItemID: r.itemID || '',
-                ReceiptQuantity: r.receiptQuantity || 0,
-                LandedRate: r.landedRate || 0,
-                BatchNo: r.batchNo || '',
-                StockUnit: r.stockUnit || '',
-                WarehouseName: r.warehouseName || '',
-                BinName: r.binName || '',
-            }))
-            : [{
-                ItemCode: '',
-                ItemID: '',
-                ReceiptQuantity: 0,
-                LandedRate: 0,
-                BatchNo: '',
-                StockUnit: '',
-                WarehouseName: '',
-                BinName: '',
-            }];
+        const isReel = itemGroupName === 'REEL';
+        const isSimple = ['INK & ADDITIVES', 'VARNISHES & COATINGS', 'LAMINATION FILM', 'SHIPPER CARTON', 'FOIL', 'OTHER MATERIAL']
+            .includes(itemGroupName.toUpperCase());
+
+        const exportData = gridData.length > 0
+            ? gridData.map(r => {
+                const row: any = { ItemCode: r.itemCode || '', ItemID: r.itemID || '' };
+                if (isSimple) {
+                    row.ItemName = (r as any).itemName || '';
+                } else {
+                    row.Quality = r.quality || '';
+                    row.GSM = r.gsm || '';
+                    row.Manufacturer = r.manufecturer || '';
+                    row.Finish = r.finish || '';
+                    if (!isReel) row.SizeL = r.sizeL || '';
+                    row.SizeW = r.sizeW || '';
+                }
+                row.ReceiptQuantity = r.receiptQuantity || 0;
+                row.LandedRate = r.landedRate || 0;
+                row.BatchNo = r.batchNo || '';
+                row.SupplierBatchNo = r.supplierBatchNo || '';
+                row.StockUnit = r.stockUnit || '';
+                row.WarehouseName = r.warehouseName || '';
+                row.BinName = r.binName || '';
+                return row;
+            })
+            : [isSimple
+                ? { ItemCode: '', ItemID: '', ItemName: '', ReceiptQuantity: 0, LandedRate: 0, BatchNo: '', SupplierBatchNo: '', StockUnit: '', WarehouseName: '', BinName: '' }
+                : {
+                    ItemCode: '', ItemID: '', Quality: '', GSM: '', Manufacturer: '', Finish: '',
+                    ...(isReel ? {} : { SizeL: '' }),
+                    SizeW: '', ReceiptQuantity: 0, LandedRate: 0, BatchNo: '', SupplierBatchNo: '', StockUnit: '', WarehouseName: '', BinName: '',
+                }
+            ];
 
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Stock');
-        XLSX.writeFile(wb, `${itemGroupName}Stock.xlsx`);
+        const filename = `${itemGroupName}Stock.xlsx`;
+        XLSX.writeFile(wb, filename);
     };
 
     // ─── Grid Callbacks ──────────────────────────────────────────────────────
@@ -736,68 +810,93 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
     }, [filterType, gridApi, validationResult]);
 
     // ─── Column Definitions ──────────────────────────────────────────────────
-    const columnDefs: ColDef[] = useMemo(() => [
-        {
-            headerName: '',
-            headerCheckboxSelection: true,
-            headerCheckboxSelectionFilteredOnly: true,
-            checkboxSelection: true,
-            width: 50,
-            pinned: 'left' as const,
-            sortable: false,
-            filter: false
-        },
-        {
-            headerName: '#', valueGetter: 'node.rowIndex + 1', width: 60,
-            pinned: 'left' as const, sortable: false, filter: false
-        },
-        { field: 'itemCode', headerName: 'ItemCode', width: 140, editable: false },
-        {
-            field: 'itemID', headerName: 'ItemID', width: 90, editable: false,
-            cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
-        },
-        { field: 'receiptQuantity', headerName: 'ReceiptQuantity', width: 140, editable: mode !== 'loaded', type: 'numericColumn' },
-        { field: 'landedRate', headerName: 'LandedRate', width: 120, editable: mode !== 'loaded', type: 'numericColumn' },
-        {
-            field: 'batchNo', headerName: 'BatchNo', width: 220, editable: false,
-            cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
-        },
-        {
-            field: 'stockUnit', headerName: 'StockUnit', width: 110, editable: false,
-            cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
-        },
-        {
-            field: 'warehouseName', headerName: 'WarehouseName', width: 170, editable: mode !== 'loaded',
-            cellEditor: 'agSelectCellEditor',
-            cellEditorParams: (params: any) => {
-                const currentVal = params.value;
-                const options = [...warehouseNames];
-                if (currentVal && !options.includes(currentVal)) {
-                    options.unshift(currentVal);
-                }
-                return { values: ['', ...options] };
+    const columnDefs: ColDef[] = useMemo(() => {
+        const isReel = itemGroupName === 'REEL';
+        const isSimple = ['INK & ADDITIVES', 'VARNISHES & COATINGS', 'LAMINATION FILM', 'SHIPPER CARTON', 'FOIL', 'OTHER MATERIAL']
+            .includes(itemGroupName.toUpperCase());
+
+        const cols: ColDef[] = [
+            {
+                headerName: '',
+                headerCheckboxSelection: true,
+                headerCheckboxSelectionFilteredOnly: true,
+                checkboxSelection: true,
+                width: 50,
+                pinned: 'left' as const,
+                sortable: false,
+                filter: false
             },
-            cellRenderer: DropdownCellRenderer
-        },
-        {
-            field: 'binName', headerName: 'BinName', width: 150, editable: mode !== 'loaded',
-            cellEditor: 'agSelectCellEditor',
-            cellEditorParams: (params: any) => {
-                const whName = params.data?.warehouseName;
-                const currentVal = params.value;
-                const bins = whName && binsCache[whName]
-                    ? binsCache[whName].map(b => b.binName || '').filter(Boolean)
-                    : [];
-                
-                const options = [...bins];
-                if (currentVal && !options.includes(currentVal)) {
-                    options.unshift(currentVal);
-                }
-                return { values: ['', ...options] };
+            {
+                headerName: '#', valueGetter: 'node.rowIndex + 1', width: 60,
+                pinned: 'left' as const, sortable: false, filter: false
             },
-            cellRenderer: DropdownCellRenderer
-        }
-    ], [warehouseNames, binsCache, isDark, mode]);
+            { field: 'itemCode', headerName: 'ItemCode', width: 140, editable: false },
+            {
+                field: 'itemID', headerName: 'ItemID', width: 90, editable: false,
+                cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
+            },
+            // ItemName column — only for simple sub-modules
+            ...(isSimple ? [{
+                field: 'itemName', headerName: 'ItemName', width: 200, editable: false,
+                cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
+            } as ColDef] : []),
+            // Quality/GSM/Manufacturer/Finish/SizeL/SizeW — hidden for simple sub-modules
+            ...(!isSimple ? [
+                { field: 'quality', headerName: 'Quality', width: 120, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
+                { field: 'gsm', headerName: 'GSM', width: 90, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
+                { field: 'manufecturer', headerName: 'Manufacturer', width: 150, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
+                { field: 'finish', headerName: 'Finish', width: 120, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
+                ...(!isReel ? [{ field: 'sizeL', headerName: 'SizeL', width: 90, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef] : []),
+                { field: 'sizeW', headerName: 'SizeW', width: 90, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
+            ] : []),
+            { field: 'receiptQuantity', headerName: 'ReceiptQuantity', width: 140, editable: mode !== 'loaded', type: 'numericColumn' },
+            { field: 'landedRate', headerName: 'LandedRate', width: 120, editable: mode !== 'loaded', type: 'numericColumn' },
+            {
+                field: 'batchNo', headerName: 'BatchNo', width: 220, editable: false,
+                cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
+            },
+            {
+                field: 'supplierBatchNo', headerName: 'SupplierBatchNo', width: 200, editable: mode !== 'loaded'
+            },
+            {
+                field: 'stockUnit', headerName: 'StockUnit', width: 110, editable: false,
+                cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
+            },
+            {
+                field: 'warehouseName', headerName: 'WarehouseName', width: 170, editable: mode !== 'loaded',
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: (params: any) => {
+                    const currentVal = params.value;
+                    const options = [...warehouseNames];
+                    if (currentVal && !options.includes(currentVal)) {
+                        options.unshift(currentVal);
+                    }
+                    return { values: ['', ...options] };
+                },
+                cellRenderer: DropdownCellRenderer
+            },
+            {
+                field: 'binName', headerName: 'BinName', width: 150, editable: mode !== 'loaded',
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: (params: any) => {
+                    const whName = params.data?.warehouseName?.trim();
+                    const currentVal = params.value;
+                    const bins = whName && binsCache[whName]
+                        ? binsCache[whName].map(b => b.binName || '').filter(Boolean)
+                        : [];
+                    
+                    const options = [...bins];
+                    if (currentVal && !options.includes(currentVal)) {
+                        options.unshift(currentVal);
+                    }
+                    return { values: ['', ...options] };
+                },
+                cellRenderer: DropdownCellRenderer
+            }
+        ];
+
+        return cols;
+    }, [warehouseNames, binsCache, isDark, mode, itemGroupName]);
 
     // ─── Columns with Validation Styling ─────────────────────────────────────
     const columnsWithStyle = useMemo(() => {
@@ -812,7 +911,13 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                     if (!rowValidation) return null;
 
                     const cellVal = findCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
-                    if (cellVal) return cellVal.validationMessage;
+                    if (cellVal) {
+                        // Hide specific "not found under Warehouse" message for BinName if requested by user
+                        if (params.colDef.field === 'binName' && cellVal.validationMessage?.includes('not found under Warehouse')) {
+                            return null;
+                        }
+                        return cellVal.validationMessage;
+                    }
 
                     if (rowValidation.rowStatus === 'Duplicate') {
                         return rowValidation.errorMessage || 'Duplicate row detected';
@@ -928,14 +1033,24 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
             {/* Buttons */}
             <div className="flex flex-wrap gap-3">
-                {/* Load Stock */}
+                {/* Load Data (Master template) */}
+                <button
+                    onClick={handleLoadMasterData}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium disabled:opacity-50 transition-colors"
+                >
+                    <RefreshCw className="w-5 h-5" />
+                    Load Data
+                </button>
+
+                {/* Check Stock */}
                 <button
                     onClick={handleLoadStock}
                     disabled={isLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50"
                 >
                     <Database className="w-5 h-5" />
-                    Load Stock
+                    Check Stock
                 </button>
 
                 {/* Reset Item Stock */}
@@ -973,7 +1088,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 </label>
 
                 {/* Delete Excel Row */}
-                {(mode === 'preview' || mode === 'validated') && (
+                {(mode === 'preview' || mode === 'validated' || mode === 'master-template') && (
                     <button
                         onClick={handleRemoveSelectedRows}
                         disabled={isLoading || selectedRows.size === 0}
@@ -985,7 +1100,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 )}
 
                 {/* Export */}
-                {(mode === 'loaded' || mode === 'preview' || mode === 'validated') && (
+                {(mode === 'loaded' || mode === 'preview' || mode === 'validated' || mode === 'master-template') && (
                     <button
                         onClick={handleExport}
                         disabled={isLoading}
@@ -1220,6 +1335,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                         onGridReady={onGridReady}
                         getRowId={(params) => `stock-${gridData.indexOf(params.data)}`}
                         rowSelection="multiple"
+                        rowMultiSelectWithClick={true}
                         onSelectionChanged={onSelectionChanged}
                         onCellValueChanged={onCellValueChanged}
                         rowClassRules={rowClassRules}
@@ -1436,6 +1552,13 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                         </div>
 
                         <div className="space-y-4">
+                            {/* ─── Inline auth error ─── */}
+                            {resetAuthError && (
+                                <div className="flex items-start gap-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
+                                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+                                    <p className="text-sm font-medium text-red-700 dark:text-red-300">{resetAuthError}</p>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
                                 <input
@@ -1443,7 +1566,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                                     required
                                     className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                                     value={resetCredentials.username}
-                                    onChange={e => setResetCredentials({ ...resetCredentials, username: e.target.value })}
+                                    onChange={e => { setResetCredentials({ ...resetCredentials, username: e.target.value }); setResetAuthError(null); }}
                                 />
                             </div>
                             <div>
@@ -1452,7 +1575,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                                     type="password"
                                     className="w-full p-2 border rounded-lg dark:bg-gray-900 dark:border-gray-600 dark:text-white"
                                     value={resetCredentials.password}
-                                    onChange={e => setResetCredentials({ ...resetCredentials, password: e.target.value })}
+                                    onChange={e => { setResetCredentials({ ...resetCredentials, password: e.target.value }); setResetAuthError(null); }}
                                     placeholder="Leave blank if no password is set"
                                 />
                             </div>

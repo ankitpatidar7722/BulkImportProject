@@ -113,7 +113,7 @@ const MessageModal: React.FC<MessageModalProps> = ({
 }) => {
     const theme = themes[type];
     const icon = icons[type];
-    const isConfirmation = type === 'confirmation';
+    const isConfirmation = type === 'confirmation' || !!onConfirm;
 
     return (
         <div
@@ -152,7 +152,7 @@ const MessageModal: React.FC<MessageModalProps> = ({
                         <div className="flex gap-3">
                             <button
                                 onClick={onConfirm}
-                                className={`flex-1 px-6 py-3 ${theme.confirmBtn} text-white font-semibold rounded-xl text-base transition-all duration-200 active:scale-95 shadow-md`}
+                                className={`flex-1 px-6 py-3 ${theme.confirmBtn || theme.btn} text-white font-semibold rounded-xl text-base transition-all duration-200 active:scale-95 shadow-md`}
                             >
                                 {confirmLabel}
                             </button>
@@ -209,6 +209,10 @@ export function useMessageModal() {
         message: '',
     });
 
+    const closeModal = React.useCallback(() => {
+        setModal(prev => ({ ...prev, open: false }));
+    }, []);
+
     const showMessage = React.useCallback(
         (
             type: MessageType,
@@ -221,14 +225,22 @@ export function useMessageModal() {
                 cancelLabel?: string;
             }
         ) => {
-            setModal({ open: true, type, title, message, ...options });
-        },
-        []
-    );
+            const wrappedOnConfirm = options?.onConfirm ? () => {
+                options.onConfirm?.();
+                closeModal();
+            } : undefined;
 
-    const closeModal = React.useCallback(() => {
-        setModal(prev => ({ ...prev, open: false }));
-    }, []);
+            setModal({ 
+                open: true, 
+                type, 
+                title, 
+                message, 
+                ...options,
+                onConfirm: wrappedOnConfirm 
+            });
+        },
+        [closeModal]
+    );
 
     const ModalRenderer = modal.open ? (
         <MessageModal

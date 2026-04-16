@@ -21,6 +21,7 @@ import DynamicModule from './pages/DynamicModule';
 import CompanySubscription from './pages/CompanySubscription';
 import ModuleGroupAuthority from './pages/ModuleGroupAuthority';
 import ERPTransactionDelete from './pages/ERPTransactionDelete';
+import ContentAuthority from './pages/ContentAuthority';
 
 // Login Route Coordinator
 const LoginRedirect = () => {
@@ -70,6 +71,7 @@ const AuthenticatedLayout = () => {
                         <Route path="/company-subscription" element={loginType === 'indus' ? <CompanySubscription /> : <Navigate to="/dashboard" replace />} />
                         <Route path="/module-group-authority" element={<ModuleGroupAuthority />} />
                         <Route path="/erp-transaction-delete" element={<ERPTransactionDelete />} />
+                        <Route path="/content-authority" element={<ContentAuthority />} />
                         <Route path="*" element={<Navigate to={defaultPath} replace />} />
                     </Routes>
                     </div>

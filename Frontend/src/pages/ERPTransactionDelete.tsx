@@ -344,7 +344,10 @@ const ERPTransactionDelete: React.FC = () => {
                                         setCredentials({ username: '', password: '', reason: '' });
                                     }, 500);
                                 } else if (data.type === 'error') {
-                                    throw new Error(data.message);
+                                    alert('Security Verification Failed: ' + data.message);
+                                    setShowProgress(false);
+                                    setIsDeleting(false);
+                                    return; // Stop processing stream
                                 }
                             } catch (parseError) {
                                 console.error('Error parsing progress:', parseError);

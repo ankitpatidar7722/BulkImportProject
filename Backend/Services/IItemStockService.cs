@@ -12,4 +12,5 @@ public interface IItemStockService
     Task<List<ItemStockEnrichedRow>> GetStockDataAsync(int itemGroupId);
     Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId, string username, string password, string reason);
     Task<ItemStockImportResult> ResetFloorStockAsync(int itemGroupId, string username, string password, string reason);
+    Task<List<ItemStockEnrichedRow>> GetMasterDataAsync(int itemGroupId);
 }

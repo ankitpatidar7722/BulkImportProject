@@ -609,7 +609,7 @@ public class LedgerService : ILedgerService
 
         bool isEmployee  = ledgerType.ToLower().Contains("employee");
         bool isConsignee = ledgerType.ToLower().Contains("consignee");
-        bool isClient    = ledgerType.ToLower().Contains("client");
+        bool isClient    = ledgerGroupId == 1; // LedgerGroupID 1 = Clients (DB name is "Sundry Debtors")
 
         // ── 2. Max ledger number ──────────────────────────────────────────────────────────
         var maxLedgerNo = await _connection.ExecuteScalarAsync<int?>(
@@ -851,7 +851,7 @@ public class LedgerService : ILedgerService
                     ledger.DateOfBirth.HasValue ? (object)ledger.DateOfBirth.Value : DBN,
                     T(ledger.Designation,                          ColMax("Designation", 100)),
                     clientId.HasValue ? (object)clientId.Value : DBN,
-                    isClient
+                    isClient   // IsClientApproval = 1 for Clients group
                 );
                 rowMeta.Add((ledgerCode, ledger, salesRepId, deptId, clientId, supplyType, gstApp, legalName));
             }
@@ -892,6 +892,27 @@ public class LedgerService : ILedgerService
             await bulkCopy.WriteToServerAsync(masterTable);
         }
 
+        // ── 5b. For Clients group: set IsClient = 1 and IsClientApproval = 1 via UPDATE ────
+        if (isClient && rowMeta.Count > 0)
+        {
+            var insertedCodes = rowMeta.Select(r => r.LedgerCode).ToList();
+            try
+            {
+                const int updateBatch = 1000;
+                for (int b = 0; b < insertedCodes.Count; b += updateBatch)
+                {
+                    var batch = insertedCodes.Skip(b).Take(updateBatch).ToList();
+                    await _connection.ExecuteAsync(
+                        "UPDATE LedgerMaster SET IsClient = 1, IsClientApproval = 1 WHERE LedgerCode IN @Codes AND CompanyID = 2",
+                        new { Codes = batch });
+                }
+            }
+            catch (Exception ex)
+            {
+                // IsClient or IsClientApproval column may not exist or have different names — log to debug_log.txt
+                try { await System.IO.File.AppendAllTextAsync("debug_log.txt", $"[{DateTime.Now}] IsClient Update Error: {ex.Message}\n"); } catch { }
+            }
+        }
 
         // ── 6. Retrieve the generated LedgerIDs by LedgerCode ────────────────────────────
         // SQL Server allows max 2100 parameters per query; batch to 1000 to stay safe.
@@ -993,6 +1014,9 @@ public class LedgerService : ILedgerService
 
             if (isConsignee && clientId.HasValue)
                 details.Add(("RefClientID", clientId.Value.ToString(), 23));
+
+            // Skip LedgerMasterDetails for Clients group — no detail rows needed
+            if (isClient) continue;
 
             var now = DateTime.Now;
             foreach (var (name, value, seq) in details)

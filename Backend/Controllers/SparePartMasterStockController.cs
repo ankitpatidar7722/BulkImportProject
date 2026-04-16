@@ -106,4 +106,18 @@ public class SparePartMasterStockController : ControllerBase
             return StatusCode(500, new { message = $"Stock import failed: {ex.Message}" });
         }
     }
+
+    [HttpGet("master-data")]
+    public async Task<IActionResult> GetMasterData()
+    {
+        try
+        {
+            var data = await _service.GetMasterDataAsync();
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = $"Failed to load master data: {ex.Message}" });
+        }
+    }
 }

@@ -10,4 +10,5 @@ public interface ISparePartMasterStockService
     Task<SparePartStockImportResult> ImportSparePartStockAsync(List<SparePartStockRowDto> rows);
     Task<SparePartStockValidationResult> ValidateStockRowsAsync(List<SparePartStockEnrichedRow> rows);
     Task<List<SparePartStockEnrichedRow>> GetStockDataAsync();
+    Task<List<SparePartStockEnrichedRow>> GetMasterDataAsync();
 }

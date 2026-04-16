@@ -1103,9 +1103,16 @@ export interface ItemStockRowDto {
     landedRate: number;
     stockUnit?: string;
     batchNo?: string;
+    supplierBatchNo?: string;
     warehouseName?: string;
     binName?: string;
     warehouseID?: number;
+    quality?: string;
+    gsm?: number;
+    manufecturer?: string;
+    finish?: string;
+    sizeL?: number;
+    sizeW?: number;
 }
 
 export interface ItemStockImportResult {
@@ -1123,9 +1130,17 @@ export interface ItemStockEnrichedRow {
     receiptQuantity: number;
     landedRate: number;
     batchNo?: string;
+    supplierBatchNo?: string;
     stockUnit?: string;
     warehouseName?: string;
     binName?: string;
+    itemName?: string;
+    quality?: string;
+    gsm?: number;
+    manufecturer?: string;
+    finish?: string;
+    sizeL?: number;
+    sizeW?: number;
     isValid: boolean;
     error?: string;
 }
@@ -1151,7 +1166,7 @@ export const getStockBins = async (warehouseName: string): Promise<WarehouseDto[
     return response.data;
 };
 
-export const enrichItemStock = async (rows: { itemCode?: string; receiptQuantity: number; landedRate: number; stockUnit?: string; warehouseName?: string; binName?: string }[], itemGroupId: number): Promise<ItemStockEnrichResult> => {
+export const enrichItemStock = async (rows: { itemCode?: string; receiptQuantity: number; landedRate: number; stockUnit?: string; warehouseName?: string; binName?: string; batchNo?: string; quality?: string; gsm?: number; manufecturer?: string; finish?: string; sizeL?: number; sizeW?: number }[], itemGroupId: number): Promise<ItemStockEnrichResult> => {
     const response = await api.post('/itemstock/enrich', { rows, itemGroupId });
     return response.data;
 };
@@ -1206,6 +1221,11 @@ export const resetItemStock = async (itemGroupId: number, username: string, pass
 
 export const resetFloorStock = async (itemGroupId: number, username: string, password: string, reason: string): Promise<ItemStockImportResult> => {
     const response = await api.post('/itemstock/reset-floor-stock', { itemGroupId, username, password, reason });
+    return response.data;
+};
+
+export const loadMasterData = async (itemGroupId: number): Promise<ItemStockEnrichedRow[]> => {
+    const response = await api.get('/itemstock/master-data', { params: { itemGroupId } });
     return response.data;
 };
 
@@ -1888,11 +1908,13 @@ export const saveModuleAuthority = async (product: string, modules: ModuleAuthor
 
 export interface SparePartStockRowDto {
     rowIndex?: number;
+    sparePartCode?: string;
     sparePartName?: string;
     receiptQuantity: number;
-    purchaseRate: number;
+    landedRate: number;
     stockUnit?: string;
     batchNo?: string;
+    supplierBatchNo?: string;
     warehouseName?: string;
     binName?: string;
     warehouseID?: number;
@@ -1908,11 +1930,13 @@ export interface SparePartStockImportResult {
 }
 
 export interface SparePartStockEnrichedRow {
+    sparePartCode?: string;
     sparePartName?: string;
     spareID: number;
     receiptQuantity: number;
-    purchaseRate: number;
+    landedRate: number;
     batchNo?: string;
+    supplierBatchNo?: string;
     stockUnit?: string;
     warehouseName?: string;
     binName?: string;
@@ -1963,7 +1987,7 @@ export const getSparePartStockBins = async (warehouseName: string): Promise<Ware
     return response.data;
 };
 
-export const enrichSparePartStock = async (rows: { sparePartName?: string; receiptQuantity: number; purchaseRate: number; stockUnit?: string; warehouseName?: string; binName?: string }[]): Promise<SparePartStockEnrichResult> => {
+export const enrichSparePartStock = async (rows: { sparePartCode?: string; sparePartName?: string; receiptQuantity: number; landedRate: number; stockUnit?: string; warehouseName?: string; binName?: string; batchNo?: string }[]): Promise<SparePartStockEnrichResult> => {
     const response = await api.post('/sparepartmasterstock/enrich', { rows });
     return response.data;
 };
@@ -1983,16 +2007,23 @@ export const loadSparePartStockData = async (): Promise<SparePartStockEnrichedRo
     return response.data;
 };
 
+export const loadSparePartMasterData = async (): Promise<SparePartStockEnrichedRow[]> => {
+    const response = await api.get('/sparepartmasterstock/master-data');
+    return response.data;
+};
+
 // ==================== TOOL STOCK API ====================
 
 export interface ToolStockRowDto {
     rowIndex?: number;
     toolGroupName?: string;
+    toolCode?: string;
     toolName?: string;
     receiptQuantity: number;
-    purchaseRate: number;
+    landedRate: number;
     stockUnit?: string;
     batchNo?: string;
+    supplierBatchNo?: string;
     warehouseName?: string;
     binName?: string;
 }
@@ -2008,15 +2039,18 @@ export interface ToolStockImportResult {
 
 export interface ToolStockEnrichedRow {
     toolGroupName?: string;
+    toolCode?: string;
     toolName?: string;
     toolID: number;
     toolGroupID: number;
     receiptQuantity: number;
-    purchaseRate: number;
+    landedRate: number;
     batchNo?: string;
+    supplierBatchNo?: string;
     stockUnit?: string;
     warehouseName?: string;
     binName?: string;
+    warehouseID?: number;
     isValid: boolean;
     error?: string;
 }
@@ -2065,7 +2099,7 @@ export const getToolStockBins = async (warehouseName: string): Promise<Warehouse
     return response.data;
 };
 
-export const enrichToolStock = async (rows: { toolGroupName?: string; toolName?: string; receiptQuantity: number; purchaseRate: number; stockUnit?: string; warehouseName?: string; binName?: string }[]): Promise<ToolStockEnrichResult> => {
+export const enrichToolStock = async (rows: { toolGroupName?: string; toolCode?: string; toolName?: string; receiptQuantity: number; landedRate: number; stockUnit?: string; warehouseName?: string; binName?: string; batchNo?: string }[]): Promise<ToolStockEnrichResult> => {
     const response = await api.post('/toolstock/enrich', { rows });
     return response.data;
 };
@@ -2082,6 +2116,11 @@ export const validateToolStock = async (rows: ToolStockEnrichedRow[]): Promise<T
 
 export const loadToolStockData = async (toolGroupId: number): Promise<ToolStockEnrichedRow[]> => {
     const response = await api.get('/toolstock/load', { params: { toolGroupId } });
+    return response.data;
+};
+
+export const loadToolMasterData = async (toolGroupId: number): Promise<ToolStockEnrichedRow[]> => {
+    const response = await api.get('/toolstock/master-data', { params: { toolGroupId } });
     return response.data;
 };
 
@@ -2297,4 +2336,46 @@ export const deleteUnusedMasterData = async (
     });
     return response.data;
 };
+
+// ─── Content Authority ────────────────────────────────────────────────────────
+
+export interface ContentAuthorityRowDto {
+    contentName: string;
+    isSelected: boolean;      // In Client DB AND IsActive=1
+    existsInClientDb: boolean; // In Client DB (regardless of IsActive)
+    contentOpenHref: string;
+    contentClosedHref: string;
+}
+
+export interface ContentAuthoritySaveRequest {
+    selectedContents: string[];
+    deselectedContents: string[];
+}
+
+export interface ContentAuthoritySaveResult {
+    processed: number;
+    inserted: number;
+    updated: number;
+    deactivated: number;
+    childRowsDeleted: number;
+    childRowsInserted: number;
+    message: string;
+}
+
+export const getContentAuthorityData = async (): Promise<ContentAuthorityRowDto[]> => {
+    const response = await api.get('/contentauthority');
+    return response.data;
+};
+
+export const saveContentAuthority = async (request: ContentAuthoritySaveRequest): Promise<ContentAuthoritySaveResult> => {
+    const response = await api.post<ContentAuthoritySaveResult>('/ContentAuthority/save', request);
+    return response.data;
+};
+
+export const updateContentTechDetails = async (contentNames: string[]): Promise<ContentAuthoritySaveResult> => {
+    const response = await api.post<ContentAuthoritySaveResult>('/ContentAuthority/update-tech-details', contentNames);
+    return response.data;
+};
+
+
 

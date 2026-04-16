@@ -3,11 +3,13 @@ namespace Backend.DTOs;
 public class SparePartStockRowDto
 {
     public int RowIndex { get; set; }
+    public string? SparePartCode { get; set; }
     public string? SparePartName { get; set; }
     public decimal ReceiptQuantity { get; set; }
-    public decimal PurchaseRate { get; set; }
+    public decimal LandedRate { get; set; }
     public string? StockUnit { get; set; }
     public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }
 
@@ -39,21 +41,26 @@ public class SparePartStockEnrichRequest
 
 public class SparePartStockEnrichRowDto
 {
+    public string? SparePartCode { get; set; }
     public string? SparePartName { get; set; }
     public decimal ReceiptQuantity { get; set; }
-    public decimal PurchaseRate { get; set; }
+    public decimal LandedRate { get; set; }
     public string? StockUnit { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }
+    public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
 }
 
 public class SparePartStockEnrichedRow
 {
+    public string? SparePartCode { get; set; }
     public string? SparePartName { get; set; }
     public int SpareID { get; set; }
     public decimal ReceiptQuantity { get; set; }
-    public decimal PurchaseRate { get; set; }
+    public decimal LandedRate { get; set; }
     public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
     public string? StockUnit { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }

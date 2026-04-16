@@ -217,43 +217,61 @@ namespace Backend.Controllers
             {
                 await connection.OpenAsync();
 
-                // First, check if user exists and get their password
+                // Get password and blocked status
                 var getUserQuery = @"
-                    SELECT Password
+                    SELECT TOP 1 ISNULL(Password, '') as Password, ISNULL(IsBlocked, 0) as IsBlocked
                     FROM UserMaster
-                    WHERE UserName = @Username
-                      AND ISNULL(IsBlocked, 0) = 0";
+                    WHERE UserName = @Username";
 
-                using (var cmd = new SqlCommand(getUserQuery, connection))
+                var user = await connection.QueryFirstOrDefaultAsync<dynamic>(getUserQuery, new { Username = username });
+
+                if (user == null)
                 {
-                    cmd.Parameters.AddWithValue("@Username", username);
-                    var dbPassword = await cmd.ExecuteScalarAsync() as string;
-
-                    // If user doesn't exist or is blocked
-                    if (dbPassword == null)
+                    _logger.LogWarning($"ERP User verification failed: User '{username}' not found in UserMaster.");
+                    
+                    // Fallback: Check if it's the Company Master User
+                    var httpContext = _httpContextAccessor.HttpContext;
+                    var sessionIdClaim = httpContext?.User.FindFirst("sessionId")?.Value;
+                    if (!string.IsNullOrEmpty(sessionIdClaim) && Guid.TryParse(sessionIdClaim, out var sessionId))
                     {
-                        _logger.LogWarning($"User not found or blocked: {username}");
-                        return false;
+                        if (_sessionStore.TryGetSession(sessionId, out var session) && session != null)
+                        {
+                            if (string.Equals(session.CompanyUserID, username, StringComparison.OrdinalIgnoreCase))
+                            {
+                                _logger.LogInformation($"Verification successful via Company Master User ID: {username}");
+                                return true; // Company master user is always authorized for their own company
+                            }
+                        }
                     }
 
-                    // If database password is empty, allow empty password input
-                    if (string.IsNullOrEmpty(dbPassword))
-                    {
-                        _logger.LogInformation($"Credential verification successful for user with no password: {username}");
-                        return true;
-                    }
-
-                    // If database has password, encode input password and compare
-                    var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
-
-                    if (dbPassword == encodedPassword)
-                    {
-                        _logger.LogInformation($"Credential verification successful for user: {username}");
-                        return true;
-                    }
+                    return false;
                 }
 
-                _logger.LogWarning($"Credential verification failed for user: {username}");
+                if ((bool)user.IsBlocked)
+                {
+                    _logger.LogWarning($"Verification failed: User '{username}' is blocked.");
+                    return false;
+                }
+
+                string dbPassword = (string)user.Password;
+
+                // If database password is empty, allow empty password input
+                if (string.IsNullOrEmpty(dbPassword))
+                {
+                    _logger.LogInformation($"Credential verification successful for user with no password: {username}");
+                    return true;
+                }
+
+                // If database has password, encode input password and compare
+                var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
+
+                if (dbPassword == encodedPassword)
+                {
+                    _logger.LogInformation($"Credential verification successful for user: {username}");
+                    return true;
+                }
+
+                _logger.LogWarning($"Credential verification failed (password mismatch) for user: {username}");
                 return false;
             }
         }

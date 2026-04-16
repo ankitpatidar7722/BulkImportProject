@@ -9,6 +9,7 @@ import {
     Layers,
     CreditCard,
     Trash2,
+    BookOpen,
     X,
     ChevronsLeft,
     ChevronsRight
@@ -34,6 +35,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
         { name: 'Company Master', path: '/company-master', icon: Building2 },
         { name: 'New Module Addition', path: '/module-authority', icon: ShieldCheck },
         { name: 'Module Authority', path: '/dynamic-module', icon: Layers },
+        { name: 'Content Authority', path: '/content-authority', icon: BookOpen },
         { name: 'ERP Transaction Delete', path: '/erp-transaction-delete', icon: Trash2 },
     ];
 

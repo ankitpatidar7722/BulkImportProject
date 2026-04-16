@@ -87,17 +87,21 @@ There is no automated test suite. Testing is manual via Swagger UI and frontend.
 
 **Controllers → Service Interfaces → Service Implementations (Dapper)**
 
-All services inject `SqlConnection` (already configured with correct tenant connection), use Dapper for all database operations, and return DTOs. There are 21 controllers and 18 service pairs.
+All services inject `SqlConnection` (already configured with correct tenant connection), use Dapper for all database operations, and return DTOs.
 
 Example: `ExcelController.cs` → `IExcelService.cs` → `ExcelService.cs`
 
 `PasswordEncoder.cs` is a standalone utility (no interface) for password hashing — not part of the DI service pattern.
 
-**Exception:** `TransactionDeleteController` intentionally bypasses the service pattern. It directly injects `ICompanySessionStore` and `IHttpContextAccessor` to build its own `SqlConnection`, rather than receiving one from DI. This is intentional — do not refactor it to use the standard pattern without understanding why.
+**Exceptions to the standard pattern:**
+
+- **`TransactionDeleteController`** intentionally bypasses the service pattern. It directly injects `ICompanySessionStore` and `IHttpContextAccessor` to build its own `SqlConnection`, rather than receiving one from DI. Do not refactor it without understanding why.
+
+- **`ContentAuthorityService`** uses **two database connections**: the standard DI-injected `SqlConnection` (client tenant DB) plus a **hardcoded source connection string** to the remote `IndusEnterpriseDemo` database (`13.200.122.70`). It reads master content from the source DB and syncs selected rows into the client DB. The hardcode is intentional — the source is a fixed shared catalog, not tenant-specific.
 
 ### 5. Frontend Pages vs Components
 
-- `Frontend/src/pages/` — full-page views routed in `App.tsx`: `Dashboard`, `ImportMaster`, `CompanyMaster`, `CompanyLogin`, `CompanySubscription`, `CreateModule`, `DynamicModule`, `ERPTransactionDelete`, `ModuleAuthority`, `ModuleGroupAuthority`, `StockUpload`
+- `Frontend/src/pages/` — full-page views routed in `App.tsx`: `Dashboard`, `ImportMaster`, `CompanyMaster`, `CompanyLogin`, `CompanySubscription`, `CreateModule`, `DynamicModule`, `ERPTransactionDelete`, `ModuleAuthority`, `ModuleGroupAuthority`, `StockUpload`, `ContentAuthority`
 - `Frontend/src/components/` — reusable UI: `*Enhanced.tsx` master grids, `*StockUpload.tsx` stock import forms, `ActivityLogViewer`, `SearchableSelect`, `PrivateRoute`, `Login`, `Header`, `Sidebar`
 
 ### 6. Frontend API Layer — Monolithic api.ts
@@ -105,7 +109,7 @@ Example: `ExcelController.cs` → `IExcelService.cs` → `ExcelService.cs`
 **`Frontend/src/services/api.ts` (~2,200 lines)** is the single API service file containing:
 - Axios instance with interceptors (JWT injection, global loader toggling, 401 redirect)
 - All TypeScript interfaces mirroring backend DTOs
-- All API call functions grouped by domain (module, excel, ledger, item, HSN, spare part, tool, stock, auth, company subscription, backup/restore, activity log, message format, transaction delete)
+- All API call functions grouped by domain (module, excel, ledger, item, HSN, spare part, tool, stock, auth, company subscription, backup/restore, activity log, message format, transaction delete, content authority)
 
 When adding new API endpoints, add the function and any new interfaces to this file.
 

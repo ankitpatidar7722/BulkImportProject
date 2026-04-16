@@ -54,7 +54,8 @@ public class ItemStockService : IItemStockService
 
         // Fetch all items for this group
         var itemLookup = await _connection.QueryAsync<dynamic>(
-            @"SELECT ItemID, ItemCode, ItemName, ItemGroupID, ISNULL(StockUnit, '') AS StockUnit
+            @"SELECT ItemID, ItemCode, ItemName, ItemGroupID, ISNULL(StockUnit, '') AS StockUnit,
+                     Quality, GSM, Manufecturer, Finish, SizeW, SizeL
               FROM ItemMaster
               WHERE ItemGroupID = @GroupId
                 AND ISNULL(IsDeletedTransaction, 0) = 0",
@@ -69,6 +70,17 @@ public class ItemStockService : IItemStockService
         }
 
         var dateStr = DateTime.Now.ToString("dd-MM-yy");
+        
+        // ─── Step: Calculate Frequencies for BatchNo Logic ───
+        var itemFrequencies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            string code = (row.ItemCode ?? "Unknown").Trim();
+            if (!itemFrequencies.ContainsKey(code)) itemFrequencies[code] = 1;
+            else itemFrequencies[code]++;
+        }
+
+        var itemCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var row in rows)
         {
@@ -78,7 +90,10 @@ public class ItemStockService : IItemStockService
                 ReceiptQuantity = row.ReceiptQuantity,
                 LandedRate = row.LandedRate,
                 WarehouseName = row.WarehouseName?.Trim(),
-                BinName = row.BinName?.Trim()
+                BinName = row.BinName?.Trim(),
+                SupplierBatchNo = row.SupplierBatchNo?.Trim(),
+                SizeL = row.SizeL,
+                SizeW = row.SizeW
             };
 
             if (string.IsNullOrWhiteSpace(row.ItemCode))
@@ -103,10 +118,43 @@ public class ItemStockService : IItemStockService
                 ? row.StockUnit
                 : matched.StockUnit?.ToString() ?? "";
 
-            // Generate BatchNo: PHY_dd-MM-yy_ItemCode_ItemID
-            enriched.BatchNo = $"PHY_{dateStr}_{matched.ItemCode}_{matched.ItemID}";
-            enriched.IsValid = true;
+            // Populate view fields from master (override row values if master has data)
+            enriched.ItemName = matched.ItemName?.ToString();
+            enriched.Quality = matched.Quality?.ToString();
+            enriched.GSM = matched.GSM is decimal g ? g : (matched.GSM is double d ? (decimal)d : (matched.GSM is int i ? (decimal)i : null));
+            enriched.Manufecturer = matched.Manufecturer?.ToString();
+            enriched.Finish = matched.Finish?.ToString();
+            
+            var mSizeL = matched.SizeL is decimal sl ? (decimal?)sl : (matched.SizeL is double dl ? (decimal?)dl : (matched.SizeL is int il ? (decimal?)il : (decimal?)null));
+            if (mSizeL != null && mSizeL != 0) enriched.SizeL = mSizeL;
 
+            var mSizeW = matched.SizeW is decimal sw ? (decimal?)sw : (matched.SizeW is double dw ? (decimal?)dw : (matched.SizeW is int iw ? (decimal?)iw : (decimal?)null));
+            if (mSizeW != null && mSizeW != 0) enriched.SizeW = mSizeW;
+
+            // ─── BatchNo Generation Logic ───
+            if (!string.IsNullOrWhiteSpace(row.BatchNo))
+            {
+                enriched.BatchNo = row.BatchNo.Trim();
+            }
+            else
+            {
+                string itemCode = (matched.ItemCode?.ToString() ?? row.ItemCode ?? "NA").Trim();
+                int itemId = (int)matched.ItemID;
+                string freqKey = itemCode;
+                int totalFreq = itemFrequencies.TryGetValue(freqKey, out int t) ? t : 1;
+
+                if (!itemCounts.ContainsKey(freqKey)) itemCounts[freqKey] = 1;
+                else itemCounts[freqKey]++;
+
+                int currentSeq = itemCounts[freqKey];
+
+                if (totalFreq > 1)
+                    enriched.BatchNo = $"PHY_{dateStr}_{itemCode}_{itemId}_{currentSeq}";
+                else
+                    enriched.BatchNo = $"PHY_{dateStr}_{itemCode}_{itemId}";
+            }
+            
+            enriched.IsValid = true;
             enrichResult.Rows.Add(enriched);
         }
 
@@ -163,6 +211,16 @@ public class ItemStockService : IItemStockService
             var validRows = new List<ItemStockRowDto>();
             var dateStr = DateTime.Now.ToString("dd-MM-yy");
 
+            // Calculate frequencies for BatchNo logic
+            var itemFrequencies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                string code = (row.ItemCode ?? "Unknown").Trim();
+                if (!itemFrequencies.ContainsKey(code)) itemFrequencies[code] = 1;
+                else itemFrequencies[code]++;
+            }
+            var itemCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
             for (int i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
@@ -201,9 +259,24 @@ public class ItemStockService : IItemStockService
                 // Default LandedRate to 0
                 if (row.LandedRate < 0) row.LandedRate = 0;
 
-                // Generate BatchNo if not provided
+                // ─── BatchNo Generation Logic (Consistent with Enrich) ───
                 if (string.IsNullOrWhiteSpace(row.BatchNo))
-                    row.BatchNo = $"PHY_{dateStr}_{matched.ItemCode}_{matched.ItemID}";
+                {
+                    string itemCode = (matched.ItemCode?.ToString() ?? row.ItemCode ?? "NA").Trim();
+                    int itemId = (int)matched.ItemID;
+                    string freqKey = itemCode;
+                    int totalFreq = itemFrequencies.TryGetValue(freqKey, out int t) ? t : 1;
+
+                    if (!itemCounts.ContainsKey(freqKey)) itemCounts[freqKey] = 1;
+                    else itemCounts[freqKey]++;
+
+                    int currentSeq = itemCounts[freqKey];
+
+                    if (totalFreq > 1)
+                        row.BatchNo = $"PHY_{dateStr}_{itemCode}_{itemId}_{currentSeq}";
+                    else
+                        row.BatchNo = $"PHY_{dateStr}_{itemCode}_{itemId}";
+                }
 
                 // Resolve WarehouseID
                 if (!string.IsNullOrWhiteSpace(row.WarehouseName))
@@ -277,6 +350,7 @@ public class ItemStockService : IItemStockService
             detailTable.Columns.Add("OldStockQuantity", typeof(decimal));
             detailTable.Columns.Add("LandedRate", typeof(decimal));
             detailTable.Columns.Add("BatchNo", typeof(string));
+            detailTable.Columns.Add("SupplierBatchNo", typeof(string));
             detailTable.Columns.Add("StockUnit", typeof(string));
             detailTable.Columns.Add("WarehouseID", typeof(int));
             detailTable.Columns.Add("TransactionID", typeof(int));
@@ -299,7 +373,7 @@ public class ItemStockService : IItemStockService
                 detailTable.Rows.Add(
                     i + 1, r.ItemID, r.ItemGroupID,
                     qty, qty, qty, rate,
-                    r.BatchNo ?? "", r.StockUnit ?? "", r.WarehouseID,
+                    r.BatchNo ?? "", r.SupplierBatchNo ?? "", r.StockUnit ?? "", r.WarehouseID,
                     transactionId, transactionId,
                     now, now, userId, companyId, fYear, userId, userId
                 );
@@ -393,21 +467,21 @@ public class ItemStockService : IItemStockService
 
         // Fetch distinct warehouse names
         var warehouseNames = await _connection.QueryAsync<string>(
-            @"SELECT DISTINCT WarehouseName
+            @"SELECT DISTINCT LTRIM(RTRIM(WarehouseName)) AS WarehouseName
               FROM WarehouseMaster
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var validWarehouses = new HashSet<string>(warehouseNames, StringComparer.OrdinalIgnoreCase);
 
         // Fetch warehouse → bin mapping
         var warehouseBins = await _connection.QueryAsync<dynamic>(
-            @"SELECT WarehouseName, BinName
+            @"SELECT LTRIM(RTRIM(WarehouseName)) AS WarehouseName, LTRIM(RTRIM(BinName)) AS BinName
               FROM WarehouseMaster
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var binsByWarehouse = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var wb in warehouseBins)
         {
-            string wName = wb.WarehouseName?.ToString() ?? "";
-            string bName = wb.BinName?.ToString() ?? "";
+            string wName = wb.WarehouseName?.ToString()?.Trim() ?? "";
+            string bName = wb.BinName?.ToString()?.Trim() ?? "";
             if (!string.IsNullOrEmpty(wName))
             {
                 if (!binsByWarehouse.ContainsKey(wName))
@@ -1082,6 +1156,7 @@ public class ItemStockService : IItemStockService
         var rows = await _connection.QueryAsync<ItemStockEnrichedRow>(
             @"SELECT
                 IM.ItemCode,
+                MAX(NULLIF(IM.ItemName, '')) AS ItemName,
                 ISNULL(IM.ItemID, 0) AS ItemID,
                 ROUND(
                     ISNULL(SUM(ISNULL(ITD.ReceiptQuantity, 0)), 0)
@@ -1090,9 +1165,16 @@ public class ItemStockService : IItemStockService
                 ) AS ReceiptQuantity,
                 MAX(ISNULL(ITD.LandedRate, 0)) AS LandedRate,
                 MAX(NULLIF(ITD.BatchNo, '')) AS BatchNo,
+                MAX(NULLIF(IBD.SupplierBatchNo, '')) AS SupplierBatchNo,
                 MAX(NULLIF(IM.StockUnit, '')) AS StockUnit,
                 MAX(NULLIF(WM.WarehouseName, '')) AS WarehouseName,
                 MAX(NULLIF(WM.BinName, '')) AS BinName,
+                MAX(NULLIF(IM.Quality, '')) AS Quality,
+                MAX(ISNULL(IM.GSM, 0)) AS GSM,
+                MAX(NULLIF(IM.Manufecturer, '')) AS Manufecturer,
+                MAX(NULLIF(IM.Finish, '')) AS Finish,
+                MAX(ISNULL(IM.SizeL, 0)) AS SizeL,
+                MAX(ISNULL(IM.SizeW, 0)) AS SizeW,
                 CAST(1 AS BIT) AS IsValid
               FROM ItemMaster AS IM
               INNER JOIN ItemTransactionDetail AS ITD
@@ -1103,13 +1185,13 @@ public class ItemStockService : IItemStockService
               INNER JOIN ItemTransactionMain AS ITM
                 ON ITM.TransactionID = ITD.TransactionID
                 AND ITM.CompanyID = ITD.CompanyID
+              LEFT JOIN ItemTransactionBatchDetail AS IBD
+                ON IBD.BatchID = ITD.BatchID
+                AND IBD.CompanyID = ITD.CompanyID
                 AND ITM.VoucherID NOT IN (-8, -9, -11)
               INNER JOIN WarehouseMaster AS WM
                 ON WM.WarehouseID = ITD.WarehouseID
                 AND WM.CompanyID = ITD.CompanyID
-              INNER JOIN ItemTransactionBatchDetail AS IBD
-                ON IBD.BatchID = ITD.BatchID
-                AND IBD.CompanyID = ITD.CompanyID
               WHERE ITD.CompanyID = 2
                 AND IM.ItemGroupID = @GroupId
                 AND ISNULL(IM.IsDeletedTransaction, 0) = 0
@@ -1128,5 +1210,32 @@ public class ItemStockService : IItemStockService
             commandTimeout: 120);
 
         return rows.ToList();
+    }
+
+    // ─── Load Master Data: fetch all items for a group to use as template ───
+    public async Task<List<ItemStockEnrichedRow>> GetMasterDataAsync(int itemGroupId)
+    {
+        await EnsureOpenAsync();
+
+        var query = @"
+            SELECT 
+                ItemCode,
+                ItemID,
+                ItemName,
+                Quality,
+                GSM,
+                Manufecturer,
+                Finish,
+                SizeW,
+                SizeL,
+                ISNULL(StockUnit, '') AS StockUnit,
+                CAST(1 AS BIT) AS IsValid
+            FROM ItemMaster
+            WHERE ItemGroupID = @GroupId
+              AND ISNULL(IsDeletedTransaction, 0) = 0
+            ORDER BY ItemCode";
+
+        var result = await _connection.QueryAsync<ItemStockEnrichedRow>(query, new { GroupId = itemGroupId });
+        return result.ToList();
     }
 }

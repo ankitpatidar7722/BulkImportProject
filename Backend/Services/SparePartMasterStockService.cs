@@ -54,61 +54,104 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
         // Fetch all active spare parts
         var spareLookup = await _connection.QueryAsync<dynamic>(
-            @"SELECT SparePartID, SparePartName, ISNULL(Unit, '') AS Unit, ISNULL(Rate, 0) AS Rate
+            @"SELECT SparePartID, SparePartCode, SparePartName, ISNULL(Unit, '') AS Unit, ISNULL(Rate, 0) AS Rate
               FROM SparePartMaster
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
 
         var byName = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
+        var byCode = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var spare in spareLookup)
         {
             string name = spare.SparePartName?.ToString() ?? "";
             if (!string.IsNullOrEmpty(name) && !byName.ContainsKey(name))
                 byName[name] = spare;
+
+            string code = spare.SparePartCode?.ToString() ?? "";
+            if (!string.IsNullOrEmpty(code) && !byCode.ContainsKey(code))
+                byCode[code] = spare;
         }
 
         var dateStr = DateTime.Now.ToString("dd-MM-yy");
+        
+        // ─── Step: Calculate Frequencies for BatchNo Logic ───
+        // We need to know if a spare part appears multiple times to decide if we add _1, _2...
+        var spareFrequencies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            string codeOrName = (row.SparePartCode ?? row.SparePartName ?? "Unknown").Trim();
+            if (!spareFrequencies.ContainsKey(codeOrName)) spareFrequencies[codeOrName] = 1;
+            else spareFrequencies[codeOrName]++;
+        }
+
+        var spareCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var row in rows)
         {
             var enriched = new SparePartStockEnrichedRow
             {
+                SparePartCode = row.SparePartCode?.Trim(),
                 SparePartName = row.SparePartName?.Trim(),
                 ReceiptQuantity = row.ReceiptQuantity,
-                PurchaseRate = row.PurchaseRate,
+                LandedRate = row.LandedRate,
                 WarehouseName = row.WarehouseName?.Trim(),
-                BinName = row.BinName?.Trim()
+                BinName = row.BinName?.Trim(),
+                SupplierBatchNo = row.SupplierBatchNo?.Trim()
             };
 
-            if (string.IsNullOrWhiteSpace(row.SparePartName))
+            // Validation: SparePartCode is now mandatory
+            if (string.IsNullOrWhiteSpace(row.SparePartCode))
             {
                 enriched.IsValid = false;
-                enriched.Error = "SparePartName is empty";
+                enriched.Error = "SparePartCode is missing";
+                enrichResult.InvalidSparePartNames.Add("MISSING_CODE");
                 enrichResult.Rows.Add(enriched);
                 continue;
             }
 
-            if (!byName.TryGetValue(row.SparePartName.Trim(), out var matched))
+            dynamic? matched = null;
+            byCode.TryGetValue(row.SparePartCode.Trim(), out matched);
+
+            if (matched == null)
             {
                 enriched.IsValid = false;
-                enriched.Error = "SparePartName not found";
-                enrichResult.InvalidSparePartNames.Add(row.SparePartName.Trim());
+                enriched.Error = "SparePartCode are not Exist in Master";
+                enrichResult.InvalidSparePartNames.Add(row.SparePartCode.Trim());
                 enrichResult.Rows.Add(enriched);
                 continue;
             }
 
             enriched.SpareID = (int)matched.SparePartID;
+            enriched.SparePartCode = matched.SparePartCode?.ToString() ?? row.SparePartCode;
+            enriched.SparePartName = matched.SparePartName?.ToString();
             enriched.StockUnit = !string.IsNullOrWhiteSpace(row.StockUnit)
                 ? row.StockUnit
                 : matched.Unit?.ToString() ?? "";
 
-            // Default PurchaseRate from master if not provided
-            if (enriched.PurchaseRate <= 0)
+            // LandedRate will be used as provided in Excel (no fallback to master)
+
+            // ─── BatchNo Generation Logic ───
+            if (!string.IsNullOrWhiteSpace(row.BatchNo))
             {
-                enriched.PurchaseRate = (decimal)matched.Rate;
+                enriched.BatchNo = row.BatchNo.Trim();
+            }
+            else
+            {
+                string spareCode = enriched.SparePartCode ?? "NA";
+                string freqKey = (row.SparePartCode ?? row.SparePartName ?? "Unknown").Trim();
+                int totalFreq = spareFrequencies.TryGetValue(freqKey, out int t) ? t : 1;
+
+                if (!spareCounts.ContainsKey(freqKey)) spareCounts[freqKey] = 1;
+                else spareCounts[freqKey]++;
+
+                int currentSeq = spareCounts[freqKey];
+
+                if (totalFreq > 1)
+                    enriched.BatchNo = $"PHY_{dateStr}_{spareCode}_{currentSeq}";
+                else
+                    enriched.BatchNo = $"PHY_{dateStr}_{spareCode}";
             }
 
-            // Generate BatchNo: PHY_dd-MM-yy_SparePartName_SparePartID
-            enriched.BatchNo = $"PHY_{dateStr}_{matched.SparePartName}_{matched.SparePartID}";
             enriched.IsValid = true;
 
             enrichResult.Rows.Add(enriched);
@@ -134,17 +177,24 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
             // ─── 1. Fetch spare parts for SparePartID resolution ─────────────────
             var spareLookup = await _connection.QueryAsync<dynamic>(
-                @"SELECT SparePartID, SparePartName, ISNULL(Unit, '') AS Unit, ISNULL(Rate, 0) AS Rate
+                @"SELECT SparePartID, SparePartCode, SparePartName, ISNULL(Unit, '') AS Unit, ISNULL(Rate, 0) AS Rate
                   FROM SparePartMaster
                   WHERE ISNULL(IsDeletedTransaction, 0) = 0");
 
             var byName = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
+            var byCode = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var spare in spareLookup)
             {
                 string name = spare.SparePartName?.ToString() ?? "";
                 if (!string.IsNullOrEmpty(name) && !byName.ContainsKey(name))
                     byName[name] = spare;
+
+                string code = spare.SparePartCode?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(code) && !byCode.ContainsKey(code))
+                    byCode[code] = spare;
             }
+
 
             // ─── 2. Fetch warehouse lookup ──────────────────────────────────────
             var warehouseLookup = await _connection.QueryAsync<dynamic>(
@@ -164,22 +214,36 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             var validRows = new List<SparePartStockRowDto>();
             var dateStr = DateTime.Now.ToString("dd-MM-yy");
 
+            // Calculate frequencies for BatchNo logic
+            var spareFrequencies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in rows)
+            {
+                string codeOrName = (row.SparePartCode ?? row.SparePartName ?? "Unknown").Trim();
+                if (!spareFrequencies.ContainsKey(codeOrName)) spareFrequencies[codeOrName] = 1;
+                else spareFrequencies[codeOrName]++;
+            }
+            var spareCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
             for (int i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
                 row.RowIndex = i + 1;
 
-                if (string.IsNullOrWhiteSpace(row.SparePartName))
+                // Validation: SparePartCode is mandatory
+                if (string.IsNullOrWhiteSpace(row.SparePartCode))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → SparePartName is empty");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} → SparePartCode is missing");
                     continue;
                 }
 
-                if (!byName.TryGetValue(row.SparePartName.Trim(), out var matched))
+                dynamic? matched = null;
+                byCode.TryGetValue(row.SparePartCode.Trim(), out matched);
+
+                if (matched == null)
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → SparePartName not found: {row.SparePartName}");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} → SparePartCode are not Exist in Master: {row.SparePartCode}");
                     continue;
                 }
 
@@ -196,10 +260,25 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                 if (string.IsNullOrWhiteSpace(row.StockUnit))
                     row.StockUnit = matched.Unit?.ToString() ?? "";
 
-                if (row.PurchaseRate < 0) row.PurchaseRate = 0;
+                if (row.LandedRate < 0) row.LandedRate = 0;
 
+                // ─── BatchNo Generation Logic ───
                 if (string.IsNullOrWhiteSpace(row.BatchNo))
-                    row.BatchNo = $"PHY_{dateStr}_{matched.SparePartName}_{matched.SparePartID}";
+                {
+                    string spareCode = (matched.SparePartCode?.ToString() ?? row.SparePartCode ?? "NA").Trim();
+                    string freqKey = (row.SparePartCode ?? row.SparePartName ?? "Unknown").Trim();
+                    int totalFreq = spareFrequencies.TryGetValue(freqKey, out int t) ? t : 1;
+
+                    if (!spareCounts.ContainsKey(freqKey)) spareCounts[freqKey] = 1;
+                    else spareCounts[freqKey]++;
+
+                    int currentSeq = spareCounts[freqKey];
+
+                    if (totalFreq > 1)
+                        row.BatchNo = $"PHY_{dateStr}_{spareCode}_{currentSeq}";
+                    else
+                        row.BatchNo = $"PHY_{dateStr}_{spareCode}";
+                }
 
                 if (!string.IsNullOrWhiteSpace(row.WarehouseName))
                 {
@@ -270,7 +349,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             detailTable.Columns.Add("ReceiptQuantity", typeof(decimal));
             detailTable.Columns.Add("NewStockQuantity", typeof(decimal));
             detailTable.Columns.Add("OldStockQuantity", typeof(decimal));
-            detailTable.Columns.Add("PurchaseRate", typeof(decimal));
+            detailTable.Columns.Add("LandedRate", typeof(decimal));
             detailTable.Columns.Add("BatchNo", typeof(string));
             detailTable.Columns.Add("StockUnit", typeof(string));
             detailTable.Columns.Add("WarehouseID", typeof(int));
@@ -289,7 +368,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             {
                 var r = validRows[i];
                 var qty = Math.Round(r.ReceiptQuantity, 2);
-                var rate = Math.Round(r.PurchaseRate, 2);
+                var rate = Math.Round(r.LandedRate, 2);
 
                 detailTable.Rows.Add(
                     i + 1, r.SpareID, r.SpareGroupID,
@@ -346,35 +425,35 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
         // ─── 1. Fetch lookup data ────────────────────────────────────────────
         var spareLookup = await _connection.QueryAsync<dynamic>(
-            @"SELECT SparePartID, SparePartName, ISNULL(Unit, '') AS Unit
+            @"SELECT SparePartCode, ISNULL(Unit, '') AS Unit
               FROM SparePartMaster
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
 
-        var validSpareNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var validSpareCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var spare in spareLookup)
         {
-            string name = spare.SparePartName?.ToString() ?? "";
-            if (!string.IsNullOrEmpty(name))
-                validSpareNames.Add(name);
+            string code = spare.SparePartCode?.ToString() ?? "";
+            if (!string.IsNullOrEmpty(code))
+                validSpareCodes.Add(code.Trim());
         }
 
         // Fetch distinct warehouse names
         var warehouseNames = await _connection.QueryAsync<string>(
-            @"SELECT DISTINCT WarehouseName
+            @"SELECT DISTINCT LTRIM(RTRIM(WarehouseName)) AS WarehouseName
               FROM WarehouseMaster
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var validWarehouses = new HashSet<string>(warehouseNames, StringComparer.OrdinalIgnoreCase);
 
         // Fetch warehouse → bin mapping
         var warehouseBins = await _connection.QueryAsync<dynamic>(
-            @"SELECT WarehouseName, BinName
+            @"SELECT LTRIM(RTRIM(WarehouseName)) AS WarehouseName, LTRIM(RTRIM(BinName)) AS BinName
               FROM WarehouseMaster
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var binsByWarehouse = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var wb in warehouseBins)
         {
-            string wName = wb.WarehouseName?.ToString() ?? "";
-            string bName = wb.BinName?.ToString() ?? "";
+            string wName = wb.WarehouseName?.ToString()?.Trim() ?? "";
+            string bName = wb.BinName?.ToString()?.Trim() ?? "";
             if (!string.IsNullOrEmpty(wName))
             {
                 if (!binsByWarehouse.ContainsKey(wName))
@@ -408,36 +487,36 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             var rowValidation = new SparePartStockRowValidation { RowIndex = i };
             var cellIssues = new List<SparePartStockCellValidation>();
 
-            var name = row.SparePartName?.Trim() ?? "";
+            var code = row.SparePartCode?.Trim() ?? "";
             var isDuplicate = duplicateRowIndices.Contains(i);
 
             if (isDuplicate)
             {
                 cellIssues.Add(new SparePartStockCellValidation
                 {
-                    ColumnName = "SparePartName",
+                    ColumnName = "SparePartCode",
                     Status = "Duplicate",
                     ValidationMessage = "Duplicate row: same SpareID, BatchNo, WarehouseName, BinName"
                 });
             }
 
-            // Missing: SparePartName
-            if (string.IsNullOrEmpty(name))
+            // Missing: SparePartCode
+            if (string.IsNullOrEmpty(code))
             {
                 cellIssues.Add(new SparePartStockCellValidation
                 {
-                    ColumnName = "SparePartName",
+                    ColumnName = "SparePartCode",
                     Status = "MissingData",
-                    ValidationMessage = "SparePartName is required"
+                    ValidationMessage = "SparePartCode is mandatory"
                 });
             }
-            else if (!validSpareNames.Contains(name))
+            else if (!validSpareCodes.Contains(code))
             {
                 cellIssues.Add(new SparePartStockCellValidation
                 {
-                    ColumnName = "SparePartName",
+                    ColumnName = "SparePartCode",
                     Status = "Mismatch",
-                    ValidationMessage = $"SparePartName '{name}' not found in SparePartMaster"
+                    ValidationMessage = "SparePartCode are not Exist in Master"
                 });
             }
 
@@ -547,13 +626,14 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
         var rows = await _connection.QueryAsync<SparePartStockEnrichedRow>(
             @"SELECT
+                MAX(SPM.SparePartCode) AS SparePartCode,
                 MAX(SPM.SparePartName) AS SparePartName,
                 ISNULL(SPM.SparePartID, 0) AS SpareID,
                 ROUND(
                     ISNULL(SUM(ISNULL(STD.ReceiptQuantity, 0)), 0)
                   - ISNULL(SUM(ISNULL(STD.IssueQuantity, 0)), 0), 2
                 ) AS ReceiptQuantity,
-                MAX(ISNULL(STD.PurchaseRate, 0)) AS PurchaseRate,
+                MAX(ISNULL(STD.LandedRate, 0)) AS LandedRate,
                 MAX(NULLIF(STD.BatchNo, '')) AS BatchNo,
                 MAX(NULLIF(SPM.Unit, '')) AS StockUnit,
                 MAX(NULLIF(WM.WarehouseName, '')) AS WarehouseName,
@@ -585,5 +665,25 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             commandTimeout: 120);
 
         return rows.ToList();
+    }
+
+    // ─── Load Master Data: fetch all spare parts to use as template ───
+    public async Task<List<SparePartStockEnrichedRow>> GetMasterDataAsync()
+    {
+        await EnsureOpenAsync();
+
+        var query = @"
+            SELECT 
+                SparePartCode,
+                SparePartName,
+                SparePartID AS SpareID,
+                ISNULL(Unit, '') AS StockUnit,
+                CAST(1 AS BIT) AS IsValid
+            FROM SparePartMaster
+            WHERE ISNULL(IsDeletedTransaction, 0) = 0
+            ORDER BY SparePartName";
+
+        var result = await _connection.QueryAsync<SparePartStockEnrichedRow>(query);
+        return result.ToList();
     }
 }

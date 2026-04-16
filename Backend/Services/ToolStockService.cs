@@ -54,7 +54,7 @@ public class ToolStockService : IToolStockService
 
         // Fetch all active tools with their group info
         var toolLookup = await _connection.QueryAsync<dynamic>(
-            @"SELECT t.ToolID, t.ToolName, t.ToolGroupID,
+            @"SELECT t.ToolID, t.ToolName, t.ToolCode, t.ToolGroupID,
                      tg.ToolGroupName,
                      ISNULL(t.StockUnit, '') AS StockUnit,
                      ISNULL(t.PurchaseRate, 0) AS PurchaseRate
@@ -62,17 +62,27 @@ public class ToolStockService : IToolStockService
               LEFT JOIN ToolGroupMaster tg ON t.ToolGroupID = tg.ToolGroupID
               WHERE ISNULL(t.IsDeletedTransaction, 0) = 0");
 
-        // Build lookup: ToolGroupName|ToolName -> tool record
+        // Build lookups
         var byGroupAndName = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
+        var byGroupAndCode = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
         foreach (var tool in toolLookup)
         {
             string groupName = tool.ToolGroupName?.ToString() ?? "";
             string toolName = tool.ToolName?.ToString() ?? "";
+            string toolCode = tool.ToolCode?.ToString() ?? "";
+
             if (!string.IsNullOrEmpty(toolName))
             {
                 string key = $"{groupName}|{toolName}";
                 if (!byGroupAndName.ContainsKey(key))
                     byGroupAndName[key] = tool;
+            }
+
+            if (!string.IsNullOrEmpty(toolCode))
+            {
+                string key = $"{groupName}|{toolCode}";
+                if (!byGroupAndCode.ContainsKey(key))
+                    byGroupAndCode[key] = tool;
             }
         }
 
@@ -88,6 +98,20 @@ public class ToolStockService : IToolStockService
             if (!string.IsNullOrEmpty(gName) && !groupByName.ContainsKey(gName))
                 groupByName[gName] = (int)g.ToolGroupID;
         }
+        // Build warehouse lookup
+        var warehouseLookup = await _connection.QueryAsync<dynamic>(
+            @"SELECT WarehouseID, WarehouseName, BinName
+              FROM WarehouseMaster
+              WHERE ISNULL(IsDeletedTransaction, 0) = 0");
+        var whMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var wh in warehouseLookup)
+        {
+            string whName = (wh.WarehouseName?.ToString() ?? "").Trim();
+            string binName = (wh.BinName?.ToString() ?? "").Trim();
+            string key = $"{whName}|{binName}";
+            if (!whMap.ContainsKey(key))
+                whMap[key] = (int)wh.WarehouseID;
+        }
 
         var dateStr = DateTime.Now.ToString("dd-MM-yy");
 
@@ -96,25 +120,20 @@ public class ToolStockService : IToolStockService
             var enriched = new ToolStockEnrichedRow
             {
                 ToolGroupName = row.ToolGroupName?.Trim(),
+                ToolCode = row.ToolCode?.Trim(),
                 ToolName = row.ToolName?.Trim(),
                 ReceiptQuantity = row.ReceiptQuantity,
-                PurchaseRate = row.PurchaseRate,
+                LandedRate = row.LandedRate,
                 WarehouseName = row.WarehouseName?.Trim(),
-                BinName = row.BinName?.Trim()
+                BinName = row.BinName?.Trim(),
+                SupplierBatchNo = row.SupplierBatchNo?.Trim()
             };
 
-            if (string.IsNullOrWhiteSpace(row.ToolGroupName))
+            // Validation: ToolCode is now mandatory
+            if (string.IsNullOrWhiteSpace(row.ToolCode))
             {
                 enriched.IsValid = false;
-                enriched.Error = "ToolGroupName is empty";
-                enrichResult.Rows.Add(enriched);
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(row.ToolName))
-            {
-                enriched.IsValid = false;
-                enriched.Error = "ToolName is empty";
+                enriched.Error = "ToolCode is missing";
                 enrichResult.Rows.Add(enriched);
                 continue;
             }
@@ -129,34 +148,78 @@ public class ToolStockService : IToolStockService
                 continue;
             }
 
-            // Validate Tool within group
-            string lookupKey = $"{row.ToolGroupName.Trim()}|{row.ToolName.Trim()}";
-            if (!byGroupAndName.TryGetValue(lookupKey, out var matched))
+            // Validate Tool (Exclusively by Code)
+            var matched = (dynamic?)null;
+            string codeKey = $"{row.ToolGroupName.Trim()}|{row.ToolCode.Trim()}";
+            byGroupAndCode.TryGetValue(codeKey, out matched);
+
+            if (matched == null)
             {
                 enriched.IsValid = false;
-                enriched.Error = "ToolName not found in specified ToolGroup";
-                enrichResult.InvalidToolNames.Add(row.ToolName.Trim());
+                enriched.Error = "ToolCode are not Exist in database";
+                enrichResult.InvalidToolNames.Add(row.ToolCode.Trim());
                 enrichResult.Rows.Add(enriched);
                 continue;
             }
 
             enriched.ToolID = (int)matched.ToolID;
             enriched.ToolGroupID = toolGroupId;
+            enriched.ToolCode = matched.ToolCode?.ToString() ?? row.ToolCode;
+            enriched.ToolName = matched.ToolName?.ToString();
             enriched.StockUnit = !string.IsNullOrWhiteSpace(row.StockUnit)
                 ? row.StockUnit
                 : matched.StockUnit?.ToString() ?? "";
 
-            // Default PurchaseRate from master if not provided
-            if (enriched.PurchaseRate <= 0)
+            // Use rate from Excel as is, no fallback to master
+
+            if (!string.IsNullOrWhiteSpace(row.WarehouseName))
             {
-                enriched.PurchaseRate = (decimal)matched.PurchaseRate;
+                string whName = row.WarehouseName.Trim();
+                string binName = row.BinName?.Trim() ?? "";
+                string whKey = $"{whName}|{binName}";
+                
+                if (whMap.TryGetValue(whKey, out int whId))
+                {
+                    enriched.WarehouseID = whId;
+                }
+                else if (!string.IsNullOrEmpty(binName))
+                {
+                    // Fallback to warehouse name only if specific bin not found
+                    if (whMap.TryGetValue($"{whName}|", out int whIdFallback))
+                        enriched.WarehouseID = whIdFallback;
+                }
             }
 
-            // Generate BatchNo: PPH_dd-MM-yy_ToolName_ToolID
-            enriched.BatchNo = $"PPH_{dateStr}_{matched.ToolName}_{matched.ToolID}";
             enriched.IsValid = true;
-
             enrichResult.Rows.Add(enriched);
+        }
+
+        // ─── Step: Calculate Frequencies for BatchNo Logic ───
+        var frequencies = enrichResult.Rows
+            .Where(r => r.IsValid)
+            .GroupBy(r => r.ToolID)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var toolCounts = new Dictionary<int, int>();
+        foreach (var enriched in enrichResult.Rows.Where(r => r.IsValid))
+        {
+            if (string.IsNullOrWhiteSpace(enriched.BatchNo))
+            {
+                int toolId = enriched.ToolID;
+                string toolCode = (enriched.ToolCode ?? "").Trim();
+                if (string.IsNullOrEmpty(toolCode)) toolCode = "NA";
+
+                if (!toolCounts.ContainsKey(toolId)) toolCounts[toolId] = 1;
+                else toolCounts[toolId]++;
+
+                int seq = toolCounts[toolId];
+                int total = frequencies[toolId];
+
+                if (total > 1)
+                    enriched.BatchNo = $"PPH_{dateStr}_{toolCode}_{seq}";
+                else
+                    enriched.BatchNo = $"PPH_{dateStr}_{toolCode}";
+            }
         }
 
         return enrichResult;
@@ -179,7 +242,7 @@ public class ToolStockService : IToolStockService
 
             // ─── 1. Fetch tools for ToolID resolution ─────────────────────────
             var toolLookup = await _connection.QueryAsync<dynamic>(
-                @"SELECT t.ToolID, t.ToolName, t.ToolGroupID,
+                @"SELECT t.ToolID, t.ToolName, t.ToolCode, t.ToolGroupID,
                          tg.ToolGroupName,
                          ISNULL(t.StockUnit, '') AS StockUnit,
                          ISNULL(t.PurchaseRate, 0) AS PurchaseRate
@@ -187,16 +250,27 @@ public class ToolStockService : IToolStockService
                   LEFT JOIN ToolGroupMaster tg ON t.ToolGroupID = tg.ToolGroupID
                   WHERE ISNULL(t.IsDeletedTransaction, 0) = 0");
 
+            // Build lookups
             var byGroupAndName = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
+            var byGroupAndCode = new Dictionary<string, dynamic>(StringComparer.OrdinalIgnoreCase);
             foreach (var tool in toolLookup)
             {
                 string groupName = tool.ToolGroupName?.ToString() ?? "";
                 string toolName = tool.ToolName?.ToString() ?? "";
+                string toolCode = tool.ToolCode?.ToString() ?? "";
+
                 if (!string.IsNullOrEmpty(toolName))
                 {
                     string key = $"{groupName}|{toolName}";
                     if (!byGroupAndName.ContainsKey(key))
                         byGroupAndName[key] = tool;
+                }
+
+                if (!string.IsNullOrEmpty(toolCode))
+                {
+                    string key = $"{groupName}|{toolCode}";
+                    if (!byGroupAndCode.ContainsKey(key))
+                        byGroupAndCode[key] = tool;
                 }
             }
 
@@ -222,7 +296,9 @@ public class ToolStockService : IToolStockService
             var whMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var wh in warehouseLookup)
             {
-                string key = $"{wh.WarehouseName}|{wh.BinName ?? ""}";
+                string whName = (wh.WarehouseName?.ToString() ?? "").Trim();
+                string binName = (wh.BinName?.ToString() ?? "").Trim();
+                string key = $"{whName}|{binName}";
                 if (!whMap.ContainsKey(key))
                     whMap[key] = (int)wh.WarehouseID;
             }
@@ -236,17 +312,11 @@ public class ToolStockService : IToolStockService
                 var row = rows[i];
                 row.RowIndex = i + 1;
 
-                if (string.IsNullOrWhiteSpace(row.ToolGroupName))
+                // Validation: ToolCode is mandatory
+                if (string.IsNullOrWhiteSpace(row.ToolCode))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → ToolGroupName is empty");
-                    continue;
-                }
-
-                if (string.IsNullOrWhiteSpace(row.ToolName))
-                {
-                    result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → ToolName is empty");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} → ToolCode is missing");
                     continue;
                 }
 
@@ -257,11 +327,15 @@ public class ToolStockService : IToolStockService
                     continue;
                 }
 
-                string lookupKey = $"{row.ToolGroupName.Trim()}|{row.ToolName.Trim()}";
-                if (!byGroupAndName.TryGetValue(lookupKey, out var matched))
+                // Validate Tool (Exclusively by Code)
+                var matched = (dynamic?)null;
+                string codeKey = $"{row.ToolGroupName.Trim()}|{row.ToolCode.Trim()}";
+                byGroupAndCode.TryGetValue(codeKey, out matched);
+
+                if (matched == null)
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → ToolName not found: {row.ToolName}");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} → ToolCode are not Exist in database: {row.ToolCode}");
                     continue;
                 }
 
@@ -278,16 +352,24 @@ public class ToolStockService : IToolStockService
                 if (string.IsNullOrWhiteSpace(row.StockUnit))
                     row.StockUnit = matched.StockUnit?.ToString() ?? "";
 
-                if (row.PurchaseRate < 0) row.PurchaseRate = 0;
-
-                if (string.IsNullOrWhiteSpace(row.BatchNo))
-                    row.BatchNo = $"PPH_{dateStr}_{matched.ToolName}_{matched.ToolID}";
+                // Use rate from Excel as is, no fallback to master
 
                 if (!string.IsNullOrWhiteSpace(row.WarehouseName))
                 {
-                    string whKey = $"{row.WarehouseName?.Trim()}|{row.BinName?.Trim() ?? ""}";
+                    string whName = row.WarehouseName.Trim();
+                    string binName = row.BinName?.Trim() ?? "";
+                    string whKey = $"{whName}|{binName}";
+                    
                     if (whMap.TryGetValue(whKey, out int whId))
+                    {
                         row.WarehouseID = whId;
+                    }
+                    else if (!string.IsNullOrEmpty(binName))
+                    {
+                        // Fallback to warehouse name only if specific bin not found
+                        if (whMap.TryGetValue($"{whName}|", out int whIdFallback))
+                            row.WarehouseID = whIdFallback;
+                    }
                 }
 
                 validRows.Add(row);
@@ -297,6 +379,33 @@ public class ToolStockService : IToolStockService
             {
                 result.Message = $"No valid rows to import. {result.FailedRows} row(s) failed.";
                 return result;
+            }
+
+            // ─── Step: Calculate Frequencies for BatchNo Logic ───
+            var frequencies = validRows
+                .GroupBy(r => r.ToolID)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var toolCounts = new Dictionary<int, int>();
+            foreach (var row in validRows)
+            {
+                if (string.IsNullOrWhiteSpace(row.BatchNo))
+                {
+                    int toolId = row.ToolID;
+                    string toolCode = (row.ToolCode ?? "").Trim();
+                    if (string.IsNullOrEmpty(toolCode)) toolCode = "NA";
+
+                    if (!toolCounts.ContainsKey(toolId)) toolCounts[toolId] = 1;
+                    else toolCounts[toolId]++;
+
+                    int seq = toolCounts[toolId];
+                    int total = frequencies[toolId];
+
+                    if (total > 1)
+                        row.BatchNo = $"PPH_{dateStr}_{toolCode}_{seq}";
+                    else
+                        row.BatchNo = $"PPH_{dateStr}_{toolCode}";
+                }
             }
 
             // ─── 4. Generate Voucher Number ─────────────────────────────────────
@@ -354,7 +463,7 @@ public class ToolStockService : IToolStockService
             detailTable.Columns.Add("ReceiptQuantity", typeof(decimal));
             detailTable.Columns.Add("IssueQuantity", typeof(decimal));
             detailTable.Columns.Add("NewStockQuantity", typeof(decimal));
-            detailTable.Columns.Add("PurchaseRate", typeof(decimal));
+            detailTable.Columns.Add("LandedRate", typeof(decimal));
             detailTable.Columns.Add("BatchNo", typeof(string));
             detailTable.Columns.Add("StockUnit", typeof(string));
             detailTable.Columns.Add("WarehouseID", typeof(int));
@@ -373,7 +482,7 @@ public class ToolStockService : IToolStockService
             {
                 var r = validRows[i];
                 var qty = Math.Round(r.ReceiptQuantity, 2);
-                var rate = Math.Round(r.PurchaseRate, 2);
+                var rate = Math.Round(r.LandedRate, 2);
 
                 detailTable.Rows.Add(
                     i + 1,              // TransID
@@ -384,7 +493,7 @@ public class ToolStockService : IToolStockService
                     qty,                // ReceiptQuantity
                     0m,                 // IssueQuantity
                     qty,                // NewStockQuantity
-                    rate,               // PurchaseRate
+                    rate,               // LandedRate
                     r.BatchNo ?? "",    // BatchNo
                     r.StockUnit ?? "",  // StockUnit
                     r.WarehouseID,      // WarehouseID
@@ -444,13 +553,13 @@ public class ToolStockService : IToolStockService
               LEFT JOIN ToolGroupMaster tg ON t.ToolGroupID = tg.ToolGroupID
               WHERE ISNULL(t.IsDeletedTransaction, 0) = 0");
 
-        var validToolKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var validToolCodeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var tool in toolLookup)
         {
             string groupName = tool.ToolGroupName?.ToString() ?? "";
-            string toolName = tool.ToolName?.ToString() ?? "";
-            if (!string.IsNullOrEmpty(toolName))
-                validToolKeys.Add($"{groupName}|{toolName}");
+            string toolCode = tool.ToolCode?.ToString() ?? "";
+            if (!string.IsNullOrEmpty(toolCode))
+                validToolCodeKeys.Add($"{groupName}|{toolCode}");
         }
 
         // Tool group names
@@ -468,21 +577,21 @@ public class ToolStockService : IToolStockService
 
         // Fetch distinct warehouse names
         var warehouseNames = await _connection.QueryAsync<string>(
-            @"SELECT DISTINCT WarehouseName
+            @"SELECT DISTINCT LTRIM(RTRIM(WarehouseName)) AS WarehouseName
               FROM WarehouseMaster
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var validWarehouses = new HashSet<string>(warehouseNames, StringComparer.OrdinalIgnoreCase);
 
         // Fetch warehouse → bin mapping
         var warehouseBins = await _connection.QueryAsync<dynamic>(
-            @"SELECT WarehouseName, BinName
+            @"SELECT LTRIM(RTRIM(WarehouseName)) AS WarehouseName, LTRIM(RTRIM(BinName)) AS BinName
               FROM WarehouseMaster
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var binsByWarehouse = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var wb in warehouseBins)
         {
-            string wName = wb.WarehouseName?.ToString() ?? "";
-            string bName = wb.BinName?.ToString() ?? "";
+            string wName = wb.WarehouseName?.ToString()?.Trim() ?? "";
+            string bName = wb.BinName?.ToString()?.Trim() ?? "";
             if (!string.IsNullOrEmpty(wName))
             {
                 if (!binsByWarehouse.ContainsKey(wName))
@@ -524,7 +633,7 @@ public class ToolStockService : IToolStockService
             {
                 cellIssues.Add(new ToolStockCellValidation
                 {
-                    ColumnName = "ToolName",
+                    ColumnName = "ToolCode",
                     Status = "Duplicate",
                     ValidationMessage = "Duplicate row: same ToolID, BatchNo, WarehouseName, BinName"
                 });
@@ -550,26 +659,27 @@ public class ToolStockService : IToolStockService
                 });
             }
 
-            // Missing/Invalid: ToolName
-            if (string.IsNullOrEmpty(toolName))
+            // Missing/Invalid: ToolCode
+            var toolCode = row.ToolCode?.Trim() ?? "";
+            if (string.IsNullOrEmpty(toolCode))
             {
                 cellIssues.Add(new ToolStockCellValidation
                 {
-                    ColumnName = "ToolName",
+                    ColumnName = "ToolCode",
                     Status = "MissingData",
-                    ValidationMessage = "ToolName is required"
+                    ValidationMessage = "ToolCode is mandatory"
                 });
             }
             else if (!string.IsNullOrEmpty(toolGroupName) && validGroupNames.Contains(toolGroupName))
             {
-                string toolKey = $"{toolGroupName}|{toolName}";
-                if (!validToolKeys.Contains(toolKey))
+                string codeKey = $"{toolGroupName}|{toolCode}";
+                if (!validToolCodeKeys.Contains(codeKey))
                 {
                     cellIssues.Add(new ToolStockCellValidation
                     {
-                        ColumnName = "ToolName",
+                        ColumnName = "ToolCode",
                         Status = "Mismatch",
-                        ValidationMessage = $"ToolName '{toolName}' not found in ToolGroup '{toolGroupName}'"
+                        ValidationMessage = "ToolCode are not Exist in database"
                     });
                 }
             }
@@ -681,6 +791,7 @@ public class ToolStockService : IToolStockService
         var rows = await _connection.QueryAsync<ToolStockEnrichedRow>(
             @"SELECT
                 MAX(tg.ToolGroupName) AS ToolGroupName,
+                MAX(TM.ToolCode) AS ToolCode,
                 MAX(TM.ToolName) AS ToolName,
                 ISNULL(TM.ToolID, 0) AS ToolID,
                 ISNULL(TM.ToolGroupID, 0) AS ToolGroupID,
@@ -688,7 +799,7 @@ public class ToolStockService : IToolStockService
                     ISNULL(SUM(ISNULL(TTD.ReceiptQuantity, 0)), 0)
                   - ISNULL(SUM(ISNULL(TTD.IssueQuantity, 0)), 0), 2
                 ) AS ReceiptQuantity,
-                MAX(ISNULL(TTD.PurchaseRate, 0)) AS PurchaseRate,
+                MAX(ISNULL(TTD.LandedRate, 0)) AS LandedRate,
                 MAX(NULLIF(TTD.BatchNo, '')) AS BatchNo,
                 MAX(NULLIF(TM.StockUnit, '')) AS StockUnit,
                 MAX(NULLIF(WM.WarehouseName, '')) AS WarehouseName,
@@ -725,5 +836,30 @@ public class ToolStockService : IToolStockService
             commandTimeout: 120);
 
         return rows.ToList();
+    }
+
+    // ─── Load Master Data: fetch all tools for a group to use as template ───
+    public async Task<List<ToolStockEnrichedRow>> GetMasterDataAsync(int toolGroupId)
+    {
+        await EnsureOpenAsync();
+
+        var query = @"
+            SELECT 
+                tg.ToolGroupName,
+                t.ToolCode,
+                t.ToolName,
+                t.ToolID,
+                t.ToolGroupID,
+                0 AS LandedRate,
+                ISNULL(t.StockUnit, '') AS StockUnit,
+                CAST(1 AS BIT) AS IsValid
+            FROM ToolMaster t
+            LEFT JOIN ToolGroupMaster tg ON t.ToolGroupID = tg.ToolGroupID
+            WHERE t.ToolGroupID = @GroupId
+              AND ISNULL(t.IsDeletedTransaction, 0) = 0
+            ORDER BY t.ToolName";
+
+        var result = await _connection.QueryAsync<ToolStockEnrichedRow>(query, new { GroupId = toolGroupId });
+        return result.ToList();
     }
 }

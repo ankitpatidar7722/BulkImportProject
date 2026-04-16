@@ -4,11 +4,13 @@ public class ToolStockRowDto
 {
     public int RowIndex { get; set; }
     public string? ToolGroupName { get; set; }
+    public string? ToolCode { get; set; }
     public string? ToolName { get; set; }
     public decimal ReceiptQuantity { get; set; }
-    public decimal PurchaseRate { get; set; }
+    public decimal LandedRate { get; set; }
     public string? StockUnit { get; set; }
     public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }
 
@@ -41,26 +43,32 @@ public class ToolStockEnrichRequest
 public class ToolStockEnrichRowDto
 {
     public string? ToolGroupName { get; set; }
+    public string? ToolCode { get; set; }
     public string? ToolName { get; set; }
     public decimal ReceiptQuantity { get; set; }
-    public decimal PurchaseRate { get; set; }
+    public decimal LandedRate { get; set; }
     public string? StockUnit { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }
+    public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
 }
 
 public class ToolStockEnrichedRow
 {
     public string? ToolGroupName { get; set; }
+    public string? ToolCode { get; set; }
     public string? ToolName { get; set; }
     public int ToolID { get; set; }
     public int ToolGroupID { get; set; }
     public decimal ReceiptQuantity { get; set; }
-    public decimal PurchaseRate { get; set; }
+    public decimal LandedRate { get; set; }
     public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
     public string? StockUnit { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }
+    public int WarehouseID { get; set; }
     public bool IsValid { get; set; }
     public string? Error { get; set; }
 }

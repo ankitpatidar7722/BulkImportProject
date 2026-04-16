@@ -109,4 +109,21 @@ public class ToolStockController : ControllerBase
             return StatusCode(500, new { message = $"Stock import failed: {ex.Message}" });
         }
     }
+
+    [HttpGet("master-data")]
+    public async Task<IActionResult> GetMasterData([FromQuery] int toolGroupId)
+    {
+        try
+        {
+            if (toolGroupId <= 0)
+                return BadRequest(new { message = "toolGroupId is required" });
+
+            var data = await _service.GetMasterDataAsync(toolGroupId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = $"Failed to load master data: {ex.Message}" });
+        }
+    }
 }

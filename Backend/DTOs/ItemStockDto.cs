@@ -8,8 +8,16 @@ public class ItemStockRowDto
     public decimal LandedRate { get; set; }
     public string? StockUnit { get; set; }
     public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }
+    public string? ItemName { get; set; }
+    public string? Quality { get; set; }
+    public decimal? GSM { get; set; }
+    public string? Manufecturer { get; set; }
+    public string? Finish { get; set; }
+    public decimal? SizeL { get; set; }
+    public decimal? SizeW { get; set; }
 
     // Resolved by backend
     public int ItemID { get; set; }
@@ -47,6 +55,15 @@ public class ItemStockEnrichRowDto
     public string? StockUnit { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }
+    public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
+    public string? ItemName { get; set; }
+    public string? Quality { get; set; }
+    public decimal? GSM { get; set; }
+    public string? Manufecturer { get; set; }
+    public string? Finish { get; set; }
+    public decimal? SizeL { get; set; }
+    public decimal? SizeW { get; set; }
 }
 
 public class ItemStockEnrichedRow
@@ -56,9 +73,17 @@ public class ItemStockEnrichedRow
     public decimal ReceiptQuantity { get; set; }
     public decimal LandedRate { get; set; }
     public string? BatchNo { get; set; }
+    public string? SupplierBatchNo { get; set; }
     public string? StockUnit { get; set; }
     public string? WarehouseName { get; set; }
     public string? BinName { get; set; }
+    public string? ItemName { get; set; }
+    public string? Quality { get; set; }
+    public decimal? GSM { get; set; }
+    public string? Manufecturer { get; set; }
+    public string? Finish { get; set; }
+    public decimal? SizeL { get; set; }
+    public decimal? SizeW { get; set; }
     public bool IsValid { get; set; }
     public string? Error { get; set; }
 }

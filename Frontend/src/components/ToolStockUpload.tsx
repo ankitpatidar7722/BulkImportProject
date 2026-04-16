@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Database, Upload, Download, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Database, Upload, Download, Trash2, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, ColDef, GridApi, RowClassRules, IRowNode } from 'ag-grid-community';
@@ -9,7 +9,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useLoader } from '../context/LoaderContext';
 import { useMessageModal } from './MessageModal';
 import {
-    enrichToolStock, importToolStock, validateToolStock, loadToolStockData,
+    enrichToolStock, importToolStock, validateToolStock, loadToolStockData, loadToolMasterData,
     getToolStockWarehouses, getToolStockBins,
     ToolStockEnrichedRow, ToolStockImportResult, ToolStockValidationResult,
     ToolStockRowValidation, ToolStockCellValidation, WarehouseDto
@@ -30,7 +30,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
 
     // ─── State ───────────────────────────────────────────────────────────────
     const [gridData, setGridData] = useState<ToolStockEnrichedRow[]>([]);
-    const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated'>('idle');
+    const [mode, setMode] = useState<'idle' | 'loaded' | 'preview' | 'validated' | 'master-template'>('idle');
     const [isLoading, setIsLoading] = useState(false);
 
     useEffect(() => {
@@ -54,7 +54,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
     const [importProgress, setImportProgress] = useState<{ active: boolean; step: string; pct: number; total: number } | null>(null);
 
     // State-switch confirmation
-    const [switchConfirm, setSwitchConfirm] = useState<{ action: 'upload' | 'load'; message: string } | null>(null);
+    const [switchConfirm, setSwitchConfirm] = useState<{ action: 'upload' | 'load' | 'load-master'; message: string } | null>(null);
     const pendingFileRef = useRef<File | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -131,7 +131,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
         switch (mode) {
             case 'preview': return 'Upload Excel';
             case 'validated': return 'Upload Excel (Validated)';
-            case 'loaded': return 'Load Stock';
+            case 'loaded': return 'Check Stock';
             default: return '';
         }
     };
@@ -153,7 +153,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
         }
 
         // Step 2: File Name Validation (Only if extension is correct)
-        const expectedName = 'ToolMasterStock'; // Matching current hardcoded rule
+        const expectedName = `${toolGroupName}Stock`;
         const actualNameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.')).trim();
         if (actualNameWithoutExt.toLowerCase() !== expectedName.toLowerCase()) {
             showMessage('error', 'Invalid File Name',
@@ -185,7 +185,8 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             const data = await file.arrayBuffer();
             const workbook = XLSX.read(data);
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet)
+                .filter((r: any) => r.ToolName || r.toolName || r.TOOLNAME);
 
             if (jsonData.length === 0) {
                 showMessage('error', 'Empty Excel', 'Excel file is empty. No rows found.');
@@ -215,12 +216,15 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             // Map Excel rows
             const rows = jsonData.map((row: any) => ({
                 toolGroupName: String(row.ToolGroup || row.ToolGroupName || row.toolGroupName || row.toolGroup || toolGroupName || '').trim() || undefined,
+                toolCode: String(row.ToolCode || row.toolCode || row.TOOLCODE || '').trim() || undefined,
                 toolName: String(row.ToolName || row.toolName || row.TOOLNAME || '').trim() || undefined,
                 receiptQuantity: Number(row.ReceiptQuantity || row.receiptQuantity || row.Quantity || row.quantity || 0),
-                purchaseRate: Number(row.PurchaseRate || row.purchaseRate || row.Rate || row.rate || 0),
+                landedRate: Number(row.LandedRate || row.landedRate || row.PurchaseRate || row.purchaseRate || row.Rate || row.rate || 0),
                 stockUnit: String(row.StockUnit || row.stockUnit || row.STOCKUNIT || '').trim() || undefined,
                 warehouseName: String(row.WarehouseName || row.warehouseName || row.Warehouse || row.warehouse || '').trim() || undefined,
                 binName: String(row.BinName || row.binName || row.BINNAME || '').trim() || undefined,
+                batchNo: String(row.BatchNo || row.batchNo || row.BATCHNO || '').trim() || undefined,
+                supplierBatchNo: String(row.SupplierBatchNo || row.supplierBatchNo || row.SUPPLIERBATCHNO || '').trim() || undefined,
             }));
 
             // Enrich via backend
@@ -357,9 +361,10 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             const importRows = gridData.map((r, idx) => ({
                 rowIndex: idx + 1,
                 toolGroupName: r.toolGroupName,
+                toolCode: r.toolCode,
                 toolName: r.toolName,
                 receiptQuantity: r.receiptQuantity,
-                purchaseRate: r.purchaseRate,
+                landedRate: r.landedRate,
                 stockUnit: r.stockUnit,
                 batchNo: r.batchNo,
                 warehouseName: r.warehouseName,
@@ -506,7 +511,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
         if (mode !== 'idle' && gridData.length > 0) {
             setSwitchConfirm({
                 action: 'load',
-                message: `You are currently in "${getModeLabel()}" mode with ${gridData.length} row(s). Switching to Load Stock will clear the current data. Do you want to continue?`
+                message: `You are currently in "${getModeLabel()}" mode with ${gridData.length} row(s). Switching to Check Stock will clear the current data. Do you want to continue?`
             });
             return;
         }
@@ -549,6 +554,34 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
         }
     };
 
+    const handleLoadMasterData = async () => {
+        if (mode !== 'idle' && gridData.length > 0) {
+            setSwitchConfirm({
+                action: 'load-master',
+                message: `You are currently in "${getModeLabel()}" mode with ${gridData.length} row(s). Switching to Load Data (Master Template) will clear the current data. Do you want to continue?`
+            });
+            return;
+        }
+        await processLoadMasterData();
+    };
+
+    const processLoadMasterData = async () => {
+        setIsLoading(true);
+        setValidationResult(null);
+        setFilterType('all');
+        setSelectedRows(new Set());
+
+        try {
+            const data = await loadToolMasterData(toolGroupId);
+            setGridData(data || []);
+            setMode('master-template');
+        } catch (error: any) {
+            showMessage('error', 'Load Master Error', error?.response?.data?.message || error?.message || 'Failed to load tool master records.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     // ─── State-Switch Confirmation Handler ────────────────────────────────────
     const handleSwitchConfirm = async () => {
         if (!switchConfirm) return;
@@ -569,6 +602,8 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             await processFileUpload(file);
         } else if (action === 'load') {
             await processLoadStock();
+        } else if (action === 'load-master') {
+            await processLoadMasterData();
         }
     };
 
@@ -582,24 +617,22 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
     const handleExport = () => {
         const exportData = gridData.length > 0 
             ? gridData.map(r => ({
-                ToolGroup: r.toolGroupName || '',
+                ToolCode: r.toolCode || '',
                 ToolName: r.toolName || '',
                 ToolID: r.toolID || '',
-                ToolGroupID: r.toolGroupID || '',
                 ReceiptQuantity: r.receiptQuantity || 0,
-                PurchaseRate: r.purchaseRate || 0,
+                LandedRate: r.landedRate || 0,
                 BatchNo: r.batchNo || '',
                 StockUnit: r.stockUnit || '',
                 WarehouseName: r.warehouseName || '',
                 BinName: r.binName || '',
             }))
             : [{
-                ToolGroup: '',
+                ToolCode: '',
                 ToolName: '',
                 ToolID: '',
-                ToolGroupID: '',
                 ReceiptQuantity: 0,
-                PurchaseRate: 0,
+                LandedRate: 0,
                 BatchNo: '',
                 StockUnit: '',
                 WarehouseName: '',
@@ -609,7 +642,8 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Stock');
-        XLSX.writeFile(wb, 'ToolMasterStock.xlsx');
+        const filename = `${toolGroupName}Stock.xlsx`;
+        XLSX.writeFile(wb, filename);
     };
 
     // ─── Grid Callbacks ──────────────────────────────────────────────────────
@@ -700,18 +734,14 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             headerName: '#', valueGetter: 'node.rowIndex + 1', width: 60,
             pinned: 'left' as const, sortable: false, filter: false
         },
-        { field: 'toolGroupName', headerName: 'ToolGroupName', width: 180, editable: false },
+        { field: 'toolCode', headerName: 'ToolCode', width: 150, editable: false, pinned: 'left' as const },
         { field: 'toolName', headerName: 'ToolName', width: 200, editable: false },
         {
             field: 'toolID', headerName: 'ToolID', width: 90, editable: false,
             cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
         },
-        {
-            field: 'toolGroupID', headerName: 'ToolGroupID', width: 110, editable: false,
-            cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
-        },
         { field: 'receiptQuantity', headerName: 'ReceiptQuantity', width: 140, editable: mode !== 'loaded', type: 'numericColumn' },
-        { field: 'purchaseRate', headerName: 'PurchaseRate', width: 120, editable: mode !== 'loaded', type: 'numericColumn' },
+        { field: 'landedRate', headerName: 'LandedRate', width: 120, editable: mode !== 'loaded', type: 'numericColumn' },
         {
             field: 'batchNo', headerName: 'BatchNo', width: 220, editable: false,
             cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }
@@ -879,14 +909,24 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
 
             {/* Buttons */}
             <div className="flex flex-wrap gap-3">
-                {/* Load Stock */}
+                {/* Load Data (Master template) */}
+                <button
+                    onClick={handleLoadMasterData}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium disabled:opacity-50 transition-colors"
+                >
+                    <RefreshCw className="w-5 h-5" />
+                    Load Data
+                </button>
+
+                {/* Check Stock */}
                 <button
                     onClick={handleLoadStock}
                     disabled={isLoading}
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50"
                 >
                     <Database className="w-5 h-5" />
-                    Load Stock
+                    Check Stock
                 </button>
 
                 {/* Upload Excel */}
@@ -904,7 +944,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                 </label>
 
                 {/* Delete Excel Row */}
-                {(mode === 'preview' || mode === 'validated') && (
+                {(mode === 'preview' || mode === 'validated' || mode === 'master-template') && (
                     <button
                         onClick={handleRemoveSelectedRows}
                         disabled={isLoading || selectedRows.size === 0}
@@ -916,7 +956,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                 )}
 
                 {/* Export */}
-                {(mode === 'loaded' || mode === 'preview' || mode === 'validated') && (
+                {(mode === 'loaded' || mode === 'preview' || mode === 'validated' || mode === 'master-template') && (
                     <button
                         onClick={handleExport}
                         disabled={isLoading}
@@ -1151,6 +1191,7 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                         onGridReady={onGridReady}
                         getRowId={(params) => `tool-stock-${gridData.indexOf(params.data)}`}
                         rowSelection="multiple"
+                        rowMultiSelectWithClick={true}
                         onSelectionChanged={onSelectionChanged}
                         onCellValueChanged={onCellValueChanged}
                         rowClassRules={rowClassRules}

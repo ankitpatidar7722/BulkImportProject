@@ -123,6 +123,7 @@ builder.Services.AddScoped<ICompanySubscriptionService, CompanySubscriptionServi
 builder.Services.AddScoped<IMessageFormatService, MessageFormatService>();
 builder.Services.AddScoped<IActivityLogService, ActivityLogService>();
 builder.Services.AddScoped<IDatabaseBackupRestoreService, DatabaseBackupRestoreService>();
+builder.Services.AddScoped<IContentAuthorityService, ContentAuthorityService>();
 
 // Configure BackupRestore settings
 builder.Services.Configure<BackupRestoreConfig>(builder.Configuration.GetSection("BackupRestore"));

@@ -10,4 +10,5 @@ public interface IToolStockService
     Task<ToolStockImportResult> ImportToolStockAsync(List<ToolStockRowDto> rows);
     Task<ToolStockValidationResult> ValidateStockRowsAsync(List<ToolStockEnrichedRow> rows);
     Task<List<ToolStockEnrichedRow>> GetStockDataAsync(int toolGroupId);
+    Task<List<ToolStockEnrichedRow>> GetMasterDataAsync(int toolGroupId);
 }
