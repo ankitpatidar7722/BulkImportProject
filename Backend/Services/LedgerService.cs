@@ -224,6 +224,16 @@ public class LedgerService : ILedgerService
             validClients = await GetClientsAsync();
         }
 
+        // Get valid Departments if this is an Employee group
+        var validDepartmentNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (isEmployee)
+        {
+            var deptRows = await _connection.QueryAsync<string>(
+                "SELECT LTRIM(RTRIM(DepartmentName)) FROM DepartmentMaster WHERE DepartmentName IS NOT NULL");
+            foreach (var d in deptRows)
+                if (!string.IsNullOrWhiteSpace(d)) validDepartmentNames.Add(d);
+        }
+
         // Get field metadata from LedgerGroupFieldMaster for dynamic datatype validation
         var fieldMetadataQuery = @"SELECT FieldName, FieldDataType
             FROM LedgerGroupFieldMaster
@@ -388,7 +398,7 @@ public class LedgerService : ILedgerService
             if (!string.IsNullOrWhiteSpace(ledger.ClientName))
             {
                 var isValidClient = validClients.Any(c => string.Equals(c.LedgerName, ledger.ClientName, StringComparison.Ordinal));
-                
+
                 if (!isValidClient)
                 {
                     rowValidation.CellValidations.Add(new CellValidation
@@ -400,7 +410,27 @@ public class LedgerService : ILedgerService
 
                     if (rowValidation.RowStatus == ValidationStatus.Valid)
                          rowValidation.RowStatus = ValidationStatus.Mismatch;
-                        
+
+                    hasMismatch = true;
+                }
+            }
+
+            // Check DepartmentName mismatch (Employees only)
+            if (isEmployee && !string.IsNullOrWhiteSpace(ledger.DepartmentName))
+            {
+                var trimmedDept = ledger.DepartmentName.Trim();
+                if (!validDepartmentNames.Contains(trimmedDept))
+                {
+                    rowValidation.CellValidations.Add(new CellValidation
+                    {
+                        ColumnName = "DepartmentName",
+                        ValidationMessage = $"Department '{trimmedDept}' not found in DepartmentMaster",
+                        Status = ValidationStatus.Mismatch
+                    });
+
+                    if (rowValidation.RowStatus == ValidationStatus.Valid)
+                        rowValidation.RowStatus = ValidationStatus.Mismatch;
+
                     hasMismatch = true;
                 }
             }
@@ -644,9 +674,9 @@ public class LedgerService : ILedgerService
         if (deptNames.Count > 0)
         {
             var rows = await _connection.QueryAsync<(string Name, int Id)>(
-                "SELECT DepartmentName AS Name, DepartmentID AS Id FROM DepartmentMaster WHERE DepartmentName IN @Names",
+                "SELECT LTRIM(RTRIM(DepartmentName)) AS Name, DepartmentID AS Id FROM DepartmentMaster WHERE LTRIM(RTRIM(DepartmentName)) IN @Names",
                 new { Names = deptNames });
-            foreach (var r in rows) deptMap[r.Name] = r.Id;
+            foreach (var r in rows) deptMap[r.Name.Trim()] = r.Id;
         }
 
         // 3c. Client name → ID (Consignee only)
@@ -804,8 +834,17 @@ public class LedgerService : ILedgerService
             string ledgerCode = $"{prefix}{maxLedgerNo.ToString().PadLeft(5, '0')}";
 
             int? salesRepId = salesRepMap.TryGetValue(ledger.SalesRepresentative?.Trim() ?? "", out int srId) ? srId : null;
-            int? deptId     = deptMap.TryGetValue(ledger.DepartmentName?.Trim() ?? "", out int dId) ? dId : null;
+            int? deptId     = deptMap.TryGetValue(ledger.DepartmentName?.Trim() ?? "", out int dId) ? dId : (int?)null;
             int? clientId   = isConsignee && clientMap.TryGetValue(ledger.ClientName?.Trim() ?? "", out int cId) ? cId : null;
+
+            // For employee rows: DepartmentID is mandatory — skip the row if not resolved
+            if (isEmployee && !deptId.HasValue)
+            {
+                string rowLabel = $"Row {i + 1}" + (!string.IsNullOrWhiteSpace(ledger.LedgerName) ? $" ({ledger.LedgerName})" : "");
+                result.ErrorMessages.Add($"{rowLabel} – DepartmentName '{ledger.DepartmentName?.Trim()}' not found in DepartmentMaster. Row skipped.");
+                result.ErrorRows++;
+                continue;
+            }
 
             string supplyType  = !string.IsNullOrWhiteSpace(ledger.SupplyTypeCode) ? ledger.SupplyTypeCode : "B2B";
             bool   gstApp      = ledger.GSTApplicable ?? true;
@@ -1009,14 +1048,12 @@ public class LedgerService : ILedgerService
                     ("DeliveredQtyTolerance", ledger.DeliveredQtyTolerance?.ToString(), 22),
                     ("RefSalesRepresentativeID", salesRepId?.ToString(),          25),
                     ("GSTRegistrationType",   ledger.GSTRegistrationType,          24),
+                    ("CreditDays",            ledger.CreditDays,                   26),
                     ("ISLedgerActive",        "True",                              0)
                 };
 
             if (isConsignee && clientId.HasValue)
                 details.Add(("RefClientID", clientId.Value.ToString(), 23));
-
-            // Skip LedgerMasterDetails for Clients group — no detail rows needed
-            if (isClient) continue;
 
             var now = DateTime.Now;
             foreach (var (name, value, seq) in details)

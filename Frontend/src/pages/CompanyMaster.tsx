@@ -411,6 +411,9 @@ const CompanyMaster: React.FC = () => {
                             <ToggleGrid title="Calculation Flags" icon={<Settings className="w-5 h-5" />}>
                                 {T('Auto RoundOff Not Applicable', 'autoRoundOffNotApplicable')}
                             </ToggleGrid>
+                            <Section title="Estimation Settings" icon={<BarChart3 className="w-5 h-5" />} cols={2}>
+                                {F('Show Plan Upto Wastage %', 'showPlanUptoWastagePerc', 'number')}
+                            </Section>
                         </>
                     )}
 
@@ -440,21 +443,17 @@ const CompanyMaster: React.FC = () => {
                             {T('Invoice Approval Required', 'isInvoiceApprovalRequired')}
                             {T('Sales Order Approval Required', 'isSalesOrderApprovalRequired')}
                             {T('Job Release Feature Required', 'isJobReleaseFeatureRequired')}
+                            {T('Bypass Cost Approval', 'byPassCostApproval')}
                         </ToggleGrid>
                     )}
 
                     {/* Tab 6: Production Settings */}
                     {activeTab === 6 && (
-                        <>
-                            <Section title="Production Values" icon={<BarChart3 className="w-5 h-5" />} cols={2}>
-                                {F('Show Plan Upto Wastage %', 'showPlanUptoWastagePerc', 'number')}
-                            </Section>
-                            <ToggleGrid title="Production Settings" icon={<Wrench className="w-5 h-5" />}>
-                                {T('Wastage Add In Printing Rate', 'isWastageAddInPrintingRate')}
-                                {T('Material Consumption Details Flag', 'materialConsumptionDetailsFlage')}
-                                {T('Production Process Wise Tolerance Required', 'productionProcessWiseToleranceRequired')}
-                            </ToggleGrid>
-                        </>
+                        <ToggleGrid title="Production Settings" icon={<Wrench className="w-5 h-5" />}>
+                            {T('Wastage Add In Printing Rate', 'isWastageAddInPrintingRate')}
+                            {T('Material Consumption Details Flag', 'materialConsumptionDetailsFlage')}
+                            {T('Production Process Wise Tolerance Required', 'productionProcessWiseToleranceRequired')}
+                        </ToggleGrid>
                     )}
 
                     {/* Tab 7: System Configuration */}
@@ -484,7 +483,6 @@ const CompanyMaster: React.FC = () => {
                                 {T('Auto Indent Feature Required', 'autoIndentFeatureRequired')}
                                 {T('Picklist Feature Required', 'isPicklistFeatureRequired')}
                                 {T('Supplier Item Allocation Required', 'isSupplierItemAllocationRequired')}
-                                {T('Bypass Cost Approval', 'byPassCostApproval')}
                             </ToggleGrid>
                         </>
                     )}

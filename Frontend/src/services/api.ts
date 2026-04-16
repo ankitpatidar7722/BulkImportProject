@@ -724,17 +724,17 @@ export const softDeleteHSN = async (id: number): Promise<ImportResultDto> => {
 };
 
 export const clearHSNData = async (companyId: number, username?: string, password?: string, reason?: string) => {
-    try {
-        const response = await api.post('/hsn/clear', {
-            companyId,
-            username,
-            password,
-            reason
-        });
-        return response.data;
-    } catch (error) {
-        throw error;
-    }
+    const response = await api.post('/hsn/clear', {
+        companyId,
+        username,
+        password,
+        reason
+    }, {
+        headers: {
+            'X-Skip-Auth-Redirect': 'true'   // prevent 401 (wrong creds) from redirecting to login
+        }
+    });
+    return response.data;
 };
 
 export const validateHSNs = async (hsns: HSNMasterDto[]): Promise<HSNValidationResultDto> => {

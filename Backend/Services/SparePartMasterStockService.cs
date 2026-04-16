@@ -38,10 +38,10 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         var result = await _connection.QueryAsync<WarehouseDto>(
             @"SELECT WarehouseID, WarehouseName, BinName
               FROM WarehouseMaster
-              WHERE WarehouseName = @Name
+              WHERE UPPER(LTRIM(RTRIM(WarehouseName))) = UPPER(LTRIM(RTRIM(@Name)))
                 AND ISNULL(IsDeletedTransaction, 0) = 0
               ORDER BY BinName",
-            new { Name = warehouseName });
+            new { Name = warehouseName?.Trim() });
         return result.ToList();
     }
 
@@ -202,10 +202,13 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                   FROM WarehouseMaster
                   WHERE ISNULL(IsDeletedTransaction, 0) = 0");
 
+            // Trim DB values so spaces/case never cause a mismatch with trimmed input
             var whMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var wh in warehouseLookup)
             {
-                string key = $"{wh.WarehouseName}|{wh.BinName ?? ""}";
+                string whN = (wh.WarehouseName?.ToString() ?? "").Trim();
+                string bnN = (wh.BinName?.ToString() ?? "").Trim();
+                string key = $"{whN}|{bnN}";
                 if (!whMap.ContainsKey(key))
                     whMap[key] = (int)wh.WarehouseID;
             }
@@ -280,11 +283,26 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                         row.BatchNo = $"PHY_{dateStr}_{spareCode}";
                 }
 
-                if (!string.IsNullOrWhiteSpace(row.WarehouseName))
+                // Resolve WarehouseID — must find a valid match; never insert 0
+                string whInputName = row.WarehouseName?.Trim() ?? "";
+                string whInputBin  = row.BinName?.Trim() ?? "";
+                if (string.IsNullOrEmpty(whInputName))
                 {
-                    string whKey = $"{row.WarehouseName?.Trim()}|{row.BinName?.Trim() ?? ""}";
-                    if (whMap.TryGetValue(whKey, out int whId))
-                        row.WarehouseID = whId;
+                    result.FailedRows++;
+                    result.ErrorMessages.Add($"Row {row.RowIndex} → WarehouseName is required.");
+                    continue;
+                }
+
+                string whKey = $"{whInputName}|{whInputBin}";
+                if (whMap.TryGetValue(whKey, out int whId))
+                    row.WarehouseID = whId;
+                else if (whMap.TryGetValue($"{whInputName}|", out int whIdFallback))
+                    row.WarehouseID = whIdFallback;   // warehouse has no bins
+                else
+                {
+                    result.FailedRows++;
+                    result.ErrorMessages.Add($"Row {row.RowIndex} → Warehouse '{row.WarehouseName}' / Bin '{row.BinName}' not found in WarehouseMaster. Check for extra spaces or spelling.");
+                    continue;
                 }
 
                 validRows.Add(row);

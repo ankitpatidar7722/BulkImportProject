@@ -38,10 +38,10 @@ public class ToolStockService : IToolStockService
         var result = await _connection.QueryAsync<WarehouseDto>(
             @"SELECT WarehouseID, WarehouseName, BinName
               FROM WarehouseMaster
-              WHERE WarehouseName = @Name
+              WHERE UPPER(LTRIM(RTRIM(WarehouseName))) = UPPER(LTRIM(RTRIM(@Name)))
                 AND ISNULL(IsDeletedTransaction, 0) = 0
               ORDER BY BinName",
-            new { Name = warehouseName });
+            new { Name = warehouseName?.Trim() });
         return result.ToList();
     }
 
@@ -354,22 +354,26 @@ public class ToolStockService : IToolStockService
 
                 // Use rate from Excel as is, no fallback to master
 
-                if (!string.IsNullOrWhiteSpace(row.WarehouseName))
+                // Resolve WarehouseID — must find a valid match; never insert 0
+                string whInputName = row.WarehouseName?.Trim() ?? "";
+                string whInputBin  = row.BinName?.Trim() ?? "";
+                if (string.IsNullOrEmpty(whInputName))
                 {
-                    string whName = row.WarehouseName.Trim();
-                    string binName = row.BinName?.Trim() ?? "";
-                    string whKey = $"{whName}|{binName}";
-                    
-                    if (whMap.TryGetValue(whKey, out int whId))
-                    {
-                        row.WarehouseID = whId;
-                    }
-                    else if (!string.IsNullOrEmpty(binName))
-                    {
-                        // Fallback to warehouse name only if specific bin not found
-                        if (whMap.TryGetValue($"{whName}|", out int whIdFallback))
-                            row.WarehouseID = whIdFallback;
-                    }
+                    result.FailedRows++;
+                    result.ErrorMessages.Add($"Row {row.RowIndex} → WarehouseName is required.");
+                    continue;
+                }
+
+                string whKey = $"{whInputName}|{whInputBin}";
+                if (whMap.TryGetValue(whKey, out int whId))
+                    row.WarehouseID = whId;
+                else if (whMap.TryGetValue($"{whInputName}|", out int whIdFallback))
+                    row.WarehouseID = whIdFallback;   // warehouse has no bins
+                else
+                {
+                    result.FailedRows++;
+                    result.ErrorMessages.Add($"Row {row.RowIndex} → Warehouse '{row.WarehouseName}' / Bin '{row.BinName}' not found in WarehouseMaster. Check for extra spaces or spelling.");
+                    continue;
                 }
 
                 validRows.Add(row);

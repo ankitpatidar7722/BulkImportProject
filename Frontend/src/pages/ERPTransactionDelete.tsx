@@ -41,6 +41,7 @@ const ERPTransactionDelete: React.FC = () => {
 
     // Progress State
     const [showProgress, setShowProgress] = useState(false);
+    const [authError, setAuthError] = useState('');
     const [progressData, setProgressData] = useState({
         current: 0,
         total: 0,
@@ -143,6 +144,7 @@ const ERPTransactionDelete: React.FC = () => {
                 alert('No active items found in this group to delete.');
             } else {
                 // Items are NOT used — show auth modal to proceed with delete
+                setAuthError('');
                 setShowMasterDeleteAuth(true);
             }
         } catch (error: any) {
@@ -163,7 +165,7 @@ const ERPTransactionDelete: React.FC = () => {
             const moduleName = selectedModuleInternalName;
             const subModuleId = showSubModuleDropdown
                 ? parseInt(selectedSubModule)
-                : 0; // No sub-module dropdown = no filter, delete entire master table
+                : 0; 
 
             const result = await deleteMasterData(
                 moduleName,
@@ -174,22 +176,22 @@ const ERPTransactionDelete: React.FC = () => {
             );
 
             if (result.success) {
-                setShowMasterDeleteAuth(false);  // Close modal only on success
+                setShowMasterDeleteAuth(false);
                 setSuccessCount(result.deletedCount);
                 setSuccessGroupName(`${selectedModuleName}${selectedSubModuleName ? ` - ${selectedSubModuleName}` : ''}`);
                 setShowSuccessPopup(true);
                 setMasterCredentials({ username: '', password: '', reason: '' });
+                setAuthError('');
             } else {
-                alert('Delete failed: ' + result.message);
+                setAuthError(result.message || 'Delete operation failed');
             }
         } catch (error: any) {
             console.error('Master delete failed:', error);
             if (error?.response?.status === 401) {
-                // Show error in popup, do NOT redirect to login
-                alert('Invalid username or password. Please try again.');
+                setAuthError('Invalid username or password. Please try again.');
             } else {
                 const msg = error?.response?.data?.message || error.message || 'Unknown error';
-                alert('Delete failed: ' + msg);
+                setAuthError(msg);
             }
         } finally {
             setIsDeleting(false);
@@ -203,6 +205,7 @@ const ERPTransactionDelete: React.FC = () => {
 
     const handleDeleteUnusedClick = () => {
         setShowUsageWarning(false);
+        setAuthError('');
         setShowUnusedDeleteAuth(true);
         setMasterCredentials({ username: '', password: '', reason: '' });
     };
@@ -227,22 +230,22 @@ const ERPTransactionDelete: React.FC = () => {
             );
 
             if (result.success) {
-                setShowUnusedDeleteAuth(false);  // Close modal only on success
+                setShowUnusedDeleteAuth(false);
                 setSuccessCount(result.deletedCount);
                 setSuccessGroupName(`${selectedModuleName}${selectedSubModuleName ? ` - ${selectedSubModuleName}` : ''} (Unused)`);
                 setShowSuccessPopup(true);
                 setMasterCredentials({ username: '', password: '', reason: '' });
+                setAuthError('');
             } else {
-                alert('Delete failed: ' + result.message);
+                setAuthError(result.message || 'Unused items deletion failed');
             }
         } catch (error: any) {
             console.error('Unused delete failed:', error);
             if (error?.response?.status === 401) {
-                // Show error in popup, do NOT redirect to login
-                alert('Invalid username or password. Please try again.');
+                setAuthError('Invalid username or password. Please try again.');
             } else {
                 const msg = error?.response?.data?.message || error.message || 'Unknown error';
-                alert('Delete failed: ' + msg);
+                setAuthError(msg);
             }
         } finally {
             setIsDeleting(false);
@@ -280,15 +283,14 @@ const ERPTransactionDelete: React.FC = () => {
         setCredentials({ username: '', password: '', reason: '' });
         setCaptchaInput('');
         setCaptchaError(false);
+        setAuthError('');
     };
 
     const handleSecurityVerificationSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setConfirmFlowStep(0);
+        setAuthError('');
         setIsDeleting(true);
-        setShowProgress(true);
-        setProgressData({ current: 0, total: 0, percentage: 0, currentTable: '', message: 'Initializing...' });
-
+        
         try {
             const token = localStorage.getItem('authToken');
             const companyToken = localStorage.getItem('companyToken');
@@ -309,8 +311,20 @@ const ERPTransactionDelete: React.FC = () => {
             });
 
             if (!response.ok) {
-                throw new Error(`Server returned ${response.status}`);
+                if (response.status === 401) {
+                    setAuthError('Invalid username or password. Please try again.');
+                } else {
+                    const errorText = await response.text();
+                    setAuthError(errorText || `Execution failed with status ${response.status}`);
+                }
+                setIsDeleting(false);
+                return;
             }
+
+            // If we are here, auth succeeded or at least started.
+            setConfirmFlowStep(0);
+            setShowProgress(true);
+            setProgressData({ current: 0, total: 0, percentage: 0, currentTable: '', message: 'Initializing...' });
 
             const reader = response.body?.getReader();
             const decoder = new TextDecoder();
@@ -344,10 +358,21 @@ const ERPTransactionDelete: React.FC = () => {
                                         setCredentials({ username: '', password: '', reason: '' });
                                     }, 500);
                                 } else if (data.type === 'error') {
-                                    alert('Security Verification Failed: ' + data.message);
-                                    setShowProgress(false);
+                                    // Check if this is an auth error sent in the stream
+                                    const isAuthError = data.message.toLowerCase().includes('username') || 
+                                                       data.message.toLowerCase().includes('password');
+
+                                    if (isAuthError) {
+                                        setAuthError(data.message);
+                                        setConfirmFlowStep(4); // Go back to Security Verification
+                                        setShowProgress(false); // Hide progress modal
+                                    } else {
+                                        alert('Error during deletion: ' + data.message);
+                                        setShowProgress(false);
+                                    }
+                                    
                                     setIsDeleting(false);
-                                    return; // Stop processing stream
+                                    return;
                                 }
                             } catch (parseError) {
                                 console.error('Error parsing progress:', parseError);
@@ -358,9 +383,7 @@ const ERPTransactionDelete: React.FC = () => {
             }
         } catch (error: any) {
             console.error('Delete failed:', error);
-            alert('Error while deleting transactions: ' + (error.message || 'Unknown error'));
-            setShowProgress(false);
-        } finally {
+            setAuthError('Error while communicating with server: ' + (error.message || 'Unknown error'));
             setIsDeleting(false);
         }
     };
@@ -675,6 +698,13 @@ const ERPTransactionDelete: React.FC = () => {
                             </div>
                         </div>
 
+                        {authError && (
+                            <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                                <ShieldAlert className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+                                <p className="text-xs font-semibold text-red-700 dark:text-red-400">{authError}</p>
+                            </div>
+                        )}
+
                         <p className={`text-sm mb-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                             {usageResult?.totalItemsInGroup || 0} item(s) in {selectedModuleName} {selectedSubModuleName ? `- ${selectedSubModuleName}` : ''} are not used in any transactions. Please enter your username and reason to proceed with deletion.
                         </p>
@@ -771,6 +801,13 @@ const ERPTransactionDelete: React.FC = () => {
                                 </h3>
                             </div>
                         </div>
+
+                        {authError && (
+                            <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                                <ShieldAlert className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+                                <p className="text-xs font-semibold text-red-700 dark:text-red-400">{authError}</p>
+                            </div>
+                        )}
 
                         <p className={`text-sm mb-4 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                             {usageResult.unusedItemsCount} item(s) in {selectedModuleName} {selectedSubModuleName ? `- ${selectedSubModuleName}` : ''} are not used in any transactions and will be permanently deleted. Please enter your credentials to proceed.
@@ -917,10 +954,17 @@ const ERPTransactionDelete: React.FC = () => {
             {confirmFlowStep === 4 && !showProgress && (
                 <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
                     <form onSubmit={handleSecurityVerificationSubmit} className={`${isDark ? 'bg-gray-800' : 'bg-white'} p-6 rounded-lg shadow-xl max-w-md w-full border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                        <div className={`flex items-center gap-3 mb-6 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        <div className={`flex items-center gap-3 mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                             <Lock className="w-6 h-6" />
                             <h3 className="text-xl font-bold">Security Verification</h3>
                         </div>
+
+                        {authError && (
+                            <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                                <ShieldAlert className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+                                <p className="text-xs font-semibold text-red-700 dark:text-red-400">{authError}</p>
+                            </div>
+                        )}
 
                         <div className="space-y-4">
                             <div>

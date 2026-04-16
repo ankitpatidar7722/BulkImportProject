@@ -410,18 +410,16 @@ public class HSNService : IHSNService
         try
         {
             // 1. Authenticate User
-            // Note: Password should be hashed in production. Here we assume plain text as per existing patterns or simple requirement.
-            var user = await _connection.QueryFirstOrDefaultAsync<dynamic>(
-                "SELECT UserID, Password FROM UserMaster WHERE UserName = @Username ",
-                new { Username = username }, transaction: transaction);
-
-            // Normalize passwords for comparison (treat null as empty string)
-            string dbPassword = (user?.Password as string) ?? string.Empty;
-            string inputPassword = password ?? string.Empty;
-
-            if (user == null || dbPassword != inputPassword)
+            var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
+            var userCheckQuery = @"SELECT COUNT(1) FROM UserMaster
+                WHERE UserName = @Username
+                  AND ISNULL(Password, '') = @Password
+                  AND ISNULL(IsBlocked, 0) = 0";
+            var isValidUser = await _connection.ExecuteScalarAsync<bool>(
+                userCheckQuery, new { Username = username, Password = encodedPassword }, transaction: transaction);
+            if (!isValidUser)
             {
-                throw new UnauthorizedAccessException("Invalid credentials");
+                throw new UnauthorizedAccessException("Invalid username or password.");
             }
             
             // 2. Audit Log (File based as DB structure is unknown)
