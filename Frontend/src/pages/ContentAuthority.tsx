@@ -12,6 +12,8 @@ import {
     ContentAuthoritySaveResult
 } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
+import Book3DPreview from '../components/Book3DPreview';
+
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 // Images are served from the frontend's local public/Images folder.
@@ -80,10 +82,12 @@ const ImageCell: React.FC<{ src: string; alt: string; onPreview: (src: string, t
 
 // ─── Image Preview Modal ───────────────────────────────────────────────────────
 const ImagePreviewModal: React.FC<{ src: string; title: string; onClose: () => void }> = ({ src, title, onClose }) => {
+    const [viewMode, setViewMode] = useState<'2d' | '3d'>('3d');
+
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-8 bg-black/90 backdrop-blur-xl animate-in fade-in duration-300" onClick={onClose}>
             <div 
-                className="relative w-full max-w-4xl h-[80vh] bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-[0_0_80px_rgba(0,0,0,0.6)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 border border-white/10"
+                className="relative w-full max-w-5xl h-[85vh] bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-[0_0_80px_rgba(0,0,0,0.6)] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300 border border-white/10"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -92,9 +96,25 @@ const ImagePreviewModal: React.FC<{ src: string; title: string; onClose: () => v
                         <div className="w-1.5 h-10 bg-indigo-600 rounded-full shadow-[0_0_15px_rgba(79,70,229,0.4)]" />
                         <div>
                             <h3 className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.3em]">Master Blueprint</h3>
-                            <p className="text-base font-bold text-gray-900 dark:text-gray-100 truncate uppercase mt-0.5">{title}</p>
+                            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate uppercase mt-0.5">{title}</p>
                         </div>
                     </div>
+                    
+                    <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-900 p-1 rounded-2xl border border-gray-200 dark:border-gray-700">
+                        <button 
+                            onClick={() => setViewMode('2d')}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === '2d' ? 'bg-white dark:bg-gray-700 text-indigo-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                        >
+                            2D Blueprint
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('3d')}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === '3d' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-gray-400 hover:text-gray-600'}`}
+                        >
+                            3D Interactive
+                        </button>
+                    </div>
+
                     <button 
                         onClick={onClose} 
                         className="p-3 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30 text-gray-400 rounded-2xl transition-all border border-transparent hover:border-red-100 group shadow-sm bg-gray-50 dark:bg-gray-900/50"
@@ -108,27 +128,39 @@ const ImagePreviewModal: React.FC<{ src: string; title: string; onClose: () => v
                 <div className="px-10 py-2.5 bg-indigo-50/50 dark:bg-indigo-900/20 border-b border-indigo-100/50 dark:border-indigo-900/50 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Zap className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
-                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Active Containment Scaling</span>
+                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">
+                            {viewMode === '3d' ? 'Rendering High-Fidelity 3D Environment' : 'Active Containment Scaling'}
+                        </span>
                     </div>
+                    {viewMode === '3d' && (
+                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">Use Mouse to Rotate & Scroll to Zoom</span>
+                    )}
                 </div>
 
-                {/* Image Area - STRICT ABSOLUTE CONTAINMENT */}
-                <div className="flex-1 relative bg-gray-50/50 dark:bg-gray-900/40 p-12 overflow-hidden">
-                    <div className="absolute inset-12 flex items-center justify-center">
-                        <img 
-                            src={src} 
-                            alt={title} 
-                            className="max-w-full max-h-full w-auto h-auto object-contain shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-2xl border-2 border-white dark:border-gray-700 bg-white dark:bg-white/5"
-                            style={{ display: 'block' }}
-                        />
-                    </div>
+                {/* Main Content Area */}
+                <div className="flex-1 relative bg-gray-50/50 dark:bg-gray-900/40 overflow-hidden">
+                    {viewMode === '2d' ? (
+                        <div className="absolute inset-0 flex items-center justify-center p-12">
+                            <img 
+                                src={src} 
+                                alt={title} 
+                                className="max-w-full max-h-full w-auto h-auto object-contain shadow-[0_20px_50px_rgba(0,0,0,0.15)] rounded-2xl border-2 border-white dark:border-gray-700 bg-white dark:bg-white/5"
+                            />
+                        </div>
+                    ) : (
+                        <div className="absolute inset-0">
+                            <Book3DPreview src={src} title={title} />
+                        </div>
+                    )}
                 </div>
                 
                 {/* Visual Footer */}
                 <div className="px-10 py-5 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center shrink-0">
                     <div className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                        <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">100% Visibility Guaranteed</span>
+                        <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                            {viewMode === '3d' ? 'Real-time 3D Preview Active' : '100% Visibility Guaranteed'}
+                        </span>
                     </div>
                     <button 
                         onClick={onClose}
@@ -141,6 +173,7 @@ const ImagePreviewModal: React.FC<{ src: string; title: string; onClose: () => v
         </div>
     );
 };
+
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 const ContentAuthority: React.FC = () => {
