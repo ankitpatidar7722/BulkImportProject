@@ -9,7 +9,7 @@ public class ContentAuthorityService : IContentAuthorityService
 {
     private const string SourceConnStr =
         "Data Source=13.200.122.70,1433;" +
-        "Initial Catalog=IndusEnterpriseDemo;" +
+        "Initial Catalog=IndusEnterpriseKeyline;" +
         "User ID=Indus;Password=Param@99811;" +
         "Persist Security Info=True;TrustServerCertificate=True";
 
@@ -24,7 +24,7 @@ public class ContentAuthorityService : IContentAuthorityService
     {
         await using var sourceConn = new SqlConnection(SourceConnStr);
         var sourceRows = (await sourceConn.QueryAsync<dynamic>(
-            "SELECT DISTINCT ContentName, ISNULL(ContentOpenHref,'') as OpenHref, ISNULL(ContentClosedHref,'') as ClosedHref FROM ContentMaster WHERE ISNULL(ContentName,'') <> '' ORDER BY ContentName"
+            "SELECT DISTINCT ContentName, ISNULL(ContentOpenHref,'') as OpenHref, ISNULL(ContentClosedHref,'') as ClosedHref FROM ContentMaster WHERE ISNULL(ContentName,'') <> '' and Isactive=1 ORDER BY ContentName"
         )).ToList();
 
         var clientLookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);

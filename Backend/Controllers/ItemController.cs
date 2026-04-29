@@ -137,6 +137,7 @@ public class ItemController : ControllerBase
                 NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString | 
                                 System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
             };
+            options.Converters.Add(new Backend.Helpers.NullableDateTimeConverter());
             request = System.Text.Json.JsonSerializer.Deserialize<ImportItemsRequest>(rawPayload, options);
         }
         catch (System.Text.Json.JsonException jex)
@@ -188,6 +189,7 @@ public class ItemController : ControllerBase
                 NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString | 
                                 System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals
             };
+            options.Converters.Add(new Backend.Helpers.NullableDateTimeConverter());
             request = System.Text.Json.JsonSerializer.Deserialize<ImportItemsRequest>(rawPayload, options);
             
             if (request != null)

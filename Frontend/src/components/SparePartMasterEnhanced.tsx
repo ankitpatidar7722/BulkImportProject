@@ -255,11 +255,8 @@ const SparePartMasterEnhanced: React.FC = () => {
                 headerName: 'HSNGroup',
                 minWidth: 120,
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: (params: any) => {
-                    const currentVal = params.value;
-                    const options = hsnGroups.map(h => h.displayName);
-                    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
-                    return { values: options };
+                cellEditorParams: () => {
+                    return { values: hsnGroups.map(h => h.displayName) };
                 },
                 cellRenderer: DropdownCellRenderer
             },
@@ -267,11 +264,8 @@ const SparePartMasterEnhanced: React.FC = () => {
                 field: 'unit',
                 headerName: 'Unit',
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: (params: any) => {
-                    const currentVal = params.value;
-                    const options = units.map(u => u.unitSymbol);
-                    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
-                    return { values: options };
+                cellEditorParams: () => {
+                    return { values: units.map(u => u.unitSymbol) };
                 },
                 cellRenderer: DropdownCellRenderer
             },
@@ -280,11 +274,8 @@ const SparePartMasterEnhanced: React.FC = () => {
                 field: 'sparePartType',
                 headerName: 'SparePartType',
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: (params: any) => {
-                    const currentVal = params.value;
-                    const options = [...sparePartTypes];
-                    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
-                    return { values: options };
+                cellEditorParams: () => {
+                    return { values: sparePartTypes };
                 },
                 cellRenderer: DropdownCellRenderer
             },

@@ -161,6 +161,86 @@ export const checkDisplayOrderExists = async (order: number, setGroupIndex: numb
     return response.data.exists;
 };
 
+export const checkGroupIndexInUse = async (groupIndex: number, headName: string): Promise<boolean> => {
+    const response = await api.get(`/module/CheckGroupIndexInUse?groupIndex=${groupIndex}&headName=${encodeURIComponent(headName)}`);
+    return response.data.inUse;
+};
+
+// ─── Client-DB Aware APIs (for CompanySubscription "New Module Addition" Tab) ───
+
+export const getModulesForClient = async (connectionString: string): Promise<ModuleDto[]> => {
+    const response = await api.post(`/module/GetModulesForClient`, { connectionString });
+    return response.data;
+};
+
+export const getSystemDefaultsForClient = async (connectionString: string): Promise<ModuleSystemDefaultsDto> => {
+    const response = await api.get(`/module/GetSystemDefaultsForClient?connectionString=${encodeURIComponent(connectionString)}`);
+    return response.data;
+};
+
+export const getIndusModuleInfoForClient = async (moduleName: string, connectionString: string): Promise<IndusModuleInfoDto> => {
+    const response = await api.get(`/module/GetIndusModuleInfoForClient?moduleName=${encodeURIComponent(moduleName)}&connectionString=${encodeURIComponent(connectionString)}`);
+    return response.data;
+};
+
+export const checkModuleExistsForClient = async (moduleName: string, connectionString: string): Promise<boolean> => {
+    const response = await api.get(`/module/CheckModuleExistsForClient?moduleName=${encodeURIComponent(moduleName)}&connectionString=${encodeURIComponent(connectionString)}`);
+    return response.data.exists;
+};
+
+export const checkDisplayOrderExistsForClient = async (order: number, setGroupIndex: number, connectionString: string): Promise<boolean> => {
+    const response = await api.get(`/module/CheckDisplayOrderExistsForClient?order=${order}&setGroupIndex=${setGroupIndex}&connectionString=${encodeURIComponent(connectionString)}`);
+    return response.data.exists;
+};
+
+export const checkGroupIndexInUseForClient = async (groupIndex: number, headName: string, connectionString: string): Promise<boolean> => {
+    const response = await api.get(`/module/CheckGroupIndexInUseForClient?groupIndex=${groupIndex}&headName=${encodeURIComponent(headName)}&connectionString=${encodeURIComponent(connectionString)}`);
+    return response.data.inUse;
+};
+
+export const createModuleForClient = async (connectionString: string, module: ModuleDto): Promise<any> => {
+    const response = await api.post(`/module/CreateForClient`, { connectionString, module });
+    return response.data;
+};
+
+export const updateModuleForClient = async (connectionString: string, module: ModuleDto): Promise<any> => {
+    const response = await api.put(`/module/UpdateForClient`, { connectionString, module });
+    return response.data;
+};
+
+export const deleteModuleForClient = async (moduleId: number, connectionString: string): Promise<any> => {
+    const response = await api.delete(`/module/DeleteForClient?moduleId=${moduleId}&connectionString=${encodeURIComponent(connectionString)}`);
+    return response.data;
+};
+
+export const getItemGroupComparisonForClient = async (type: string, connectionString: string): Promise<ItemGroupComparisonDto[]> => {
+    const response = await api.get(`/module/ItemGroupComparisonForClient?type=${type}&connectionString=${encodeURIComponent(connectionString)}`);
+    return response.data;
+};
+
+export const syncItemGroupsForClient = async (syncData: ItemGroupComparisonDto[], type: string, connectionString: string): Promise<any> => {
+    const response = await api.post(`/module/SyncItemGroupsForClient`, { syncData, type, connectionString });
+    return response.data;
+};
+
+export interface ItemGroupComparisonDto {
+    itemGroupId: number;
+    itemGroupName: string;
+    existsInSource: boolean;
+    existsInClient: boolean;
+    isDeletedInClient: boolean;
+    status: boolean;
+}
+
+export const getItemGroupComparison = async (type: string = 'Item'): Promise<ItemGroupComparisonDto[]> => {
+    const response = await api.get(`/module/ItemGroupComparison?type=${type}`);
+    return response.data;
+};
+
+export const syncItemGroups = async (syncData: ItemGroupComparisonDto[], type: string = 'Item'): Promise<void> => {
+    await api.post(`/module/SyncItemGroups?type=${type}`, syncData);
+};
+
 export interface ExcelPreviewDto {
     headers: string[];
     rows: any[][];

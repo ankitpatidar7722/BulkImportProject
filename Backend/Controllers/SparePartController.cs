@@ -88,6 +88,7 @@ public class SparePartController : ControllerBase
                 PropertyNameCaseInsensitive = true,
                 NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
             };
+            options.Converters.Add(new Backend.Helpers.NullableDateTimeConverter());
             request = System.Text.Json.JsonSerializer.Deserialize<ValidateSparePartsRequest>(payload.GetRawText(), options);
         }
         catch (System.Text.Json.JsonException jex)
@@ -160,6 +161,7 @@ public class SparePartController : ControllerBase
                 PropertyNameCaseInsensitive = true,
                 NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
             };
+            options.Converters.Add(new Backend.Helpers.NullableDateTimeConverter());
             request = System.Text.Json.JsonSerializer.Deserialize<ImportSparePartsRequest>(rawPayload, options);
             
             if (request != null)

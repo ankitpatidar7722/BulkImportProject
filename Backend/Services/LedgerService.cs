@@ -318,13 +318,21 @@ public class LedgerService : ILedgerService
 
                 if (isEmployee)
                 {
-                    // For Employees: LedgerName + Address1 + DepartmentName
+                    // For Employees: LedgerName + MailingName + Address1 + DepartmentName + Designation
+                    var mailA = a.MailingName?.Trim() ?? "";
+                    var mailB = b.MailingName?.Trim() ?? "";
+                    
                     var deptA = a.DepartmentName?.Trim() ?? "";
                     var deptB = b.DepartmentName?.Trim() ?? "";
+                    
+                    var desigA = a.Designation?.Trim() ?? "";
+                    var desigB = b.Designation?.Trim() ?? "";
 
                     return string.Equals(nameA, nameB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(mailA, mailB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(addrA, addrB, StringComparison.OrdinalIgnoreCase) &&
-                           string.Equals(deptA, deptB, StringComparison.OrdinalIgnoreCase);
+                           string.Equals(deptA, deptB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(desigA, desigB, StringComparison.OrdinalIgnoreCase);
                 }
                 else if (isConsignee)
                 {

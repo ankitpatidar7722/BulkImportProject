@@ -702,7 +702,7 @@ public class ExcelService : IExcelService
             try
             {
                 await EnsureConnectionOpenAsync();
-                var hsnList = await _connection.QueryAsync<(int Id, string Name)>("SELECT ProductHSNID, ProductHSNName FROM ProductHSNMaster WHERE IsDeletedTransaction = 0");
+                var hsnList = await _connection.QueryAsync<(int Id, string Name)>("SELECT ProductHSNID, DisplayName FROM ProductHSNMaster WHERE IsDeletedTransaction = 0");
                 foreach (var hsn in hsnList)
                 {
                     if (hsn.Name != null && !hsnLookup.ContainsKey(hsn.Name))

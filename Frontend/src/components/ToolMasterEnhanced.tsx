@@ -227,11 +227,15 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
     }, [validationResult]);
 
     // Helper: Build dropdown params that include current value if missing
-    const getDropdownParams = (options: string[]) => (params: any) => {
-        const currentVal = params.value;
-        const vals = [...options];
-        if (currentVal && !vals.includes(currentVal)) vals.unshift(currentVal);
-        return { values: vals };
+    const getDropdownParams = (options: any[]) => (params: any) => {
+        const values = ['', ...options.map(o => String(o))];
+        if (params.value !== undefined && params.value !== null && params.value !== '') {
+            const strVal = String(params.value);
+            if (!values.includes(strVal)) {
+                values.push(strVal);
+            }
+        }
+        return { values };
     };
 
     // AG Grid Setup

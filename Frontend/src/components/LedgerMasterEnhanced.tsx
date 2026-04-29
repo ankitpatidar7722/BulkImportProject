@@ -301,11 +301,15 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
 
     // Helper: Build dropdown params that include current value if missing
-    const getDropdownParams = (options: string[]) => (params: any) => {
-        const currentVal = params.value;
-        const vals = [...options];
-        if (currentVal && !vals.includes(currentVal)) vals.unshift(currentVal);
-        return { values: vals };
+    const getDropdownParams = (options: any[]) => (params: any) => {
+        const values = ['', ...options.map(o => String(o))];
+        if (params.value !== undefined && params.value !== null && params.value !== '') {
+            const strVal = String(params.value);
+            if (!values.includes(strVal)) {
+                values.push(strVal);
+            }
+        }
+        return { values };
     };
 
     // --- AG Grid Setup ---
@@ -370,17 +374,13 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: (params: any) => {
                     const selectedCountry = params.data.country;
-                    const currentVal = params.value;
-                    if (!selectedCountry) return { values: currentVal ? [currentVal] : [] };
+                    if (!selectedCountry) return { values: [] };
 
                     const filteredStates = countryStates
                          .filter(cs => cs.country === selectedCountry)
                          .map(cs => cs.state);
                     
-                    const options = [...filteredStates.sort()];
-                    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
-
-                    return { values: options };
+                    return { values: [...filteredStates.sort()] };
                 },
                 cellRenderer: DropdownCellRenderer
             },

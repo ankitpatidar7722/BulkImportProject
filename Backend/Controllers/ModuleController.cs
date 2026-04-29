@@ -2,6 +2,8 @@ using Backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Backend.DTOs;
+using Microsoft.Data.SqlClient;
+using Dapper;
 
 namespace Backend.Controllers;
 
@@ -259,4 +261,333 @@ public class ModuleController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+
+    [HttpGet("CheckGroupIndexInUse")]
+    public async Task<IActionResult> CheckGroupIndexInUse([FromQuery] int groupIndex, [FromQuery] string headName)
+    {
+        try
+        {
+            var inUse = await _moduleService.CheckGroupIndexInUseAsync(groupIndex, headName);
+            return Ok(new { inUse });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("ItemGroupComparison")]
+    public async Task<IActionResult> GetItemGroupComparison([FromQuery] string type = "Item")
+    {
+        try
+        {
+            var result = await _moduleService.GetItemGroupComparisonAsync(type);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error fetching {type} comparison");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("SyncItemGroups")]
+    public async Task<IActionResult> SyncItemGroups([FromBody] List<ItemGroupComparisonDto> syncData, [FromQuery] string type = "Item")
+    {
+        try
+        {
+            var success = await _moduleService.SyncItemGroupsAsync(type, syncData);
+            if (success) return Ok(new { Message = $"{type} groups synchronized successfully" });
+            return BadRequest(new { Message = $"Failed to synchronize {type} groups" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error syncing {type} groups");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+    // ─────────────────────────────────────────────
+    // Client-DB-Aware Endpoints (for CompanySubscription "New Module Addition" Tab)
+    // These operate on the specified client's database, not the admin DB.
+    // ─────────────────────────────────────────────
+
+    [HttpPost("GetModulesForClient")]
+    public async Task<IActionResult> GetModulesForClient([FromBody] GetModulesForClientRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.ConnectionString))
+                return BadRequest(new { error = "connectionString is required" });
+
+            await using var conn = GetClientConnection(request.ConnectionString);
+            var query = @"
+                SELECT 
+                    ModuleId, ModuleName, ModuleHeadName, ModuleDisplayName,
+                    ModuleHeadDisplayName, ModuleHeadDisplayOrder, ModuleDisplayOrder, SetGroupIndex
+                FROM ModuleMaster WHERE ISNULL(IsDeletedTransaction, 0) = 0
+                ORDER BY ModuleHeadName, ModuleDisplayName";
+            var modules = await conn.QueryAsync<ModuleDto>(query);
+            return Ok(modules);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    public class GetModulesForClientRequest
+    {
+        public string ConnectionString { get; set; } = string.Empty;
+    }
+
+    [HttpGet("ItemGroupComparisonForClient")]
+    public async Task<IActionResult> GetItemGroupComparisonForClient([FromQuery] string type, [FromQuery] string connectionString)
+    {
+        try
+        {
+            var result = await _moduleService.GetItemGroupComparisonForClientAsync(type, connectionString);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("SyncItemGroupsForClient")]
+    public async Task<IActionResult> SyncItemGroupsForClient([FromBody] SyncForClientRequest request)
+    {
+        try
+        {
+            var success = await _moduleService.SyncItemGroupsForClientAsync(request.Type, request.SyncData, request.ConnectionString);
+            if (success) return Ok(new { Message = "Groups synchronized successfully" });
+            return BadRequest(new { Message = "Failed to synchronize groups" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    public class SyncForClientRequest
+    {
+        public string Type { get; set; } = string.Empty;
+        public string ConnectionString { get; set; } = string.Empty;
+        public List<ItemGroupComparisonDto> SyncData { get; set; } = new();
+    }
+
+    [HttpPut("UpdateForClient")]
+    public async Task<IActionResult> UpdateModuleForClient([FromBody] CreateModuleForClientRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.ConnectionString))
+                return BadRequest(new { error = "connectionString is required" });
+
+            await using var conn = GetClientConnection(request.ConnectionString);
+            var module = request.Module;
+
+            var updateQuery = @"
+                UPDATE ModuleMaster SET
+                    ModuleName = @ModuleName,
+                    ModuleHeadName = @ModuleHeadName,
+                    ModuleDisplayName = @ModuleDisplayName,
+                    ModuleHeadDisplayName = @ModuleHeadDisplayName,
+                    ModuleHeadDisplayOrder = @ModuleHeadDisplayOrder,
+                    ModuleDisplayOrder = @ModuleDisplayOrder,
+                    SetGroupIndex = @SetGroupIndex
+                WHERE ModuleID = @ModuleId";
+
+            await conn.ExecuteAsync(updateQuery, module);
+            return Ok(new { Message = "Module updated successfully in client database." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpDelete("DeleteForClient")]
+    public async Task<IActionResult> DeleteModuleForClient([FromQuery] int moduleId, [FromQuery] string connectionString)
+    {
+        try
+        {
+            await using var conn = GetClientConnection(connectionString);
+            await conn.ExecuteAsync(
+                "UPDATE ModuleMaster SET IsDeletedTransaction = 1 WHERE ModuleID = @moduleId",
+                new { moduleId });
+            return Ok(new { Message = "Module deleted successfully from client database." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    private static SqlConnection GetClientConnection(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new ArgumentException("Connection string is required.");
+
+        if (!connectionString.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!connectionString.TrimEnd().EndsWith(";")) connectionString += ";";
+            connectionString += "TrustServerCertificate=True;";
+        }
+        return new SqlConnection(connectionString);
+    }
+
+    [HttpGet("GetSystemDefaultsForClient")]
+    public async Task<IActionResult> GetSystemDefaultsForClient([FromQuery] string connectionString)
+    {
+        try
+        {
+            await using var conn = GetClientConnection(connectionString);
+            var companyId = await conn.QueryFirstOrDefaultAsync<int>(
+                "SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction = 0 ORDER BY CompanyID DESC");
+            var userId = await conn.QueryFirstOrDefaultAsync<int>(
+                "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin' AND ISNULL(IsBlocked, 0) = 0");
+            var now = DateTime.Now;
+            var fYear = now.Month >= 4 ? $"{now.Year}-{now.Year + 1}" : $"{now.Year - 1}-{now.Year}";
+            return Ok(new { companyID = companyId, userID = userId, fYear });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("GetIndusModuleInfoForClient")]
+    public async Task<IActionResult> GetIndusModuleInfoForClient([FromQuery] string moduleName, [FromQuery] string connectionString)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(moduleName)) return BadRequest(new { error = "moduleName is required" });
+            var info = await _moduleService.GetIndusModuleInfoForClientAsync(moduleName, connectionString);
+            if (info == null) return NotFound(new { error = $"Module '{moduleName}' not found in IndusEnterpriseDemo" });
+            return Ok(info);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("CheckModuleExistsForClient")]
+    public async Task<IActionResult> CheckModuleExistsForClient([FromQuery] string moduleName, [FromQuery] string connectionString)
+    {
+        try
+        {
+            await using var conn = GetClientConnection(connectionString);
+            var count = await conn.QueryFirstOrDefaultAsync<int>(
+                "SELECT COUNT(*) FROM ModuleMaster WHERE ModuleName = @ModuleName AND IsDeletedTransaction = 0",
+                new { ModuleName = moduleName });
+            return Ok(new { exists = count > 0 });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("CheckDisplayOrderExistsForClient")]
+    public async Task<IActionResult> CheckDisplayOrderExistsForClient([FromQuery] int order, [FromQuery] int setGroupIndex, [FromQuery] string connectionString)
+    {
+        try
+        {
+            await using var conn = GetClientConnection(connectionString);
+            var count = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM ModuleMaster WHERE ModuleHeadDisplayOrder = @order AND SetGroupIndex = @setGroupIndex",
+                new { order, setGroupIndex });
+            return Ok(new { exists = count > 0 });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("CheckGroupIndexInUseForClient")]
+    public async Task<IActionResult> CheckGroupIndexInUseForClient([FromQuery] int groupIndex, [FromQuery] string headName, [FromQuery] string connectionString)
+    {
+        try
+        {
+            await using var conn = GetClientConnection(connectionString);
+            var count = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM ModuleMaster WHERE SetGroupIndex = @groupIndex AND ModuleHeadName != @headName",
+                new { groupIndex, headName = headName ?? "" });
+            return Ok(new { inUse = count > 0 });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    [HttpPost("CreateForClient")]
+    public async Task<IActionResult> CreateModuleForClient([FromBody] CreateModuleForClientRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.ConnectionString))
+                return BadRequest(new { error = "connectionString is required" });
+
+            await using var conn = GetClientConnection(request.ConnectionString);
+            var module = request.Module;
+
+            // Shift display orders if needed
+            if (module.SetGroupIndex.HasValue && module.ModuleHeadDisplayOrder.HasValue)
+            {
+                var orderCount = await conn.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM ModuleMaster WHERE ModuleHeadDisplayOrder = @order AND SetGroupIndex = @sg",
+                    new { order = module.ModuleHeadDisplayOrder.Value, sg = module.SetGroupIndex.Value });
+                if (orderCount > 0)
+                {
+                    await conn.ExecuteAsync(
+                        @"UPDATE ModuleMaster SET ModuleHeadDisplayOrder = ModuleHeadDisplayOrder + 1,
+                          ModuleDisplayOrder = ModuleDisplayOrder + 1
+                          WHERE ModuleHeadDisplayOrder >= @FromOrder AND SetGroupIndex = @SetGroupIndex AND IsDeletedTransaction = 0",
+                        new { FromOrder = module.ModuleHeadDisplayOrder.Value, SetGroupIndex = module.SetGroupIndex.Value });
+                }
+            }
+
+            module.ModuleDisplayOrder = module.ModuleHeadDisplayOrder;
+
+            var insertQuery = @"
+                INSERT INTO ModuleMaster (
+                    ModuleName, ModuleHeadName, ModuleDisplayName,
+                    ModuleHeadDisplayName, ModuleHeadDisplayOrder, ModuleDisplayOrder, SetGroupIndex, CompanyID
+                ) VALUES (
+                    @ModuleName, @ModuleHeadName, @ModuleDisplayName,
+                    @ModuleHeadDisplayName, @ModuleHeadDisplayOrder, @ModuleDisplayOrder, @SetGroupIndex, 2
+                );
+                SELECT CAST(SCOPE_IDENTITY() as int);";
+
+            var newModuleId = await conn.ExecuteScalarAsync<int>(insertQuery, module);
+
+            // Grant admin user full permissions
+            var adminUserId = await conn.ExecuteScalarAsync<int?>(
+                "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin' AND ISNULL(IsBlocked, 0) = 0");
+            if (adminUserId.HasValue)
+            {
+                await conn.ExecuteAsync(
+                    @"INSERT INTO UserModuleAuthentication
+                      (UserID, ModuleID, ModuleName, CanView, CanSave, CanEdit, CanDelete, CanPrint, CanExport, CanCancel, IsHomePage, CompanyID, IsLocked, CreatedBy)
+                      VALUES (@UserID, @ModuleID, @ModuleName, 1, 1, 1, 1, 1, 1, 1, 0, 2, 0, @UserID)",
+                    new { UserID = adminUserId.Value, ModuleID = newModuleId, ModuleName = module.ModuleName });
+            }
+
+            return Ok(new { Message = "Module created successfully in client database.", ModuleId = newModuleId });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+}
+
+public class CreateModuleForClientRequest
+{
+    public string ConnectionString { get; set; } = "";
+    public ModuleDto Module { get; set; } = new();
 }

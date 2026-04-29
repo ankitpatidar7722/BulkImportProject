@@ -92,6 +92,7 @@ public class ToolService : IToolService
                             tool.JobName = fieldValue;
                             break;
                         case "ClientName":
+                        case "LedgerName":
                             tool.ClientName = fieldValue;
                             break;
                         case "ToolRefCode":
@@ -781,7 +782,7 @@ public class ToolService : IToolService
 
             AddDetail("ToolType",              r.ToolType);
             AddDetail("JobName",               tool.JobName);
-            AddDetail("ClientName",            tool.ClientName);
+            AddDetail("LedgerName",            tool.ClientName);
             AddDetail("Manufacturer",          tool.Manufacturer);
             if (tool.NoOfTeeth.HasValue)           AddDetail("NoOfTeeth",           tool.NoOfTeeth.ToString());
             if (tool.CircumferenceMM.HasValue)     AddDetail("CircumferenceMM",     tool.CircumferenceMM.ToString());

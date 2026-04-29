@@ -11,16 +11,33 @@ import DataGrid, {
     GroupPanel,
     Editing,
     ColumnChooser,
-    Scrolling
+    Scrolling,
+    Button,
+    LoadPanel
 } from 'devextreme-react/data-grid';
-import { getAllModules, deleteModule, ModuleDto } from '../services/api';
+import { 
+    getAllModules, 
+    deleteModule, 
+    ModuleDto, 
+    getItemGroupComparison, 
+    ItemGroupComparisonDto,
+    syncItemGroups
+} from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
+import { Popup } from 'devextreme-react/popup';
 import 'devextreme/dist/css/dx.light.css';
 
 const ModuleAuthority: React.FC = () => {
     const navigate = useNavigate();
     const { showMessage, ModalRenderer } = useMessageModal();
     const [modules, setModules] = useState<ModuleDto[]>([]);
+    
+    // Group Management Popup State
+    const [isGroupPopupVisible, setIsGroupPopupVisible] = useState(false);
+    const [groupComparisonData, setGroupComparisonData] = useState<ItemGroupComparisonDto[]>([]);
+    const [isGroupLoading, setIsGroupLoading] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [activeGroupType, setActiveGroupType] = useState<'Item' | 'Ledger' | 'Tool'>('Item');
 
     useEffect(() => {
         loadData();
@@ -33,6 +50,35 @@ const ModuleAuthority: React.FC = () => {
         } catch (error) {
             console.error(error);
             showMessage('error', 'Load Error', 'Failed to load module data. Please try refreshing the page.');
+        }
+    };
+
+    const handleManageGroupsClick = async (type: 'Item' | 'Ledger' | 'Tool') => {
+        setActiveGroupType(type);
+        setIsGroupPopupVisible(true);
+        setIsGroupLoading(true);
+        try {
+            const data = await getItemGroupComparison(type);
+            setGroupComparisonData(data);
+        } catch (error) {
+            console.error(error);
+            showMessage('error', 'Error', `Failed to fetch ${type} comparison data.`);
+        } finally {
+            setIsGroupLoading(false);
+        }
+    };
+
+    const handleSaveSync = async () => {
+        setIsSaving(true);
+        try {
+            await syncItemGroups(groupComparisonData, activeGroupType);
+            showMessage('success', 'Success', `${activeGroupType} groups synchronized successfully!`);
+            handleManageGroupsClick(activeGroupType);
+        } catch (error) {
+            console.error(error);
+            showMessage('error', 'Sync Failed', `Failed to synchronize ${activeGroupType} groups.`);
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -145,12 +191,110 @@ const ModuleAuthority: React.FC = () => {
                         width={120}
                     />
 
-                    {/* Hidden columns available in chooser */}
+                    {/* Action Buttons Column */}
+                    <Column type="buttons" width={120}>
+                        <Button
+                            icon="group"
+                            hint="Manage Groups"
+                            visible={(e: any) => 
+                                e.row.data.moduleName === 'Masters.aspx' || 
+                                e.row.data.moduleName === 'LedgerMaster.aspx' ||
+                                e.row.data.moduleName === 'ToolMaster.aspx'
+                            }
+                            onClick={(e: any) => {
+                                let type: 'Item' | 'Ledger' | 'Tool' = 'Item';
+                                if (e.row.data.moduleName === 'LedgerMaster.aspx') type = 'Ledger';
+                                else if (e.row.data.moduleName === 'ToolMaster.aspx') type = 'Tool';
+                                
+                                handleManageGroupsClick(type);
+                            }}
+                        />
+                        <Button name="edit" />
+                        <Button name="delete" />
+                    </Column>
+
                     <Column dataField="moduleHeadDisplayName" caption="Head Display Name" visible={false} />
                     <Column dataField="moduleDisplayOrder" caption="Display Order" visible={false} />
                     <Column dataField="moduleHeadDisplayOrder" caption="Head Display Order" visible={false} />
                 </DataGrid>
             </div>
+
+            {/* Group Management Popup */}
+            <Popup
+                visible={isGroupPopupVisible}
+                onHiding={() => setIsGroupPopupVisible(false)}
+                dragEnabled={false}
+                hideOnOutsideClick={false}
+                showTitle={true}
+                title={`${activeGroupType} Group Sync Status`}
+                width={800}
+                height={600}
+            >
+                <div className="p-4 h-full flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                        <p className="text-sm text-gray-500">
+                            Syncing {activeGroupType} groups from Source to Client database.
+                        </p>
+                        <button 
+                            onClick={() => handleManageGroupsClick(activeGroupType)}
+                            className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded border border-blue-200 hover:bg-blue-100"
+                        >
+                            Refresh
+                        </button>
+                    </div>
+                    <div className="flex-grow border rounded-lg overflow-hidden">
+                        <DataGrid
+                            dataSource={groupComparisonData}
+                            keyExpr="itemGroupId"
+                            showBorders={false}
+                            height="100%"
+                        >
+                            <LoadPanel enabled={isGroupLoading} />
+                            <Editing mode="cell" allowUpdating={true} />
+                            
+                            <Column dataField="itemGroupId" caption="ID" width={60} allowEditing={false} />
+                            <Column dataField="itemGroupName" caption={`${activeGroupType} Group Name`} allowEditing={false} />
+                            <Column 
+                                dataField="status" 
+                                caption="Status" 
+                                alignment="center" 
+                                width={100}
+                                dataType="boolean"
+                            />
+                            <Column 
+                                caption="Details" 
+                                allowEditing={false}
+                                cellRender={(data: any) => {
+                                    const row = data.data;
+                                    if (!row.existsInClient) return <span className="text-xs text-red-500 font-medium">Inactive</span>;
+                                    if (row.isDeletedInClient) return <span className="text-xs text-orange-500 font-medium">Inactive</span>;
+                                    return <span className="text-xs text-green-600 font-medium">Active</span>;
+                                }}
+                            />
+                        </DataGrid>
+                    </div>
+                    <div className="mt-4 flex justify-end gap-3">
+                        <button 
+                            onClick={() => setIsGroupPopupVisible(false)}
+                            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                        >
+                            Close
+                        </button>
+                        <button 
+                            onClick={handleSaveSync}
+                            disabled={isSaving}
+                            className={`px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all font-medium flex items-center gap-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                        >
+                            {isSaving ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                    Saving...
+                                </>
+                            ) : 'Save Changes'}
+                        </button>
+                    </div>
+                </div>
+            </Popup>
         </div>
     );
 };

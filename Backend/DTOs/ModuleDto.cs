@@ -50,3 +50,13 @@ public class ModuleSystemDefaultsDto
     public int SuggestedHeadDisplayOrder { get; set; }
     public int SuggestedDisplayOrder { get; set; }
 }
+
+public class ItemGroupComparisonDto
+{
+    public int ItemGroupId { get; set; }
+    public string ItemGroupName { get; set; } = string.Empty;
+    public bool ExistsInSource { get; set; }
+    public bool ExistsInClient { get; set; }
+    public bool IsDeletedInClient { get; set; }
+    public bool Status { get; set; } // The final CheckBox value: ExistsInBoth AND !IsDeleted
+}

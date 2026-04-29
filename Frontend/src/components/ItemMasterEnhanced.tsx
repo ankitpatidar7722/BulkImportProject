@@ -1561,11 +1561,14 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
 
         // Helper: Build dropdown params that include current value if missing
         const getDropdownParams = (options: any[]) => (params: any) => {
-            const currentVal = params.value;
-            const vals = options.map(o => String(o));
-            const currentStr = currentVal !== null && currentVal !== undefined ? String(currentVal) : '';
-            if (currentStr && !vals.includes(currentStr)) vals.unshift(currentStr);
-            return { values: vals };
+            const values = ['', ...options.map(o => String(o))];
+            if (params.value !== undefined && params.value !== null && params.value !== '') {
+                const strVal = String(params.value);
+                if (!values.includes(strVal)) {
+                    values.push(strVal);
+                }
+            }
+            return { values };
         };
 
 

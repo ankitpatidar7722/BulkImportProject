@@ -123,6 +123,7 @@ public class LedgerController : ControllerBase
                 PropertyNameCaseInsensitive = true,
                 NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
             };
+            options.Converters.Add(new Backend.Helpers.NullableDateTimeConverter());
             request = System.Text.Json.JsonSerializer.Deserialize<ValidateLedgersRequest>(payload.GetRawText(), options);
         }
         catch (System.Text.Json.JsonException jex)
@@ -188,6 +189,7 @@ public class LedgerController : ControllerBase
                 PropertyNameCaseInsensitive = true,
                 NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
             };
+            options.Converters.Add(new Backend.Helpers.NullableDateTimeConverter());
             request = System.Text.Json.JsonSerializer.Deserialize<ImportLedgersRequest>(payload.GetRawText(), options);
         }
         catch (System.Text.Json.JsonException jex)

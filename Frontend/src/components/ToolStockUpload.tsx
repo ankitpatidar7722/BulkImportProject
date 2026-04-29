@@ -269,7 +269,14 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
         setIsLoading(true);
 
         try {
-            const result = await validateToolStock(gridData);
+            const sanitizedData = gridData.map(row => ({
+                ...row,
+                receiptQuantity: Number(row.receiptQuantity) || 0,
+                landedRate: Number(row.landedRate) || 0
+            }));
+
+
+            const result = await validateToolStock(sanitizedData);
             setValidationResult(result);
             setMode('validated');
 
@@ -325,7 +332,13 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
 
         try {
             // Re-validate (duplicate gate)
-            const reValidation = await validateToolStock(gridData);
+            const sanitizedData = gridData.map(row => ({
+                ...row,
+                receiptQuantity: Number(row.receiptQuantity) || 0,
+                landedRate: Number(row.landedRate) || 0
+            }));
+
+            const reValidation = await validateToolStock(sanitizedData);
             setValidationResult(reValidation);
 
             const duplicateRows = reValidation.rows.filter((r: ToolStockRowValidation) =>
@@ -661,9 +674,9 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
     const onCellValueChanged = useCallback(async (params: any) => {
         const { colDef, data, newValue } = params;
 
-        // Update the gridData state with the new value
-        setGridData(prevData => {
-            const newData = [...prevData];
+        // 1. Update the gridData state to keep it in sync with grid edits
+        setGridData(prev => {
+            const newData = [...prev];
             const rowIndex = newData.indexOf(data);
             if (rowIndex !== -1) {
                 newData[rowIndex] = { ...data };
@@ -671,11 +684,11 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             return newData;
         });
 
-        // Clear validation when data changes
-        setValidationResult(null);
+        // 2. Keep validation visible but mark as invalid so Save button hides
+        setValidationResult(prev => prev ? { ...prev, isValid: false } : null);
         setMode('preview');
 
-        // Special handling for warehouse changes
+        // 3. Special handling for warehouse dependencies
         if (colDef.field === 'warehouseName') {
             data.binName = '';
             if (newValue) {
@@ -753,12 +766,8 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
         {
             field: 'warehouseName', headerName: 'WarehouseName', width: 170, editable: mode !== 'loaded',
             cellEditor: 'agSelectCellEditor',
-            cellEditorParams: (params: any) => {
-                const currentVal = params.value;
+            cellEditorParams: (_params: any) => {
                 const options = [...warehouseNames];
-                if (currentVal && !options.includes(currentVal)) {
-                    options.unshift(currentVal);
-                }
                 return { values: ['', ...options] };
             },
             cellRenderer: DropdownCellRenderer
@@ -768,15 +777,11 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
             cellEditor: 'agSelectCellEditor',
             cellEditorParams: (params: any) => {
                 const whName = params.data?.warehouseName;
-                const currentVal = params.value;
                 const bins = whName && binsCache[whName]
                     ? binsCache[whName].map(b => b.binName || '').filter(Boolean)
                     : [];
                 
                 const options = [...bins];
-                if (currentVal && !options.includes(currentVal)) {
-                    options.unshift(currentVal);
-                }
                 return { values: ['', ...options] };
             },
             cellRenderer: DropdownCellRenderer
@@ -796,7 +801,17 @@ const ToolStockUpload: React.FC<ToolStockUploadProps> = ({ toolGroupId, toolGrou
                     if (!rowValidation) return null;
 
                     const cellVal = findCellValidation(rowValidation, params.colDef.field, params.colDef.headerName);
-                    if (cellVal) return cellVal.validationMessage;
+                    if (cellVal) {
+                        // Hide specific "not found under Warehouse" message for BinName if requested by user
+                        if (params.colDef.field === 'binName' && cellVal.validationMessage?.includes('not found under Warehouse')) {
+                            return null;
+                        }
+                        // User requested to hide the tooltip on WarehouseName
+                        if (params.colDef.field === 'warehouseName') {
+                            return null;
+                        }
+                        return cellVal.validationMessage;
+                    }
 
                     if (rowValidation.rowStatus === 'Duplicate') {
                         return rowValidation.errorMessage || 'Duplicate row detected';

@@ -3,7 +3,7 @@ import {
     CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw,
     Database, Server, ChevronRight, ArrowLeft, CheckCircle2, Building2,
     GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers, AlertTriangle,
-    Download
+    Download, PackagePlus
 } from 'lucide-react';
 import {
     getCompanySubscriptions,
@@ -46,6 +46,7 @@ import {
 } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
 import MessageFormatPopup from '../components/MessageFormatPopup';
+import NewModuleAdditionTab from '../components/NewModuleAdditionTab';
 
 import DataGrid, {
     Column,
@@ -116,7 +117,7 @@ const CompanySubscription: React.FC = () => {
     const [deleteAuthPassword, setDeleteAuthPassword] = useState('');
     const [deleteAuthReason, setDeleteAuthReason] = useState('');
     const [isDeletingRecord, setIsDeletingRecord] = useState(false);
-    const [editTab, setEditTab] = useState<1 | 2 | 3>(1);
+    const [editTab, setEditTab] = useState<1 | 2 | 3 | 4>(1);
 
     // ─── Module Settings State ───
     const [moduleData, setModuleData] = useState<ModuleSettingsRow[]>([]);
@@ -1860,6 +1861,7 @@ const CompanySubscription: React.FC = () => {
                                     { id: 1 as const, label: 'Company Detail', icon: <CreditCard className="w-3.5 h-3.5" /> },
                                     { id: 2 as const, label: 'Module Settings', icon: <Settings className="w-3.5 h-3.5" /> },
                                     { id: 3 as const, label: 'Module Group Authority', icon: <Layers className="w-3.5 h-3.5" /> },
+                                    { id: 4 as const, label: 'New Module Addition', icon: <PackagePlus className="w-3.5 h-3.5" /> },
                                 ]).map(tab => (
                                     <button key={tab.id} onClick={() => setEditTab(tab.id)}
                                         className={`flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-all duration-150 ${editTab === tab.id
@@ -2107,6 +2109,23 @@ const CompanySubscription: React.FC = () => {
                                     </div>
                                 )}
 
+                                {/* Tab 4: New Module Addition */}
+                                {editTab === 4 && (
+                                    <div className="flex flex-col" style={{ minHeight: '520px' }}>
+                                        {formData.conn_String ? (
+                                            <NewModuleAdditionTab 
+                                                connectionString={formData.conn_String} 
+                                                companyName={formData.companyName}
+                                            />
+                                        ) : (
+                                            <div className="flex-1 flex flex-col items-center justify-center text-center">
+                                                <Database className="w-10 h-10 text-gray-200 dark:text-gray-700 mb-3" />
+                                                <p className="text-[13px] text-gray-400 dark:text-gray-500">No connection string available for this subscription.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                             </div>
 
                             {/* Footer - Dynamic buttons based on tab */}
@@ -2135,6 +2154,9 @@ const CompanySubscription: React.FC = () => {
                                         {isModuleSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                                         {isModuleSaving ? 'Applying...' : 'Apply to Client'}
                                     </button>
+                                )}
+                                {editTab === 4 && (
+                                    <div id="module-save-portal"></div>
                                 )}
                             </div>
                         </div>

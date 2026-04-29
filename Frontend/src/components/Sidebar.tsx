@@ -5,7 +5,6 @@ import {
     Upload,
     PackageOpen,
     Building2,
-    ShieldCheck,
     Layers,
     CreditCard,
     Trash2,
@@ -33,8 +32,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
         { name: 'Import Master', path: '/import-master', icon: Upload },
         { name: 'Stock Upload', path: '/stock-upload', icon: PackageOpen },
         { name: 'Company Master', path: '/company-master', icon: Building2 },
-        { name: 'New Module Addition', path: '/module-authority', icon: ShieldCheck },
-        { name: 'Module Authority', path: '/dynamic-module', icon: Layers },
+        // { name: 'Module Authority', path: '/dynamic-module', icon: Layers },- because after discuss with mahesh sir then i recommented
         { name: 'Content Authority', path: '/content-authority', icon: BookOpen },
         { name: 'ERP Transaction Delete', path: '/erp-transaction-delete', icon: Trash2 },
     ];
@@ -104,8 +102,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
                                         to={item.path}
                                         onClick={() => window.innerWidth < 768 && onClose()}
                                         className={`flex items-center ${isCollapsed ? 'justify-center px-3' : 'gap-3 px-4'} py-3 rounded-md transition-all duration-200 group relative ${isActive
-                                                ? 'bg-blue-600 text-white shadow-md'
-                                                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                                            ? 'bg-blue-600 text-white shadow-md'
+                                            : 'text-gray-400 hover:bg-gray-800 hover:text-white'
                                             }`}
                                         title={isCollapsed ? item.name : ''}
                                     >

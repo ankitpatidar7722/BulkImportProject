@@ -6,6 +6,7 @@ import {
     getModuleSystemDefaults,
     checkModuleExists,
     checkDisplayOrderExists,
+    checkGroupIndexInUse,
     createModule,
     updateModule,
     ModuleDto,
@@ -174,6 +175,7 @@ const CreateModule: React.FC = () => {
     // Validation debounce refs
     const moduleNameCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const orderCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const groupIndexCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // ── On mount: load Indus modules + system defaults ───────────
     useEffect(() => {
@@ -363,6 +365,25 @@ const CreateModule: React.FC = () => {
         }, 600);
     }, []);
 
+    const triggerGroupIndexCheck = useCallback((index: string, headName: string) => {
+        if (groupIndexCheckTimer.current) clearTimeout(groupIndexCheckTimer.current);
+        groupIndexCheckTimer.current = setTimeout(async () => {
+            const idx = parseInt(index);
+            if (isNaN(idx)) return;
+            try {
+                const inUse = await checkGroupIndexInUse(idx, headName);
+                if (inUse) {
+                    setErrors(prev => ({
+                        ...prev,
+                        setGroupIndex: 'This Index is already assigned to another Module Head Name.',
+                    }));
+                } else {
+                    setErrors(prev => ({ ...prev, setGroupIndex: undefined }));
+                }
+            } catch { /* ignore */ }
+        }, 600);
+    }, []);
+
     // ── Generic field change handler ─────────────────────────────────
     const handleChange = (field: keyof FormState, value: string) => {
         setForm(prev => {
@@ -379,6 +400,10 @@ const CreateModule: React.FC = () => {
                     field === 'moduleHeadDisplayOrder' ? value : updated.moduleHeadDisplayOrder,
                     field === 'setGroupIndex' ? value : updated.setGroupIndex,
                 );
+                
+                if (field === 'setGroupIndex') {
+                    triggerGroupIndexCheck(value, updated.moduleHeadName);
+                }
             }
 
             // Trigger module name check on manual entry
@@ -426,7 +451,7 @@ const CreateModule: React.FC = () => {
 
     // ── Validation ───────────────────────────────────────────────────
     const validate = (): boolean => {
-        const newErrors: FieldErrors = {};
+        const newErrors: FieldErrors = { ...errors };
 
         if (!form.moduleName.trim()) {
             newErrors.moduleName = 'Module Name is required.';
@@ -443,7 +468,9 @@ const CreateModule: React.FC = () => {
         }
 
         setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+        // Filter out "shifted" warning from blocking save if it's just a warning. 
+        // But your requirement for Group Index is a "Must Not be assigned", so we block.
+        return !newErrors.moduleName && !newErrors.setGroupIndex && !newErrors.moduleHeadDisplayOrder;
     };
 
     // ── Save ─────────────────────────────────────────────────────────
@@ -614,7 +641,54 @@ const CreateModule: React.FC = () => {
                                 </div>
                             </FormField>
 
-                            {/* Module Name Dropdown */}
+                            {/* Module Display Name Dropdown (Swapped) */}
+                            <FormField id="moduleDisplayName" label="Module Display Name" hint="How this module appears in menus">
+                                <div className="cm-search-dropdown" ref={displayDropdownRef}>
+                                    <div className="cm-search-input-wrap">
+                                        <svg className="cm-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
+                                        </svg>
+                                        <input
+                                            id="moduleDisplayName"
+                                            type="text"
+                                            className="cm-input cm-search-input"
+                                            placeholder="Select Display Name..."
+                                            value={displaySearch}
+                                            onChange={e => {
+                                                setDisplaySearch(e.target.value);
+                                                setDisplayDropdownOpen(true);
+                                                handleChange('moduleDisplayName', e.target.value);
+                                            }}
+                                            onFocus={() => setDisplayDropdownOpen(true)}
+                                            autoComplete="off"
+                                        />
+                                        <svg className={`cm-chevron ${displayDropdownOpen ? 'cm-chevron--open' : ''}`}
+                                            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                                            onClick={() => setDisplayDropdownOpen(v => !v)}>
+                                            <path d="M6 9l6 6 6-6" />
+                                        </svg>
+                                    </div>
+
+                                    {displayDropdownOpen && (
+                                        <div className="cm-dropdown-list" role="listbox">
+                                            {uniqueFilteredDisplays.length === 0 ? (
+                                                <div className="cm-dropdown-status">No matches</div>
+                                            ) : (
+                                                uniqueFilteredDisplays.map(display => (
+                                                    <button key={display} type="button" className={`cm-dropdown-item ${form.moduleDisplayName === display ? 'cm-dropdown-item--active' : ''}`}
+                                                        onMouseDown={e => { e.preventDefault(); handleDisplaySelect(display); }}>
+                                                        {display}
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </FormField>
+                        </FieldGroup>
+
+                        <FieldGroup>
+                            {/* Module Name Dropdown (Swapped) */}
                             <FormField id="moduleName" label="Module Name" required error={errors.moduleName} hint="Specific module filename (e.g. LedgerMaster.aspx)">
                                 <div className="cm-search-dropdown" ref={nameDropdownRef}>
                                     <div className="cm-search-input-wrap">
@@ -659,55 +733,8 @@ const CreateModule: React.FC = () => {
                                     )}
                                 </div>
                             </FormField>
-                        </FieldGroup>
 
-                        <FieldGroup>
-                             {/* Module Display Name Dropdown */}
-                             <FormField id="moduleDisplayName" label="Module Display Name" hint="How this module appears in menus">
-                                <div className="cm-search-dropdown" ref={displayDropdownRef}>
-                                    <div className="cm-search-input-wrap">
-                                        <svg className="cm-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
-                                        </svg>
-                                        <input
-                                            id="moduleDisplayName"
-                                            type="text"
-                                            className="cm-input cm-search-input"
-                                            placeholder="Select Display Name..."
-                                            value={displaySearch}
-                                            onChange={e => {
-                                                setDisplaySearch(e.target.value);
-                                                setDisplayDropdownOpen(true);
-                                                handleChange('moduleDisplayName', e.target.value);
-                                            }}
-                                            onFocus={() => setDisplayDropdownOpen(true)}
-                                            autoComplete="off"
-                                        />
-                                        <svg className={`cm-chevron ${displayDropdownOpen ? 'cm-chevron--open' : ''}`}
-                                            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-                                            onClick={() => setDisplayDropdownOpen(v => !v)}>
-                                            <path d="M6 9l6 6 6-6" />
-                                        </svg>
-                                    </div>
-
-                                    {displayDropdownOpen && (
-                                        <div className="cm-dropdown-list" role="listbox">
-                                            {uniqueFilteredDisplays.length === 0 ? (
-                                                <div className="cm-dropdown-status">No matches</div>
-                                            ) : (
-                                                uniqueFilteredDisplays.map(display => (
-                                                    <button key={display} type="button" className={`cm-dropdown-item ${form.moduleDisplayName === display ? 'cm-dropdown-item--active' : ''}`}
-                                                        onMouseDown={e => { e.preventDefault(); handleDisplaySelect(display); }}>
-                                                        {display}
-                                                    </button>
-                                                ))
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </FormField>
-
-                            {/* Module Head Display Name - Keep as read-only text for simplicity as it usually matches Head Name or is fixed */}
+                            {/* Module Head Display Name */}
                             <FormField id="moduleHeadDisplayName" label="Module Head Display Name" readOnly>
                                 <input
                                     id="moduleHeadDisplayName"

@@ -82,7 +82,7 @@ const ImageCell: React.FC<{ src: string; alt: string; onPreview: (src: string, t
 
 // ─── Image Preview Modal ───────────────────────────────────────────────────────
 const ImagePreviewModal: React.FC<{ src: string; title: string; onClose: () => void }> = ({ src, title, onClose }) => {
-    const [viewMode, setViewMode] = useState<'2d' | '3d'>('3d');
+    const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-8 bg-black/90 backdrop-blur-xl animate-in fade-in duration-300" onClick={onClose}>
@@ -109,8 +109,9 @@ const ImagePreviewModal: React.FC<{ src: string; title: string; onClose: () => v
                         </button>
                         <button 
                             onClick={() => setViewMode('3d')}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === '3d' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-gray-400 hover:text-gray-600'}`}
+                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${viewMode === '3d' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-gray-400 hover:text-gray-600'}`}
                         >
+                            <Zap className={`w-3 h-3 ${viewMode === '3d' ? 'text-yellow-300' : 'hidden'}`} />
                             3D Interactive
                         </button>
                     </div>

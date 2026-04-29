@@ -293,7 +293,7 @@ public class ModuleService : IModuleService
     // ─────────────────────────────────────────────────────────
 
     private const string IndusConnStr =
-        "Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseDemo;" +
+        "Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseKeyline;" +
         "User ID=indus;Password=Param@99811;Persist Security Info=True;TrustServerCertificate=True";
 
     /// <summary>Gets all modules from IndusEnterpriseDemo.ModuleMaster.</summary>
@@ -450,10 +450,18 @@ public class ModuleService : IModuleService
     /// <summary>Returns true if the given display order is already used for this SetGroupIndex.</summary>
     public async Task<bool> CheckDisplayOrderExistsAsync(int order, int setGroupIndex)
     {
-        var count = await _connection.QueryFirstOrDefaultAsync<int>(
-            @"SELECT COUNT(*) FROM ModuleMaster
-              WHERE ModuleHeadDisplayOrder = @Order AND SetGroupIndex = @SetGroupIndex AND IsDeletedTransaction = 0",
-            new { Order = order, SetGroupIndex = setGroupIndex });
+        var count = await _connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(1) FROM ModuleMaster WHERE ModuleHeadDisplayOrder = @order AND SetGroupIndex = @setGroupIndex",
+            new { order, setGroupIndex });
+        return count > 0;
+    }
+
+    public async Task<bool> CheckGroupIndexInUseAsync(int groupIndex, string currentHeadName)
+    {
+        // Check if this GroupIndex is already used by a DIFFERENT ModuleHeadName
+        var count = await _connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(1) FROM ModuleMaster WHERE SetGroupIndex = @groupIndex AND ModuleHeadName != @currentHeadName",
+            new { groupIndex, currentHeadName = currentHeadName ?? "" });
         return count > 0;
     }
 
@@ -468,5 +476,313 @@ public class ModuleService : IModuleService
                 AND SetGroupIndex = @SetGroupIndex
                 AND IsDeletedTransaction = 0",
             new { FromOrder = fromOrder, SetGroupIndex = setGroupIndex });
+    }
+
+    /// <summary>
+    /// Comparison logic for Masters.aspx sub-modules (ItemGroupMaster table).
+    /// Compares Source (IndusEnterpriseKeyline) vs Current (Login) DB.
+    /// </summary>
+    public async Task<List<ItemGroupComparisonDto>> GetItemGroupComparisonAsync(string type)
+    {
+        var result = new List<ItemGroupComparisonDto>();
+        string tableName = "ItemGroupMaster";
+        string idCol = "ItemGroupID";
+        string nameCol = "ItemGroupName";
+
+        if (type == "Ledger")
+        {
+            tableName = "LedgerGroupMaster";
+            idCol = "LedgerGroupID";
+            nameCol = "LedgerGroupNameDisplay"; // User's corrected column
+        }
+        else if (type == "Tool")
+        {
+            tableName = "ToolGroupMaster";
+            idCol = "ToolGroupID";
+            nameCol = "ToolGroupName";
+        }
+
+        try
+        {
+            // 1. Fetch from Source (Indus)
+            using var sourceConn = new SqlConnection(IndusConnStr);
+            await sourceConn.OpenAsync();
+            
+            var sourceRows = await sourceConn.QueryAsync<dynamic>(
+                $"SELECT {idCol} AS ID, {nameCol} AS NAME FROM {tableName}");
+
+            // 2. Fetch from Client (Current)
+            var clientMap = new Dictionary<int, int>();
+            try 
+            {
+                var clientRows = await _connection.QueryAsync<dynamic>(
+                    $"SELECT {idCol} AS ID, ISNULL(IsDeletedTransaction, 0) AS DEL FROM {tableName}");
+                foreach(var c in clientRows) {
+                    clientMap[Convert.ToInt32(c.ID)] = Convert.ToInt32(c.DEL);
+                }
+            }
+            catch { }
+
+            // 3. Mapping
+            foreach (var row in sourceRows)
+            {
+                int id = Convert.ToInt32(row.ID);
+                string name = row.NAME?.ToString() ?? "";
+                
+                bool existsInClient = clientMap.ContainsKey(id);
+                bool isDeleted = existsInClient && clientMap[id] == 1;
+
+                result.Add(new ItemGroupComparisonDto
+                {
+                    ItemGroupId = id,
+                    ItemGroupName = name,
+                    ExistsInSource = true,
+                    ExistsInClient = existsInClient,
+                    IsDeletedInClient = isDeleted,
+                    Status = existsInClient && !isDeleted
+                });
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            try { await File.AppendAllTextAsync("debug_log.txt", $"[{DateTime.Now}] Get{type}Comparison ERROR: {ex.Message}\n"); } catch {}
+            return result;
+        }
+    }
+
+    public async Task<bool> SyncItemGroupsAsync(string type, List<ItemGroupComparisonDto> syncData)
+    {
+        string tableName = "ItemGroupMaster";
+        string idCol = "ItemGroupID";
+
+        if (type == "Ledger")
+        {
+            tableName = "LedgerGroupMaster";
+            idCol = "LedgerGroupID";
+        }
+        else if (type == "Tool")
+        {
+            tableName = "ToolGroupMaster";
+            idCol = "ToolGroupID";
+        }
+
+        try
+        {
+            foreach (var item in syncData)
+            {
+                var existsInClient = await _connection.ExecuteScalarAsync<int>(
+                    $"SELECT COUNT(1) FROM {tableName} WHERE {idCol} = @ID", new { ID = item.ItemGroupId });
+
+                if (item.Status) // User wants it Active
+                {
+                    if (existsInClient > 0)
+                    {
+                        await _connection.ExecuteAsync(
+                            $"UPDATE {tableName} SET IsDeletedTransaction = 0 WHERE {idCol} = @ID", 
+                            new { ID = item.ItemGroupId });
+                    }
+                    else
+                    {
+                        using var sourceConn = new SqlConnection(IndusConnStr);
+                        var fullRow = await sourceConn.QueryFirstOrDefaultAsync<dynamic>(
+                            $"SELECT * FROM {tableName} WHERE {idCol} = @ID", new { ID = item.ItemGroupId });
+
+                        if (fullRow != null)
+                        {
+                            var dict = (IDictionary<string, object>)fullRow;
+                            string columns = string.Join(",", dict.Keys);
+                            string values = string.Join(",", dict.Keys.Select(k => "@" + k));
+                            
+                            if (dict.ContainsKey("IsDeletedTransaction")) dict["IsDeletedTransaction"] = 0;
+
+                            string insertQuery = $@"
+                                SET IDENTITY_INSERT {tableName} ON; 
+                                INSERT INTO {tableName} ({columns}) VALUES ({values}); 
+                                SET IDENTITY_INSERT {tableName} OFF;";
+
+                            await _connection.ExecuteAsync(insertQuery, dict);
+                        }
+                    }
+                }
+                else // User wants it Deleted
+                {
+                    if (existsInClient > 0)
+                    {
+                        await _connection.ExecuteAsync(
+                            $"UPDATE {tableName} SET IsDeletedTransaction = 1 WHERE {idCol} = @ID", 
+                            new { ID = item.ItemGroupId });
+                    }
+                }
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            try { await File.AppendAllTextAsync("debug_log.txt", $"[{DateTime.Now}] Sync{type} ERROR: {ex.Message}\n"); } catch {}
+            return false;
+        }
+    }
+
+    public async Task<IndusModuleInfoDto?> GetIndusModuleInfoForClientAsync(string moduleName, string connectionString)
+    {
+        try
+        {
+            await using var indusConn = new SqlConnection(IndusConnStr);
+            var row = await indusConn.QueryFirstOrDefaultAsync<dynamic>(
+                @"SELECT TOP 1 ModuleName, ModuleDisplayName, ModuleHeadName, ModuleHeadDisplayName
+                  FROM ModuleMaster
+                  WHERE ModuleName = @ModuleName AND IsDeletedTransaction = 0",
+                new { ModuleName = moduleName });
+
+            if (row == null) return null;
+
+            var info = new IndusModuleInfoDto
+            {
+                ModuleName            = row.ModuleName,
+                ModuleDisplayName     = row.ModuleDisplayName,
+                ModuleHeadName        = row.ModuleHeadName,
+                ModuleHeadDisplayName = row.ModuleHeadDisplayName,
+            };
+
+            if (!string.IsNullOrWhiteSpace(info.ModuleHeadName) && !string.IsNullOrWhiteSpace(connectionString))
+            {
+                await using var clientConn = new SqlConnection(EnsureTrust(connectionString));
+                var existingSetGroup = await clientConn.QueryFirstOrDefaultAsync<int?>(
+                    @"SELECT TOP 1 SetGroupIndex FROM ModuleMaster
+                      WHERE ModuleHeadName = @HeadName AND IsDeletedTransaction = 0",
+                    new { HeadName = info.ModuleHeadName });
+
+                if (existingSetGroup.HasValue)
+                {
+                    info.SetGroupIndex = existingSetGroup.Value;
+                    var maxOrder = await clientConn.QueryFirstOrDefaultAsync<int?>(
+                        @"SELECT MAX(ModuleHeadDisplayOrder) FROM ModuleMaster
+                          WHERE SetGroupIndex = @SetGroupIndex AND IsDeletedTransaction = 0",
+                        new { SetGroupIndex = existingSetGroup.Value });
+                    info.SuggestedHeadDisplayOrder = (maxOrder ?? 0) + 1;
+                }
+            }
+            return info;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleService] GetIndusModuleInfoForClientAsync error: {ex.Message}");
+            return null;
+        }
+    }
+
+    public async Task<List<ItemGroupComparisonDto>> GetItemGroupComparisonForClientAsync(string type, string connectionString)
+    {
+        var result = new List<ItemGroupComparisonDto>();
+        string tableName = "ItemGroupMaster";
+        string idCol = "ItemGroupID";
+        string nameCol = "ItemGroupName";
+
+        if (type == "Ledger")
+        {
+            tableName = "LedgerGroupMaster";
+            idCol = "LedgerGroupID";
+            nameCol = "LedgerGroupNameDisplay";
+        }
+        else if (type == "Tool")
+        {
+            tableName = "ToolGroupMaster";
+            idCol = "ToolGroupID";
+            nameCol = "ToolGroupName";
+        }
+
+        try
+        {
+            using var sourceConn = new SqlConnection(IndusConnStr);
+            var sourceRows = await sourceConn.QueryAsync<dynamic>($"SELECT {idCol} AS ID, {nameCol} AS NAME FROM {tableName}");
+
+            await using var clientConn = new SqlConnection(EnsureTrust(connectionString));
+            var clientMap = new Dictionary<int, int>();
+            try 
+            {
+                var clientRows = await clientConn.QueryAsync<dynamic>($"SELECT {idCol} AS ID, ISNULL(IsDeletedTransaction, 0) AS DEL FROM {tableName}");
+                foreach(var c in clientRows) clientMap[Convert.ToInt32(c.ID)] = Convert.ToInt32(c.DEL);
+            }
+            catch { }
+
+            foreach (var row in sourceRows)
+            {
+                int id = Convert.ToInt32(row.ID);
+                bool existsInClient = clientMap.ContainsKey(id);
+                bool isDeleted = existsInClient && clientMap[id] == 1;
+                result.Add(new ItemGroupComparisonDto {
+                    ItemGroupId = id,
+                    ItemGroupName = row.NAME?.ToString() ?? "",
+                    ExistsInSource = true,
+                    ExistsInClient = existsInClient,
+                    IsDeletedInClient = isDeleted,
+                    Status = existsInClient && !isDeleted
+                });
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleService] GetItemGroupComparisonForClientAsync {type} error: {ex.Message}");
+            return result;
+        }
+    }
+
+    public async Task<bool> SyncItemGroupsForClientAsync(string type, List<ItemGroupComparisonDto> syncData, string connectionString)
+    {
+        string tableName = "ItemGroupMaster";
+        string idCol = "ItemGroupID";
+        if (type == "Ledger") { tableName = "LedgerGroupMaster"; idCol = "LedgerGroupID"; }
+        else if (type == "Tool") { tableName = "ToolGroupMaster"; idCol = "ToolGroupID"; }
+
+        try
+        {
+            await using var clientConn = new SqlConnection(EnsureTrust(connectionString));
+            foreach (var item in syncData)
+            {
+                var existsInClient = await clientConn.ExecuteScalarAsync<int>($"SELECT COUNT(1) FROM {tableName} WHERE {idCol} = @ID", new { ID = item.ItemGroupId });
+
+                if (item.Status)
+                {
+                    if (existsInClient > 0)
+                        await clientConn.ExecuteAsync($"UPDATE {tableName} SET IsDeletedTransaction = 0 WHERE {idCol} = @ID", new { ID = item.ItemGroupId });
+                    else
+                    {
+                        using var sourceConn = new SqlConnection(IndusConnStr);
+                        var fullRow = await sourceConn.QueryFirstOrDefaultAsync<dynamic>($"SELECT * FROM {tableName} WHERE {idCol} = @ID", new { ID = item.ItemGroupId });
+                        if (fullRow != null)
+                        {
+                            var dict = (IDictionary<string, object>)fullRow;
+                            string columns = string.Join(",", dict.Keys);
+                            string values = string.Join(",", dict.Keys.Select(k => "@" + k));
+                            if (dict.ContainsKey("IsDeletedTransaction")) dict["IsDeletedTransaction"] = 0;
+                            string insertQuery = $"SET IDENTITY_INSERT {tableName} ON; INSERT INTO {tableName} ({columns}) VALUES ({values}); SET IDENTITY_INSERT {tableName} OFF;";
+                            await clientConn.ExecuteAsync(insertQuery, dict);
+                        }
+                    }
+                }
+                else if (existsInClient > 0)
+                    await clientConn.ExecuteAsync($"UPDATE {tableName} SET IsDeletedTransaction = 1 WHERE {idCol} = @ID", new { ID = item.ItemGroupId });
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ModuleService] SyncItemGroupsForClientAsync {type} error: {ex.Message}");
+            return false;
+        }
+    }
+
+    private string EnsureTrust(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString)) return connectionString;
+        if (!connectionString.Contains("TrustServerCertificate", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!connectionString.TrimEnd().EndsWith(";")) connectionString += ";";
+            connectionString += "TrustServerCertificate=True;";
+        }
+        return connectionString;
     }
 }

@@ -21,7 +21,7 @@ public class SparePartService : ISparePartService
                 sp.SparePartID,
                 sp.SparePartName,
                 sp.SparePartGroup,
-                sp.HSNGroup,
+                ph.DisplayName as HSNGroup,
                 sp.Unit,
                 sp.Rate,
                 sp.SparePartType,
@@ -32,6 +32,7 @@ public class SparePartService : ISparePartService
                 sp.Narration,
                 ISNULL(sp.IsDeletedTransaction, 0) as IsDeletedTransaction
             FROM SparePartMaster sp WITH (NOLOCK)
+            LEFT JOIN ProductHSNMaster ph ON sp.ProductHSNID = ph.ProductHSNID
             WHERE ISNULL(sp.IsDeletedTransaction, 0) = 0
             ORDER BY sp.SparePartID";
 
@@ -441,7 +442,7 @@ public class SparePartService : ISparePartService
     public async Task<List<HSNGroupDto>> GetHSNGroupsAsync()
     {
         var query = @"
-            SELECT ProductHSNID, DisplayName
+            SELECT ProductHSNID, LTRIM(RTRIM(DisplayName)) as DisplayName, ProductHSNName
             FROM ProductHSNMaster
             WHERE IsDeletedTransaction = 0 
             AND DisplayName IS NOT NULL 

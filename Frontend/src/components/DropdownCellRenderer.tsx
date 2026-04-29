@@ -53,7 +53,6 @@ const DropdownCellRenderer: React.FC<any> = (params) => {
     return (
         <div
             onClick={handleClick}
-            title={isEmpty ? '' : String(value)}
             style={{
                 display: 'flex',
                 alignItems: 'center',

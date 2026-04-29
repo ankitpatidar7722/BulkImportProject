@@ -316,7 +316,14 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         setIsLoading(true);
 
         try {
-            const result = await validateItemStock(gridData, itemGroupId);
+            // Pre-process data to ensure numeric fields are valid numbers (prevent 400 error for empty strings)
+            const sanitizedData = gridData.map(row => ({
+                ...row,
+                receiptQuantity: Number(row.receiptQuantity) || 0,
+                landedRate: Number(row.landedRate) || 0
+            }));
+
+            const result = await validateItemStock(sanitizedData, itemGroupId);
             setValidationResult(result);
             setMode('validated');
 
@@ -710,7 +717,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
     // ─── Export to Excel ─────────────────────────────────────────────────────
     const handleExport = () => {
-        const isReel = itemGroupName === 'REEL';
+        const isReelOrRoll = itemGroupName === 'REEL' || itemGroupName === 'ROLL';
         const isSimple = ['INK & ADDITIVES', 'VARNISHES & COATINGS', 'LAMINATION FILM', 'SHIPPER CARTON', 'FOIL', 'OTHER MATERIAL']
             .includes(itemGroupName.toUpperCase());
 
@@ -724,7 +731,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                     row.GSM = r.gsm || '';
                     row.Manufacturer = r.manufecturer || '';
                     row.Finish = r.finish || '';
-                    if (!isReel) row.SizeL = r.sizeL || '';
+                    if (!isReelOrRoll) row.SizeL = r.sizeL || '';
                     row.SizeW = r.sizeW || '';
                 }
                 row.ReceiptQuantity = r.receiptQuantity || 0;
@@ -740,7 +747,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 ? { ItemCode: '', ItemID: '', ItemName: '', ReceiptQuantity: 0, LandedRate: 0, BatchNo: '', SupplierBatchNo: '', StockUnit: '', WarehouseName: '', BinName: '' }
                 : {
                     ItemCode: '', ItemID: '', Quality: '', GSM: '', Manufacturer: '', Finish: '',
-                    ...(isReel ? {} : { SizeL: '' }),
+                    ...((itemGroupName === 'REEL' || itemGroupName === 'ROLL') ? {} : { SizeL: '' }),
                     SizeW: '', ReceiptQuantity: 0, LandedRate: 0, BatchNo: '', SupplierBatchNo: '', StockUnit: '', WarehouseName: '', BinName: '',
                 }
             ];
@@ -766,6 +773,23 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
     const onCellValueChanged = useCallback(async (params: any) => {
         const { colDef, data, newValue } = params;
+
+        // 1. Update the gridData state to keep it in sync with grid edits
+        setGridData(prev => {
+            const newData = [...prev];
+            const rowIndex = newData.indexOf(data);
+            if (rowIndex !== -1) {
+                // Ensure the mutated row is captured in a fresh array to trigger re-render
+                newData[rowIndex] = { ...data };
+            }
+            return newData;
+        });
+
+        // 2. Keep validation visible but mark as invalid so Save button hides
+        setValidationResult(prev => prev ? { ...prev, isValid: false } : null);
+        setMode('preview');
+
+        // 3. Special handling for warehouse vs bin dependencies
         if (colDef.field === 'warehouseName') {
             data.binName = '';
             if (newValue) {
@@ -811,7 +835,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
 
     // ─── Column Definitions ──────────────────────────────────────────────────
     const columnDefs: ColDef[] = useMemo(() => {
-        const isReel = itemGroupName === 'REEL';
+        const isReelOrRoll = itemGroupName === 'REEL' || itemGroupName === 'ROLL';
         const isSimple = ['INK & ADDITIVES', 'VARNISHES & COATINGS', 'LAMINATION FILM', 'SHIPPER CARTON', 'FOIL', 'OTHER MATERIAL']
             .includes(itemGroupName.toUpperCase());
 
@@ -846,7 +870,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 { field: 'gsm', headerName: 'GSM', width: 90, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
                 { field: 'manufecturer', headerName: 'Manufacturer', width: 150, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
                 { field: 'finish', headerName: 'Finish', width: 120, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
-                ...(!isReel ? [{ field: 'sizeL', headerName: 'SizeL', width: 90, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef] : []),
+                ...(!isReelOrRoll ? [{ field: 'sizeL', headerName: 'SizeL', width: 90, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef] : []),
                 { field: 'sizeW', headerName: 'SizeW', width: 90, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
             ] : []),
             { field: 'receiptQuantity', headerName: 'ReceiptQuantity', width: 140, editable: mode !== 'loaded', type: 'numericColumn' },
@@ -865,12 +889,8 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             {
                 field: 'warehouseName', headerName: 'WarehouseName', width: 170, editable: mode !== 'loaded',
                 cellEditor: 'agSelectCellEditor',
-                cellEditorParams: (params: any) => {
-                    const currentVal = params.value;
+                cellEditorParams: (_params: any) => {
                     const options = [...warehouseNames];
-                    if (currentVal && !options.includes(currentVal)) {
-                        options.unshift(currentVal);
-                    }
                     return { values: ['', ...options] };
                 },
                 cellRenderer: DropdownCellRenderer
@@ -880,15 +900,11 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 cellEditor: 'agSelectCellEditor',
                 cellEditorParams: (params: any) => {
                     const whName = params.data?.warehouseName?.trim();
-                    const currentVal = params.value;
                     const bins = whName && binsCache[whName]
                         ? binsCache[whName].map(b => b.binName || '').filter(Boolean)
                         : [];
                     
                     const options = [...bins];
-                    if (currentVal && !options.includes(currentVal)) {
-                        options.unshift(currentVal);
-                    }
                     return { values: ['', ...options] };
                 },
                 cellRenderer: DropdownCellRenderer
@@ -914,6 +930,10 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                     if (cellVal) {
                         // Hide specific "not found under Warehouse" message for BinName if requested by user
                         if (params.colDef.field === 'binName' && cellVal.validationMessage?.includes('not found under Warehouse')) {
+                            return null;
+                        }
+                        // User requested to hide the tooltip on WarehouseName
+                        if (params.colDef.field === 'warehouseName') {
                             return null;
                         }
                         return cellVal.validationMessage;
