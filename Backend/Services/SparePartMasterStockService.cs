@@ -1,4 +1,4 @@
-using Backend.DTOs;
+﻿using Backend.DTOs;
 using Dapper;
 using Microsoft.Data.SqlClient;
 
@@ -19,7 +19,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             await _connection.OpenAsync();
     }
 
-    // ─── Warehouse List ─────────────────────────────────────────────────────────
+    // â”€â”€â”€ Warehouse List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<List<WarehouseDto>> GetWarehousesAsync()
     {
         await EnsureOpenAsync();
@@ -31,7 +31,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         return result.ToList();
     }
 
-    // ─── Bins by Warehouse ──────────────────────────────────────────────────────
+    // â”€â”€â”€ Bins by Warehouse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<List<WarehouseDto>> GetBinsByWarehouseAsync(string warehouseName)
     {
         await EnsureOpenAsync();
@@ -45,7 +45,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         return result.ToList();
     }
 
-    // ─── Enrich: validate SparePartNames, fill SpareID/BatchNo/StockUnit ────────
+    // â”€â”€â”€ Enrich: validate SparePartNames, fill SpareID/BatchNo/StockUnit â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<SparePartStockEnrichResult> EnrichStockRowsAsync(List<SparePartStockEnrichRowDto> rows)
     {
         await EnsureOpenAsync();
@@ -74,7 +74,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
         var dateStr = DateTime.Now.ToString("dd-MM-yy");
         
-        // ─── Step: Calculate Frequencies for BatchNo Logic ───
+        // â”€â”€â”€ Step: Calculate Frequencies for BatchNo Logic â”€â”€â”€
         // We need to know if a spare part appears multiple times to decide if we add _1, _2...
         var spareFrequencies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows)
@@ -130,7 +130,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
             // LandedRate will be used as provided in Excel (no fallback to master)
 
-            // ─── BatchNo Generation Logic ───
+            // â”€â”€â”€ BatchNo Generation Logic â”€â”€â”€
             if (!string.IsNullOrWhiteSpace(row.BatchNo))
             {
                 enriched.BatchNo = row.BatchNo.Trim();
@@ -160,7 +160,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         return enrichResult;
     }
 
-    // ─── Import: final save to database ─────────────────────────────────────────
+    // â”€â”€â”€ Import: final save to database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<SparePartStockImportResult> ImportSparePartStockAsync(List<SparePartStockRowDto> rows)
     {
         var result = new SparePartStockImportResult { TotalRows = rows.Count };
@@ -175,7 +175,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         {
             await EnsureOpenAsync();
 
-            // ─── 1. Fetch spare parts for SparePartID resolution ─────────────────
+            // â”€â”€â”€ 1. Fetch spare parts for SparePartID resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var spareLookup = await _connection.QueryAsync<dynamic>(
                 @"SELECT SparePartID, SparePartCode, SparePartName, ISNULL(Unit, '') AS Unit, ISNULL(Rate, 0) AS Rate
                   FROM SparePartMaster
@@ -196,7 +196,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             }
 
 
-            // ─── 2. Fetch warehouse lookup ──────────────────────────────────────
+            // â”€â”€â”€ 2. Fetch warehouse lookup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var warehouseLookup = await _connection.QueryAsync<dynamic>(
                 @"SELECT WarehouseID, WarehouseName, BinName
                   FROM WarehouseMaster
@@ -213,7 +213,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                     whMap[key] = (int)wh.WarehouseID;
             }
 
-            // ─── 3. Validate and resolve each row ───────────────────────────────
+            // â”€â”€â”€ 3. Validate and resolve each row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var validRows = new List<SparePartStockRowDto>();
             var dateStr = DateTime.Now.ToString("dd-MM-yy");
 
@@ -236,7 +236,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                 if (string.IsNullOrWhiteSpace(row.SparePartCode))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → SparePartCode is missing");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ SparePartCode is missing");
                     continue;
                 }
 
@@ -246,14 +246,14 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                 if (matched == null)
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → SparePartCode are not Exist in Master: {row.SparePartCode}");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ SparePartCode are not Exist in Master: {row.SparePartCode}");
                     continue;
                 }
 
                 if (row.ReceiptQuantity <= 0)
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → Invalid ReceiptQuantity ({row.ReceiptQuantity})");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ Invalid ReceiptQuantity ({row.ReceiptQuantity})");
                     continue;
                 }
 
@@ -265,7 +265,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
                 if (row.LandedRate < 0) row.LandedRate = 0;
 
-                // ─── BatchNo Generation Logic ───
+                // â”€â”€â”€ BatchNo Generation Logic â”€â”€â”€
                 if (string.IsNullOrWhiteSpace(row.BatchNo))
                 {
                     string spareCode = (matched.SparePartCode?.ToString() ?? row.SparePartCode ?? "NA").Trim();
@@ -283,13 +283,13 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                         row.BatchNo = $"PHY_{dateStr}_{spareCode}";
                 }
 
-                // Resolve WarehouseID — must find a valid match; never insert 0
+                // Resolve WarehouseID â€” must find a valid match; never insert 0
                 string whInputName = row.WarehouseName?.Trim() ?? "";
                 string whInputBin  = row.BinName?.Trim() ?? "";
                 if (string.IsNullOrEmpty(whInputName))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → WarehouseName is required.");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ WarehouseName is required.");
                     continue;
                 }
 
@@ -301,7 +301,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                 else
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → Warehouse '{row.WarehouseName}' / Bin '{row.BinName}' not found in WarehouseMaster. Check for extra spaces or spelling.");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ Warehouse '{row.WarehouseName}' / Bin '{row.BinName}' not found in WarehouseMaster. Check for extra spaces or spelling.");
                     continue;
                 }
 
@@ -314,12 +314,12 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                 return result;
             }
 
-            // ─── 4. Generate Voucher Number ─────────────────────────────────────
+            // â”€â”€â”€ 4. Generate Voucher Number â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const string prefix = "PHY";
             const int voucherId = -118;
-            const int companyId = 2;
-            const int userId = 2;
-            const string fYear = "2025-2026";
+            var companyId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2;
+            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2;
+            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
 
             var maxVoucherNo = await _connection.ExecuteScalarAsync<long?>(
                 @"SELECT ISNULL(MAX(MaxVoucherNo), 0) FROM SpareTransactionMain
@@ -333,10 +333,10 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             maxVoucherNo++;
             var voucherNo = $"{prefix}{maxVoucherNo:00000}";
 
-            // ─── 5. Calculate totals ────────────────────────────────────────────
+            // â”€â”€â”€ 5. Calculate totals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             decimal totalQuantity = validRows.Sum(r => Math.Round(r.ReceiptQuantity, 2));
 
-            // ─── 6. INSERT SpareTransactionMain ──────────────────────────────────
+            // â”€â”€â”€ 6. INSERT SpareTransactionMain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var transactionId = await _connection.ExecuteScalarAsync<int>(
                 @"INSERT INTO SpareTransactionMain
                     (TotalQuantity, Particular, Narration,
@@ -359,7 +359,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
                     VoucherNo = voucherNo
                 });
 
-            // ─── 7. Bulk INSERT SpareTransactionDetail ───────────────────────────
+            // â”€â”€â”€ 7. Bulk INSERT SpareTransactionDetail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var detailTable = new System.Data.DataTable();
             detailTable.Columns.Add("TransID", typeof(int));
             detailTable.Columns.Add("SpareID", typeof(int));
@@ -386,7 +386,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             {
                 var r = validRows[i];
                 var qty = Math.Round(r.ReceiptQuantity, 2);
-                var rate = Math.Round(r.LandedRate, 2);
+                var rate = Math.Round(r.LandedRate, 3);
 
                 detailTable.Rows.Add(
                     i + 1, r.SpareID, r.SpareGroupID,
@@ -408,7 +408,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
 
             await bulkCopy.WriteToServerAsync(detailTable);
 
-            // ─── 8. Build result ───────────────────────────────────────────────
+            // â”€â”€â”€ 8. Build result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // NOTE: No UPDATE_ITEM_STOCK_VALUES call for spare parts
             // NOTE: No ItemTransactionBatchDetail insert for spare parts
             result.Success = true;
@@ -427,7 +427,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         return result;
     }
 
-    // ─── Validate: structured validation matching Import Master pattern ───────
+    // â”€â”€â”€ Validate: structured validation matching Import Master pattern â”€â”€â”€â”€â”€â”€â”€
     public async Task<SparePartStockValidationResult> ValidateStockRowsAsync(List<SparePartStockEnrichedRow> rows)
     {
         await EnsureOpenAsync();
@@ -441,7 +441,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             return validationResult;
         }
 
-        // ─── 1. Fetch lookup data ────────────────────────────────────────────
+        // â”€â”€â”€ 1. Fetch lookup data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var spareLookup = await _connection.QueryAsync<dynamic>(
             @"SELECT SparePartCode, ISNULL(Unit, '') AS Unit
               FROM SparePartMaster
@@ -462,7 +462,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var validWarehouses = new HashSet<string>(warehouseNames, StringComparer.OrdinalIgnoreCase);
 
-        // Fetch warehouse → bin mapping
+        // Fetch warehouse â†’ bin mapping
         var warehouseBins = await _connection.QueryAsync<dynamic>(
             @"SELECT LTRIM(RTRIM(WarehouseName)) AS WarehouseName, LTRIM(RTRIM(BinName)) AS BinName
               FROM WarehouseMaster
@@ -481,7 +481,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             }
         }
 
-        // ─── 2. Duplicate detection by (SpareID, BatchNo, WarehouseName, BinName) ─
+        // â”€â”€â”€ 2. Duplicate detection by (SpareID, BatchNo, WarehouseName, BinName) â”€
         var compositeKeyCounts = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < rows.Count; i++)
         {
@@ -498,7 +498,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         var duplicateRowIndices = new HashSet<int>(
             compositeKeyCounts.Where(kv => kv.Value.Count > 1).SelectMany(kv => kv.Value.Skip(1)));
 
-        // ─── 3. Per-row validation ───────────────────────────────────────────
+        // â”€â”€â”€ 3. Per-row validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         for (int i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
@@ -627,7 +627,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
             validationResult.Rows.Add(rowValidation);
         }
 
-        // ─── 4. Final summary ────────────────────────────────────────────────
+        // â”€â”€â”€ 4. Final summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         validationResult.IsValid = validationResult.Summary.DuplicateCount == 0
             && validationResult.Summary.MissingDataCount == 0
             && validationResult.Summary.MismatchCount == 0
@@ -636,7 +636,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         return validationResult;
     }
 
-    // ─── Load Stock: fetch existing spare part stock data from DB ────────────
+    // â”€â”€â”€ Load Stock: fetch existing spare part stock data from DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Returns actual batch-wise closing stock (ReceiptQuantity - IssueQuantity > 0)
     public async Task<List<SparePartStockEnrichedRow>> GetStockDataAsync()
     {
@@ -685,7 +685,7 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         return rows.ToList();
     }
 
-    // ─── Load Master Data: fetch all spare parts to use as template ───
+    // â”€â”€â”€ Load Master Data: fetch all spare parts to use as template â”€â”€â”€
     public async Task<List<SparePartStockEnrichedRow>> GetMasterDataAsync()
     {
         await EnsureOpenAsync();
@@ -705,3 +705,5 @@ public class SparePartMasterStockService : ISparePartMasterStockService
         return result.ToList();
     }
 }
+
+

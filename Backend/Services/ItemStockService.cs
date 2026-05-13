@@ -19,7 +19,7 @@ public class ItemStockService : IItemStockService
             await _connection.OpenAsync();
     }
 
-    // ─── Warehouse List ─────────────────────────────────────────────────────────
+    // â”€â”€â”€ Warehouse List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<List<WarehouseDto>> GetWarehousesAsync()
     {
         await EnsureOpenAsync();
@@ -31,7 +31,7 @@ public class ItemStockService : IItemStockService
         return result.ToList();
     }
 
-    // ─── Bins by Warehouse ──────────────────────────────────────────────────────
+    // â”€â”€â”€ Bins by Warehouse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<List<WarehouseDto>> GetBinsByWarehouseAsync(string warehouseName)
     {
         await EnsureOpenAsync();
@@ -45,7 +45,7 @@ public class ItemStockService : IItemStockService
         return result.ToList();
     }
 
-    // ─── Enrich: validate ItemCodes, fill ItemID/BatchNo/StockUnit ─────────────
+    // â”€â”€â”€ Enrich: validate ItemCodes, fill ItemID/BatchNo/StockUnit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<ItemStockEnrichResult> EnrichStockRowsAsync(List<ItemStockEnrichRowDto> rows, int itemGroupId)
     {
         await EnsureOpenAsync();
@@ -71,7 +71,7 @@ public class ItemStockService : IItemStockService
 
         var dateStr = DateTime.Now.ToString("dd-MM-yy");
         
-        // ─── Step: Calculate Frequencies for BatchNo Logic ───
+        // â”€â”€â”€ Step: Calculate Frequencies for BatchNo Logic â”€â”€â”€
         var itemFrequencies = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in rows)
         {
@@ -131,7 +131,7 @@ public class ItemStockService : IItemStockService
             var mSizeW = matched.SizeW is decimal sw ? (decimal?)sw : (matched.SizeW is double dw ? (decimal?)dw : (matched.SizeW is int iw ? (decimal?)iw : (decimal?)null));
             if (mSizeW != null && mSizeW != 0) enriched.SizeW = mSizeW;
 
-            // ─── BatchNo Generation Logic ───
+            // â”€â”€â”€ BatchNo Generation Logic â”€â”€â”€
             if (!string.IsNullOrWhiteSpace(row.BatchNo))
             {
                 enriched.BatchNo = row.BatchNo.Trim();
@@ -161,7 +161,7 @@ public class ItemStockService : IItemStockService
         return enrichResult;
     }
 
-    // ─── Import: final save to database ─────────────────────────────────────────
+    // â”€â”€â”€ Import: final save to database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<ItemStockImportResult> ImportItemStockAsync(List<ItemStockRowDto> rows, int itemGroupId)
     {
         var result = new ItemStockImportResult { TotalRows = rows.Count };
@@ -176,7 +176,7 @@ public class ItemStockService : IItemStockService
         {
             await EnsureOpenAsync();
 
-            // ─── 1. Fetch items for ItemID resolution ───────────────────────────
+            // â”€â”€â”€ 1. Fetch items for ItemID resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var itemLookup = await _connection.QueryAsync<dynamic>(
                 @"SELECT ItemID, ItemCode, ItemGroupID, ISNULL(StockUnit, '') AS StockUnit
                   FROM ItemMaster
@@ -192,13 +192,13 @@ public class ItemStockService : IItemStockService
                     byCode[code] = item;
             }
 
-            // ─── 2. Fetch warehouse lookup ──────────────────────────────────────
+            // â”€â”€â”€ 2. Fetch warehouse lookup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var warehouseLookup = await _connection.QueryAsync<dynamic>(
                 @"SELECT WarehouseID, WarehouseName, BinName
                   FROM WarehouseMaster
                   WHERE ISNULL(IsDeletedTransaction, 0) = 0");
 
-            // Build lookup: "WarehouseName|BinName" → WarehouseID
+            // Build lookup: "WarehouseName|BinName" â†’ WarehouseID
             // Trim DB values so spaces/case never cause a mismatch with trimmed input
             var whMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var wh in warehouseLookup)
@@ -210,7 +210,7 @@ public class ItemStockService : IItemStockService
                     whMap[key] = (int)wh.WarehouseID;
             }
 
-            // ─── 3. Validate and resolve each row ───────────────────────────────
+            // â”€â”€â”€ 3. Validate and resolve each row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var validRows = new List<ItemStockRowDto>();
             var dateStr = DateTime.Now.ToString("dd-MM-yy");
 
@@ -233,14 +233,14 @@ public class ItemStockService : IItemStockService
                 if (string.IsNullOrWhiteSpace(row.ItemCode))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → ItemCode is empty");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ ItemCode is empty");
                     continue;
                 }
 
                 if (!byCode.TryGetValue(row.ItemCode.Trim(), out var matched))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → ItemCode not found: {row.ItemCode}");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ ItemCode not found: {row.ItemCode}");
                     continue;
                 }
 
@@ -248,7 +248,7 @@ public class ItemStockService : IItemStockService
                 if (row.ReceiptQuantity <= 0)
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → Invalid ReceiptQuantity ({row.ReceiptQuantity})");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ Invalid ReceiptQuantity ({row.ReceiptQuantity})");
                     continue;
                 }
 
@@ -262,7 +262,7 @@ public class ItemStockService : IItemStockService
                 // Default LandedRate to 0
                 if (row.LandedRate < 0) row.LandedRate = 0;
 
-                // ─── BatchNo Generation Logic (Consistent with Enrich) ───
+                // â”€â”€â”€ BatchNo Generation Logic (Consistent with Enrich) â”€â”€â”€
                 if (string.IsNullOrWhiteSpace(row.BatchNo))
                 {
                     string itemCode = (matched.ItemCode?.ToString() ?? row.ItemCode ?? "NA").Trim();
@@ -281,13 +281,13 @@ public class ItemStockService : IItemStockService
                         row.BatchNo = $"PHY_{dateStr}_{itemCode}_{itemId}";
                 }
 
-                // Resolve WarehouseID — must find a valid match; never insert 0
+                // Resolve WarehouseID â€” must find a valid match; never insert 0
                 string whInputName = row.WarehouseName?.Trim() ?? "";
                 string whInputBin  = row.BinName?.Trim() ?? "";
                 if (string.IsNullOrEmpty(whInputName))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → WarehouseName is required.");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ WarehouseName is required.");
                     continue;
                 }
 
@@ -299,7 +299,7 @@ public class ItemStockService : IItemStockService
                 else
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → Warehouse '{row.WarehouseName}' / Bin '{row.BinName}' not found in WarehouseMaster. Check for extra spaces or spelling.");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ Warehouse '{row.WarehouseName}' / Bin '{row.BinName}' not found in WarehouseMaster. Check for extra spaces or spelling.");
                     continue;
                 }
 
@@ -312,12 +312,12 @@ public class ItemStockService : IItemStockService
                 return result;
             }
 
-            // ─── 4. Generate Voucher Number ─────────────────────────────────────
+            // â”€â”€â”€ 4. Generate Voucher Number â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const string prefix = "PHY";
             const int voucherId = -16;
-            const int companyId = 2;
-            const int userId = 2;
-            const string fYear = "2025-2026";
+            var companyId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2;
+            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2;
+            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
 
             var maxVoucherNo = await _connection.ExecuteScalarAsync<long?>(
                 @"SELECT ISNULL(MAX(MaxVoucherNo), 0) FROM ItemTransactionMain
@@ -331,10 +331,10 @@ public class ItemStockService : IItemStockService
             maxVoucherNo++;
             var voucherNo = $"{prefix}{maxVoucherNo:00000}";
 
-            // ─── 5. Calculate totals ────────────────────────────────────────────
+            // â”€â”€â”€ 5. Calculate totals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             decimal totalQuantity = validRows.Sum(r => Math.Round(r.ReceiptQuantity, 2));
 
-            // ─── 6. INSERT ItemTransactionMain ──────────────────────────────────
+            // â”€â”€â”€ 6. INSERT ItemTransactionMain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var transactionId = await _connection.ExecuteScalarAsync<int>(
                 @"INSERT INTO ItemTransactionMain
                     (TotalQuantity, Particular, Narration,
@@ -357,7 +357,7 @@ public class ItemStockService : IItemStockService
                     VoucherNo = voucherNo
                 });
 
-            // ─── 7. Bulk INSERT ItemTransactionDetail ───────────────────────────
+            // â”€â”€â”€ 7. Bulk INSERT ItemTransactionDetail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var detailTable = new System.Data.DataTable();
             detailTable.Columns.Add("TransID", typeof(int));
             detailTable.Columns.Add("ItemID", typeof(int));
@@ -385,7 +385,7 @@ public class ItemStockService : IItemStockService
             {
                 var r = validRows[i];
                 var qty = Math.Round(r.ReceiptQuantity, 2);
-                var rate = Math.Round(r.LandedRate, 2);
+                var rate = Math.Round(r.LandedRate, 3);
 
                 detailTable.Rows.Add(
                     i + 1, r.ItemID, r.ItemGroupID,
@@ -407,12 +407,12 @@ public class ItemStockService : IItemStockService
 
             await bulkCopy.WriteToServerAsync(detailTable);
 
-            // ─── 8. Update BatchID = TransactionDetailID ────────────────────────
+            // â”€â”€â”€ 8. Update BatchID = TransactionDetailID â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             await _connection.ExecuteAsync(
                 "UPDATE ItemTransactionDetail SET BatchID = TransactionDetailID WHERE TransactionID = @TxnId",
                 new { TxnId = transactionId });
 
-            // ─── 9. INSERT into ItemTransactionBatchDetail ──────────────────────
+            // â”€â”€â”€ 9. INSERT into ItemTransactionBatchDetail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             await _connection.ExecuteAsync(
                 @"INSERT INTO ItemTransactionBatchDetail
                     (BatchID, BatchNo, SupplierBatchNo, MfgDate, ExpiryDate, CompanyID, FYear, CreatedBy, CreatedDate)
@@ -423,13 +423,13 @@ public class ItemStockService : IItemStockService
                     AND ParentTransactionID = TransactionID",
                 new { CompanyId = companyId, TxnId = transactionId });
 
-            // ─── 10. Call UPDATE_ITEM_STOCK_VALUES ──────────────────────────────
+            // â”€â”€â”€ 10. Call UPDATE_ITEM_STOCK_VALUES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             await _connection.ExecuteAsync(
                 "EXEC UPDATE_ITEM_STOCK_VALUES @CompanyId, @TxnId, 0",
                 new { CompanyId = companyId, TxnId = transactionId },
                 commandTimeout: 120);
 
-            // ─── 11. Build result ───────────────────────────────────────────────
+            // â”€â”€â”€ 11. Build result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             result.Success = true;
             result.ImportedRows = validRows.Count;
             result.Message = result.FailedRows > 0
@@ -446,7 +446,7 @@ public class ItemStockService : IItemStockService
         return result;
     }
 
-    // ─── Validate: structured validation matching Import Master pattern ───────
+    // â”€â”€â”€ Validate: structured validation matching Import Master pattern â”€â”€â”€â”€â”€â”€â”€
     public async Task<ItemStockValidationResult> ValidateStockRowsAsync(List<ItemStockEnrichedRow> rows, int itemGroupId)
     {
         await EnsureOpenAsync();
@@ -460,7 +460,7 @@ public class ItemStockService : IItemStockService
             return validationResult;
         }
 
-        // ─── 1. Fetch lookup data ────────────────────────────────────────────
+        // â”€â”€â”€ 1. Fetch lookup data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Fetch ItemGroup name for group-specific validations
         var itemGroupName = await _connection.QueryFirstOrDefaultAsync<string>(
             @"SELECT ItemGroupName FROM ItemGroupMaster WHERE ItemGroupID = @GroupId",
@@ -489,7 +489,7 @@ public class ItemStockService : IItemStockService
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var validWarehouses = new HashSet<string>(warehouseNames, StringComparer.OrdinalIgnoreCase);
 
-        // Fetch warehouse → bin mapping
+        // Fetch warehouse â†’ bin mapping
         var warehouseBins = await _connection.QueryAsync<dynamic>(
             @"SELECT LTRIM(RTRIM(WarehouseName)) AS WarehouseName, LTRIM(RTRIM(BinName)) AS BinName
               FROM WarehouseMaster
@@ -508,7 +508,7 @@ public class ItemStockService : IItemStockService
             }
         }
 
-        // ─── 2. Duplicate detection by (ItemID, BatchNo, WarehouseName, BinName) ─
+        // â”€â”€â”€ 2. Duplicate detection by (ItemID, BatchNo, WarehouseName, BinName) â”€
         var compositeKeyCounts = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < rows.Count; i++)
         {
@@ -526,7 +526,7 @@ public class ItemStockService : IItemStockService
         var duplicateRowIndices = new HashSet<int>(
             compositeKeyCounts.Where(kv => kv.Value.Count > 1).SelectMany(kv => kv.Value.Skip(1)));
 
-        // ─── 3. Per-row validation ───────────────────────────────────────────
+        // â”€â”€â”€ 3. Per-row validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         for (int i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
@@ -580,7 +580,7 @@ public class ItemStockService : IItemStockService
             }
             // PAPER group: ReceiptQuantity must be a whole number (no decimals).
             // Use tolerance (< 0.001) to ignore floating-point noise from SQL SUM arithmetic
-            // e.g. 110 → 110.0000000000001 after SUM — should not be flagged as decimal.
+            // e.g. 110 â†’ 110.0000000000001 after SUM â€” should not be flagged as decimal.
             else if (isPaperGroup && Math.Abs(row.ReceiptQuantity - Math.Round(row.ReceiptQuantity)) >= 0.001m)
             {
                 cellIssues.Add(new ItemStockCellValidation
@@ -688,7 +688,7 @@ public class ItemStockService : IItemStockService
             validationResult.Rows.Add(rowValidation);
         }
 
-        // ─── 4. Final summary ────────────────────────────────────────────────
+        // â”€â”€â”€ 4. Final summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         validationResult.IsValid = validationResult.Summary.DuplicateCount == 0
             && validationResult.Summary.MissingDataCount == 0
             && validationResult.Summary.MismatchCount == 0
@@ -697,7 +697,7 @@ public class ItemStockService : IItemStockService
         return validationResult;
     }
 
-    // ─── Reset Item Stock: create counter-transaction issuing out all batch stock ─
+    // â”€â”€â”€ Reset Item Stock: create counter-transaction issuing out all batch stock â”€
     // Matches VB.NET WebService_ItemStockReset.SaveStockResetVoucher logic:
     // 1. Query all batch-wise closing stock for the ItemGroup
     // 2. Create a new PHY transaction with IssueQuantity = ClosingQty (zeroes out stock)
@@ -710,7 +710,7 @@ public class ItemStockService : IItemStockService
         {
             await EnsureOpenAsync();
 
-            // ─── Validate credentials - Use same password encoding as login ──────
+            // â”€â”€â”€ Validate credentials - Use same password encoding as login â”€â”€â”€â”€â”€â”€
             var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
 
             var userCheckQuery = @"
@@ -747,7 +747,7 @@ public class ItemStockService : IItemStockService
             }
             catch { }
 
-            // ─── 1. Fetch all batch-wise closing stock (same query as VB.NET GetAllBatchStock) ─
+            // â”€â”€â”€ 1. Fetch all batch-wise closing stock (same query as VB.NET GetAllBatchStock) â”€
             var batchStock = (await _connection.QueryAsync<dynamic>(
                 @"SELECT
                     ISNULL(IM.ItemID, 0) AS ItemID,
@@ -800,12 +800,12 @@ public class ItemStockService : IItemStockService
                 return result;
             }
 
-            // ─── 2. Generate Voucher Number ───────────────────────────────────────
+            // â”€â”€â”€ 2. Generate Voucher Number â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const string prefix = "PHY";
             const int voucherId = -16;
-            const int companyId = 2;
-            const int userId = 2;
-            const string fYear = "2025-2026";
+            var companyId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2;
+            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2;
+            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
 
             var maxVoucherNo = await _connection.ExecuteScalarAsync<long?>(
                 @"SELECT ISNULL(MAX(MaxVoucherNo), 0) FROM ItemTransactionMain
@@ -816,7 +816,7 @@ public class ItemStockService : IItemStockService
             maxVoucherNo++;
             var voucherNo = $"{prefix}{maxVoucherNo:00000}";
 
-            // ─── 3. INSERT ItemTransactionMain (Particular = "Stock Reset") ───────
+            // â”€â”€â”€ 3. INSERT ItemTransactionMain (Particular = "Stock Reset") â”€â”€â”€â”€â”€â”€â”€
             var transactionId = await _connection.ExecuteScalarAsync<int>(
                 @"INSERT INTO ItemTransactionMain
                     (TotalQuantity, Particular, Narration,
@@ -834,7 +834,7 @@ public class ItemStockService : IItemStockService
                     MaxNo = maxVoucherNo, VoucherNo = voucherNo
                 });
 
-            // ─── 4. Bulk INSERT ItemTransactionDetail with IssueQuantity = ClosingQty ─
+            // â”€â”€â”€ 4. Bulk INSERT ItemTransactionDetail with IssueQuantity = ClosingQty â”€
             var detailTable = new System.Data.DataTable();
             detailTable.Columns.Add("TransID", typeof(int));
             detailTable.Columns.Add("ItemID", typeof(int));
@@ -883,7 +883,7 @@ public class ItemStockService : IItemStockService
                 bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
             await bulkCopy.WriteToServerAsync(detailTable);
 
-            // ─── 5. Update BatchID = TransactionDetailID where BatchID = 0 ────────
+            // â”€â”€â”€ 5. Update BatchID = TransactionDetailID where BatchID = 0 â”€â”€â”€â”€â”€â”€â”€â”€
             await _connection.ExecuteAsync(
                 @"UPDATE ItemTransactionDetail
                   SET BatchID = TransactionDetailID
@@ -891,7 +891,7 @@ public class ItemStockService : IItemStockService
                     AND ISNULL(BatchID, 0) = 0 AND ParentTransactionID = TransactionID",
                 new { TxnId = transactionId, CompanyId = companyId });
 
-            // ─── 6. Call UPDATE_ITEM_STOCK_VALUES to recalculate ──────────────────
+            // â”€â”€â”€ 6. Call UPDATE_ITEM_STOCK_VALUES to recalculate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             await _connection.ExecuteAsync(
                 "EXEC UPDATE_ITEM_STOCK_VALUES @CompanyId, @TxnId, 0",
                 new { CompanyId = companyId, TxnId = transactionId },
@@ -912,7 +912,7 @@ public class ItemStockService : IItemStockService
         return result;
     }
 
-    // ─── Reset Floor Stock: consumes all remaining floor stock ─────────────────
+    // â”€â”€â”€ Reset Floor Stock: consumes all remaining floor stock â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Matches VB.NET WebService_FloorStockReset.SaveStockResetVoucher logic:
     // Floor stock = items issued to floor (VoucherID=-19) minus consumed (ItemConsumptionDetail)
     // Reset creates consumption records in ItemConsumptionMain/Detail (NOT ItemTransactionMain!)
@@ -925,7 +925,7 @@ public class ItemStockService : IItemStockService
         {
             await EnsureOpenAsync();
 
-            // ─── Validate credentials - Use same password encoding as login ──────
+            // â”€â”€â”€ Validate credentials - Use same password encoding as login â”€â”€â”€â”€â”€â”€
             var encodedPassword = PasswordEncoder.ChangePassword(password ?? string.Empty);
 
             var userCheckQuery = @"
@@ -962,7 +962,7 @@ public class ItemStockService : IItemStockService
             }
             catch { }
 
-            // ─── 1. Fetch all floor stock (same query as VB.NET GetAllFloorStock) ─
+            // â”€â”€â”€ 1. Fetch all floor stock (same query as VB.NET GetAllFloorStock) â”€
             // Floor stock = IssueQuantity (from VoucherID=-19 transactions) minus consumed
             // Consumed = SUM(ConsumeQuantity + ReturnQuantity) from ItemConsumptionDetail
             var itemGroupFilter = itemGroupId > 0
@@ -1038,13 +1038,13 @@ public class ItemStockService : IItemStockService
                 return result;
             }
 
-            // ─── 2. Generate Voucher Number from ItemConsumptionMain ──────────────
+            // â”€â”€â”€ 2. Generate Voucher Number from ItemConsumptionMain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const string prefix = "RTS";
             const int voucherIdForMax = -16;  // Used for MaxVoucherNo lookup (matches VB.NET)
             const int voucherIdForInsert = -25;  // Actual VoucherID in the record (matches JS)
-            const int companyId = 2;
-            const int userId = 2;
-            const string fYear = "2025-2026";
+            var companyId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2;
+            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2;
+            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
 
             var maxVoucherNo = await _connection.ExecuteScalarAsync<long?>(
                 @"SELECT ISNULL(MAX(MaxVoucherNo), 0) FROM ItemConsumptionMain
@@ -1055,7 +1055,7 @@ public class ItemStockService : IItemStockService
             maxVoucherNo++;
             var voucherNo = $"{prefix}{maxVoucherNo:00000}";
 
-            // ─── 3. INSERT into ItemConsumptionMain ───────────────────────────────
+            // â”€â”€â”€ 3. INSERT into ItemConsumptionMain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var consumptionTxnId = await _connection.ExecuteScalarAsync<int>(
                 @"INSERT INTO ItemConsumptionMain
                     (VoucherID, TotalQuantity, Particular,
@@ -1073,7 +1073,7 @@ public class ItemStockService : IItemStockService
                     Prefix = prefix, MaxNo = maxVoucherNo, VoucherNo = voucherNo
                 });
 
-            // ─── 4. Bulk INSERT into ItemConsumptionDetail ────────────────────────
+            // â”€â”€â”€ 4. Bulk INSERT into ItemConsumptionDetail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // ConsumeQuantity = FloorStock, IssueQuantity = FloorStock (consumes all remaining)
             var detailTable = new System.Data.DataTable();
             detailTable.Columns.Add("TransID", typeof(int));
@@ -1135,7 +1135,7 @@ public class ItemStockService : IItemStockService
                 bulkCopy.ColumnMappings.Add(col.ColumnName, col.ColumnName);
             await bulkCopy.WriteToServerAsync(detailTable);
 
-            // ─── 5. Update BatchID = ConsumptionTransactionDetailID where BatchID = 0 ─
+            // â”€â”€â”€ 5. Update BatchID = ConsumptionTransactionDetailID where BatchID = 0 â”€
             await _connection.ExecuteAsync(
                 @"UPDATE ItemConsumptionDetail
                   SET BatchID = ConsumptionTransactionDetailID
@@ -1143,7 +1143,7 @@ public class ItemStockService : IItemStockService
                     AND ISNULL(BatchID, 0) = 0 AND ParentTransactionID = ConsumptionTransactionID",
                 new { TxnId = consumptionTxnId, CompanyId = companyId });
 
-            // ─── 6. Call UPDATE_ITEM_STOCK_VALUES to recalculate ──────────────────
+            // â”€â”€â”€ 6. Call UPDATE_ITEM_STOCK_VALUES to recalculate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             await _connection.ExecuteAsync(
                 "EXEC UPDATE_ITEM_STOCK_VALUES @CompanyId, @TxnId, 0",
                 new { CompanyId = companyId, TxnId = consumptionTxnId },
@@ -1164,7 +1164,7 @@ public class ItemStockService : IItemStockService
         return result;
     }
 
-    // ─── Load Stock: fetch existing stock data from DB ────────────────────────
+    // â”€â”€â”€ Load Stock: fetch existing stock data from DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Returns actual batch-wise closing stock (ReceiptQuantity - IssueQuantity - RejectedQuantity > 0)
     public async Task<List<ItemStockEnrichedRow>> GetStockDataAsync(int itemGroupId)
     {
@@ -1229,7 +1229,7 @@ public class ItemStockService : IItemStockService
         return rows.ToList();
     }
 
-    // ─── Load Master Data: fetch all items for a group to use as template ───
+    // â”€â”€â”€ Load Master Data: fetch all items for a group to use as template â”€â”€â”€
     public async Task<List<ItemStockEnrichedRow>> GetMasterDataAsync(int itemGroupId)
     {
         await EnsureOpenAsync();
@@ -1256,3 +1256,5 @@ public class ItemStockService : IItemStockService
         return result.ToList();
     }
 }
+
+

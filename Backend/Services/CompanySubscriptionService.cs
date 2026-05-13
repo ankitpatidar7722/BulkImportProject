@@ -667,7 +667,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Helper: Connect to client DB using their connection string ───
+    // â”€â”€â”€ Helper: Connect to client DB using their connection string â”€â”€â”€
     private static SqlConnection ClientConnection(string connString)
     {
         var builder = new SqlConnectionStringBuilder(connString)
@@ -678,7 +678,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         return new SqlConnection(builder.ConnectionString);
     }
 
-    // ─── Step 3: Company Master ───
+    // â”€â”€â”€ Step 3: Company Master â”€â”€â”€
     public async Task<CompanyMasterResponse> SaveCompanyMasterAsync(CompanyMasterRequest request)
     {
         try
@@ -753,7 +753,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Step 4: Branch Master ───
+    // â”€â”€â”€ Step 4: Branch Master â”€â”€â”€
     public async Task<BranchMasterResponse> SaveBranchMasterAsync(BranchMasterRequest request)
     {
         try
@@ -837,7 +837,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Step 5: Production Unit Master ───
+    // â”€â”€â”€ Step 5: Production Unit Master â”€â”€â”€
     public async Task<ProductionUnitResponse> SaveProductionUnitAsync(ProductionUnitRequest request)
     {
         try
@@ -893,7 +893,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Module Settings ───
+    // â”€â”€â”€ Module Settings â”€â”€â”€
     private static string GetMasterModuleTable(string applicationName)
     {
         return applicationName.ToLower() switch
@@ -932,7 +932,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 "SELECT ModuleName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster"
             )).ToList();
 
-            // Build lookup: ModuleName → IsDeletedTransaction
+            // Build lookup: ModuleName â†’ IsDeletedTransaction
             var clientLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var cm in clientModules)
             {
@@ -1008,7 +1008,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             var adminUserId = await clientConn.ExecuteScalarAsync<int?>(
                 "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'");
             var companyId = await clientConn.ExecuteScalarAsync<int?>(
-                "SELECT TOP 1 CompanyID FROM CompanyMaster");
+                "SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0");
 
             // Get existing client modules
             var existingModules = (await clientConn.QueryAsync<dynamic>(
@@ -1032,7 +1032,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                     // Should be active
                     if (existsInClient)
                     {
-                        // Exists but may be soft-deleted → undelete
+                        // Exists but may be soft-deleted â†’ undelete
                         if (existingLookup[mod.ModuleName] == 1)
                         {
                             await clientConn.ExecuteAsync(
@@ -1135,7 +1135,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Copy Modules ───
+    // â”€â”€â”€ Copy Modules â”€â”€â”€
     public async Task<ClientDropdownResponse> GetClientDropdownAsync()
     {
         try
@@ -1193,7 +1193,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 var adminUserId = await targetConn.ExecuteScalarAsync<int?>(
                     "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'", transaction: transaction);
                 var companyId = await targetConn.ExecuteScalarAsync<int?>(
-                    "SELECT TOP 1 CompanyID FROM CompanyMaster", transaction: transaction);
+                    "SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0", transaction: transaction);
 
                 // Delete existing data (UserModuleAuthentication first, then ModuleMaster)
                 await targetConn.ExecuteAsync("DELETE FROM UserModuleAuthentication", transaction: transaction);
@@ -1284,7 +1284,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Final Step: Complete Setup ───
+    // â”€â”€â”€ Final Step: Complete Setup â”€â”€â”€
     public async Task<CompleteSetupResponse> CompleteSetupAsync(CompleteSetupRequest request)
     {
         try
@@ -1346,7 +1346,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Module Group Authority ───
+    // â”€â”€â”€ Module Group Authority â”€â”€â”€
     public async Task<ModuleGroupDropdownResponse> GetModuleGroupsAsync(string applicationName)
     {
         try
@@ -1430,12 +1430,12 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             // Use default metadata values (these tables don't exist in Indus DB)
             var companyID = 2;
-            var userID = 1;
-            var fYear = "2024-25";
 
             // Get module details from IndusEnterpriseNewInstallation
             using var masterConn = new SqlConnection("Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseNewInstallation;User ID=INDUS;Password=Param@99811;TrustServerCertificate=True");
             await masterConn.OpenAsync();
+            var fYear = await masterConn.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='admin'") ?? "2024-25";
+            var userID = await masterConn.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 1;
 
             // Use transaction for atomicity
             using var transaction = indusConn.BeginTransaction();
@@ -1582,12 +1582,12 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             // Use default metadata values
             var companyID = 2;
-            var userID = 1;
-            var fYear = "2024-25";
 
             // Get module details from IndusEnterpriseNewInstallation
             using var masterConn = new SqlConnection("Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseNewInstallation;User ID=INDUS;Password=Param@99811;TrustServerCertificate=True");
             await masterConn.OpenAsync();
+            var fYear = await masterConn.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='admin'") ?? "2024-25";
+            var userID = await masterConn.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 1;
 
             // Use transaction for atomicity
             using var transaction = indusConn.BeginTransaction();
@@ -1734,7 +1734,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             var adminUserId = await clientConn.ExecuteScalarAsync<int?>(
                 "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'");
             var companyId = await clientConn.ExecuteScalarAsync<int?>(
-                "SELECT TOP 1 CompanyID FROM CompanyMaster");
+                "SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0");
 
             if (!adminUserId.HasValue)
                 return new ApplyModuleGroupToClientResponse { Success = false, Message = "Admin user not found in client database." };
@@ -2043,3 +2043,4 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 }
+

@@ -226,15 +226,9 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         return map;
     }, [validationResult]);
 
-    // Helper: Build dropdown params that include current value if missing
-    const getDropdownParams = (options: any[]) => (params: any) => {
+    // Helper: Build dropdown params strictly from options
+    const getDropdownParams = (options: any[]) => () => {
         const values = ['', ...options.map(o => String(o))];
-        if (params.value !== undefined && params.value !== null && params.value !== '') {
-            const strVal = String(params.value);
-            if (!values.includes(strVal)) {
-                values.push(strVal);
-            }
-        }
         return { values };
     };
 

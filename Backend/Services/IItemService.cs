@@ -10,7 +10,7 @@ public interface IItemService
     Task<ImportResultDto> ImportItemsAsync(List<ItemMasterDto> items, int itemGroupId);
     Task<List<ItemGroupDto>> GetItemGroupsAsync();
     Task<List<HSNGroupDto>> GetHSNGroupsAsync();
-    Task<List<UnitDto>> GetUnitsAsync();
+    Task<FieldUnitsDto> GetFieldUnitsAsync(int itemGroupId);
     Task<List<ItemSubGroupDto>> GetItemSubGroupsAsync(int itemGroupId);
     Task<int> ClearAllItemDataAsync(string username, string password, string reason, int itemGroupId);
 }

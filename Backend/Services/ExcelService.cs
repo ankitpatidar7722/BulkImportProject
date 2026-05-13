@@ -1,4 +1,4 @@
-using Backend.DTOs;
+﻿using Backend.DTOs;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using OfficeOpenXml;
@@ -513,7 +513,7 @@ public class ExcelService : IExcelService
                     insertParams.Add("@HSNCode", hsnCode ?? "");
                     insertParams.Add("@UnderProductHSNID", 0);
                     insertParams.Add("@GroupLevel", 0);
-                    insertParams.Add("@CompanyID", 2);
+                    insertParams.Add("@CompanyID", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2);
                     insertParams.Add("@DisplayName", displayName);
                     insertParams.Add("@TariffNo", "");
                     insertParams.Add("@ProductCategory", productType ?? "");
@@ -524,15 +524,15 @@ public class ExcelService : IExcelService
                     insertParams.Add("@TallyProductHSNName", "");
                     insertParams.Add("@TallyGUID", 0);
                     insertParams.Add("@ItemGroupID", itemGroupId);
-                    insertParams.Add("@UserID", 2);
+                    insertParams.Add("@UserID", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
                     insertParams.Add("@ModifiedDate", DateTime.Now);
-                    insertParams.Add("@CreatedBy", 2);
+                    insertParams.Add("@CreatedBy", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
                     insertParams.Add("@CreatedDate", DateTime.Now);
-                    insertParams.Add("@ModifiedBy", 2);
+                    insertParams.Add("@ModifiedBy", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
                     insertParams.Add("@DeletedBy", 0);
                     insertParams.Add("@DeletedDate", null);
                     insertParams.Add("@IsDeletedTransaction", 0);
-                    insertParams.Add("@FYear", "2025-2026");
+                    insertParams.Add("@FYear", (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"));
 
                     insertList.Add(insertParams);
                 }
@@ -926,8 +926,8 @@ public class ExcelService : IExcelService
                         StockRefCode = row["StockRefCode"],
                         PurchaseOrderQuantity = row["PurchaseOrderQuantity"],
                         VoucherPrefix = "SPM",
-                        CompanyID = 2,
-                        UserID = 2,
+                        CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                        UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
                         VoucherDate = DateTime.Now,
                         CreatedBy = createdBy,
                         CreatedDate = DateTime.Now
@@ -1206,9 +1206,9 @@ public class ExcelService : IExcelService
                         LedgerCodePrefix = prefix,
                         LedgerName = ledgerName,
                         LedgerGroupID = ledgerGroupId,
-                        CompanyID = 2, // Hardcoded
-                        UserID = 2,    // Hardcoded
-                        FYear = "2025-2026",
+                        CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2, // Hardcoded
+                        UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,    // Hardcoded
+                        FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                         ISLedgerActive = true,
                         CreatedDate = DateTime.Now,
                         CreatedBy = 2
@@ -1244,9 +1244,9 @@ public class ExcelService : IExcelService
                         await _connection.ExecuteAsync(insertDetailSql, new {
                             LedgerID = newLedgerId,
                             LedgerGroupID = ledgerGroupId,
-                            CompanyID = 2,
-                            UserID = 2,
-                            FYear = "2025-2026",
+                            CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                            UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                            FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                             FieldName = key,             // The Excel Header Name
                             FieldValue = val ?? (object)DBNull.Value,  // Use DBNull.Value for null values
                             ParentFieldName = key,       // Legacy often maps ParentFieldName = FieldName
@@ -1260,9 +1260,9 @@ public class ExcelService : IExcelService
                     await _connection.ExecuteAsync(insertDetailSql, new {
                         LedgerID = newLedgerId,
                         LedgerGroupID = ledgerGroupId,
-                        CompanyID = 2,
-                        UserID = 2,
-                        FYear = "2025-2026",
+                        CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                        UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                        FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                         FieldName = "ISLedgerActive",
                         FieldValue = "True",
                         ParentFieldName = "ISLedgerActive",
@@ -1470,7 +1470,7 @@ public class ExcelService : IExcelService
             // Prepare parameters for the stored procedure or query
             var parameters = new DynamicParameters();
             parameters.Add("@TblName", tableName);
-            parameters.Add("@CompanyID", 2);
+            parameters.Add("@CompanyID", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2);
             parameters.Add("@LedgerGroupID", ledgerGroupId);
 
             // Execute the query/stored procedure
@@ -2219,15 +2219,15 @@ public class ExcelService : IExcelService
 
                     insertColumns.Add("CompanyID");
                     insertValues.Add("@CompanyID");
-                    masterParams.Add("@CompanyID", 2);
+                    masterParams.Add("@CompanyID", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2);
 
                     insertColumns.Add("UserID");
                     insertValues.Add("@UserID");
-                    masterParams.Add("@UserID", 2);
+                    masterParams.Add("@UserID", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
 
                     insertColumns.Add("FYear");
                     insertValues.Add("@FYear");
-                    masterParams.Add("@FYear", "2025-2026");
+                    masterParams.Add("@FYear", (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"));
 
                     insertColumns.Add("CreatedDate");
                     insertValues.Add("@CreatedDate");
@@ -2235,7 +2235,7 @@ public class ExcelService : IExcelService
 
                     insertColumns.Add("CreatedBy");
                     insertValues.Add("@CreatedBy");
-                    masterParams.Add("@CreatedBy", 2);
+                    masterParams.Add("@CreatedBy", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
 
                     insertColumns.Add("ModifiedDate");
                     insertValues.Add("@ModifiedDate");
@@ -2243,7 +2243,7 @@ public class ExcelService : IExcelService
 
                     insertColumns.Add("ModifiedBy");
                     insertValues.Add("@ModifiedBy");
-                    masterParams.Add("@ModifiedBy", 2);
+                    masterParams.Add("@ModifiedBy", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
 
                     insertColumns.Add("IsDeletedTransaction");
                     insertValues.Add("@IsDeletedTransaction");
@@ -2370,9 +2370,9 @@ public class ExcelService : IExcelService
                             await _connection.ExecuteAsync(insertDetailSql, new {
                                 LedgerID = newLedgerId,
                                 LedgerGroupID = ledgerGroupId,
-                                CompanyID = 2,
-                                UserID = 2,
-                                FYear = "2025-2026",
+                                CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                                UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                                FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                                 FieldName = masterCol.FieldName,
                                 FieldValue = fieldValue ?? "",
                                 ParentFieldName = masterCol.FieldName,
@@ -2418,9 +2418,9 @@ public class ExcelService : IExcelService
                             await _connection.ExecuteAsync(insertDetailSql, new {
                                 LedgerID = newLedgerId,
                                 LedgerGroupID = ledgerGroupId,
-                                CompanyID = 2,
-                                UserID = 2,
-                                FYear = "2025-2026",
+                                CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                                UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                                FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                                 FieldName = field.Key,
                                 FieldValue = fieldValue ?? "",
                                 ParentFieldName = field.Key,
@@ -2452,9 +2452,9 @@ public class ExcelService : IExcelService
                             await _connection.ExecuteAsync(insertDetailSql, new {
                                 LedgerID = newLedgerId,
                                 LedgerGroupID = ledgerGroupId,
-                                CompanyID = 2,
-                                UserID = 2,
-                                FYear = "2025-2026",
+                                CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                                UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                                FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                                 FieldName = field.Key,
                                 FieldValue = fieldValue ?? "",
                                 ParentFieldName = field.Key,
@@ -2473,9 +2473,9 @@ public class ExcelService : IExcelService
                     await _connection.ExecuteAsync(insertDetailSql, new {
                         LedgerID = newLedgerId,
                         LedgerGroupID = ledgerGroupId,
-                        CompanyID = 2,
-                        UserID = 2,
-                        FYear = "2025-2026",
+                        CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                        UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                        FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                         FieldName = "ISLedgerActive",
                         FieldValue = "True",
                         ParentFieldName = "ISLedgerActive",
@@ -2499,9 +2499,9 @@ public class ExcelService : IExcelService
                         await _connection.ExecuteAsync(insertDetailSql, new {
                             LedgerID = newLedgerId,
                             LedgerGroupID = ledgerGroupId,
-                            CompanyID = 2,
-                            UserID = 2,
-                            FYear = "2025-2026",
+                            CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                            UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                            FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                             FieldName = "GSTRegistrationType",
                             FieldValue = gstRegistrationType,
                             ParentFieldName = "GSTRegistrationType",
@@ -2516,9 +2516,9 @@ public class ExcelService : IExcelService
                         await _connection.ExecuteAsync(insertDetailSql, new {
                             LedgerID = newLedgerId,
                             LedgerGroupID = ledgerGroupId,
-                            CompanyID = 2,
-                            UserID = 2,
-                            FYear = "2025-2026",
+                            CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                            UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                            FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                             FieldName = "PartyType",
                             FieldValue = "Not Applicable",
                             ParentFieldName = "PartyType",
@@ -3021,8 +3021,8 @@ public class ExcelService : IExcelService
                         {
                             ToolID = newToolId,
                             ToolGroupID = toolGroupId,
-                            CompanyID = 2,
-                            UserID = 2,
+                            CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                            UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
                             FieldName = masterCol.FieldName,
                             FieldValue = fieldValue ?? "",
                             ParentFieldName = masterCol.FieldName,
@@ -3030,7 +3030,7 @@ public class ExcelService : IExcelService
                             ParentToolID = 0,
                             SequenceNo = sequenceNo++,
                             CreatedDate = DateTime.Now,
-                            CreatedBy = 2,
+                            CreatedBy = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
                             ModifiedDate = DateTime.Now,
                             ModifiedBy = 2
                         }, transaction: transaction);
@@ -3066,8 +3066,8 @@ public class ExcelService : IExcelService
                         {
                             ToolID = newToolId,
                             ToolGroupID = toolGroupId,
-                            CompanyID = 2,
-                            UserID = 2,
+                            CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                            UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
                             FieldName = field.Key,
                             FieldValue = fieldValue ?? "",
                             ParentFieldName = field.Key,
@@ -3075,7 +3075,7 @@ public class ExcelService : IExcelService
                             ParentToolID = 0,
                             SequenceNo = sequenceNo++,
                             CreatedDate = DateTime.Now,
-                            CreatedBy = 2,
+                            CreatedBy = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
                             ModifiedDate = DateTime.Now,
                             ModifiedBy = 2
                         }, transaction: transaction);
@@ -3449,7 +3449,7 @@ public class ExcelService : IExcelService
                         
                         var itemSubGroupID = await _connection.QueryFirstOrDefaultAsync<int?>(
                             subGroupQuery,
-                            new { ItemSubGroupName = itemSubGroupName, CompanyID = 2 }
+                            new { ItemSubGroupName = itemSubGroupName, CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2 }
                         );
                         
                         Console.WriteLine($"[DEBUG] ItemSubGroupName lookup: '{itemSubGroupName}' => ItemSubGroupID = {(itemSubGroupID.HasValue ? itemSubGroupID.Value.ToString() : "NULL")}");
@@ -3628,15 +3628,15 @@ public class ExcelService : IExcelService
 
                     insertColumns.Add("CompanyID");
                     insertValues.Add("@CompanyID");
-                    masterParams.Add("@CompanyID", 2);
+                    masterParams.Add("@CompanyID", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2);
 
                     insertColumns.Add("UserID");
                     insertValues.Add("@UserID");
-                    masterParams.Add("@UserID", 2);
+                    masterParams.Add("@UserID", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
 
                     insertColumns.Add("FYear");
                     insertValues.Add("@FYear");
-                    masterParams.Add("@FYear", "2025-2026");
+                    masterParams.Add("@FYear", (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"));
 
                     insertColumns.Add("CreatedDate");
                     insertValues.Add("@CreatedDate");
@@ -3644,7 +3644,7 @@ public class ExcelService : IExcelService
 
                     insertColumns.Add("CreatedBy");
                     insertValues.Add("@CreatedBy");
-                    masterParams.Add("@CreatedBy", 2);
+                    masterParams.Add("@CreatedBy", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
 
                     insertColumns.Add("ModifiedDate");
                     insertValues.Add("@ModifiedDate");
@@ -3652,7 +3652,7 @@ public class ExcelService : IExcelService
 
                     insertColumns.Add("ModifiedBy");
                     insertValues.Add("@ModifiedBy");
-                    masterParams.Add("@ModifiedBy", 2);
+                    masterParams.Add("@ModifiedBy", await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2);
 
                     insertColumns.Add("IsDeletedTransaction");
                     insertValues.Add("@IsDeletedTransaction");
@@ -3824,9 +3824,9 @@ public class ExcelService : IExcelService
                         await _connection.ExecuteAsync(insertDetailSql, new {
                             ItemID = newItemId,
                             ItemGroupID = itemGroupId,
-                            CompanyID = 2,
-                            UserID = 2,
-                            FYear = "2025-2026",
+                            CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                            UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                            FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                             FieldName = field.Key,
                             FieldValue = fieldValue,
                             ParentFieldName = field.Key,
@@ -3849,9 +3849,9 @@ public class ExcelService : IExcelService
                             await _connection.ExecuteAsync(insertDetailSql, new {
                                 ItemID = newItemId,
                                 ItemGroupID = itemGroupId,
-                                CompanyID = 2,
-                                UserID = 2,
-                                FYear = "2025-2026",
+                                CompanyID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2,
+                                UserID = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2,
+                                FYear = (await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026"),
                                 FieldName = "ItemSubGroupID",
                                 FieldValue = itemSubGroupIDValue,
                                 ParentFieldName = "ItemSubGroupID",
@@ -4003,7 +4003,7 @@ public class ExcelService : IExcelService
             rowData["ItemSize"] = $"{width} X {length}";
         }
         
-        // Calculate WtPerPacking = (SizeL × SizeW × GSM × UnitPerPacking) / 1000000000
+        // Calculate WtPerPacking = (SizeL Ã— SizeW Ã— GSM Ã— UnitPerPacking) / 1000000000
         // Try SizeL/SizeW first, then fallback to Length/Width
         var lenVal = GetFieldValueFromDict(rowData, "SizeL") ?? GetFieldValueFromDict(rowData, "Length");
         var widVal = GetFieldValueFromDict(rowData, "SizeW") ?? GetFieldValueFromDict(rowData, "Width");
@@ -4208,3 +4208,9 @@ public class ExcelService : IExcelService
         return rowData;
     }
 }
+
+
+
+
+
+

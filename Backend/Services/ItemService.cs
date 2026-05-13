@@ -231,11 +231,8 @@ public class ItemService : IItemService
             validHSNGroups.Select(h => h.DisplayName.Trim())
         );
 
-        // Get valid Units
-        var validUnits = await GetUnitsAsync();
-        var unitLookup = new HashSet<string>(
-            validUnits.Select(u => u.UnitSymbol.Trim())
-        );
+        // Get valid Units for fields dynamically from ItemGroupFieldMaster
+        var fieldUnits = await GetFieldUnitsAsync(itemGroupId);
 
         // Get valid Packing Types
         var validPackingTypes = new HashSet<string>(
@@ -339,9 +336,9 @@ public class ItemService : IItemService
         string? sheetUnitSymbol = null;
         if (isPaperGroup)
         {
-            sheetUnitSymbol = validUnits
-                .FirstOrDefault(u => string.Equals(u.UnitSymbol.Trim(), "SHEET", StringComparison.OrdinalIgnoreCase))
-                ?.UnitSymbol.Trim();
+            sheetUnitSymbol = fieldUnits.StockUnit
+                .FirstOrDefault(u => string.Equals(u.Trim(), "SHEET", StringComparison.OrdinalIgnoreCase))
+                ?.Trim();
         }
 
         for (int i = 0; i < items.Count; i++)
@@ -432,7 +429,7 @@ public class ItemService : IItemService
                            string.Equals(finishA, finishB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase);
                 }
-                else if (itemGroupId == 3) // INK & ADDITIVES: ItemType + InkColour + PantoneCode
+                else if (itemGroupId == 3) // INK & ADDITIVES: ItemType + InkColour + PantoneCode + ManufacturerItemCode + Manufacturer
                 {
                     var itemTypeA = a.ItemType?.Trim() ?? "";
                     var itemTypeB = b.ItemType?.Trim() ?? "";
@@ -443,9 +440,17 @@ public class ItemService : IItemService
                     var pantoneCodeA = a.PantoneCode?.Trim() ?? "";
                     var pantoneCodeB = b.PantoneCode?.Trim() ?? "";
 
+                    var mfgItemCodeA = a.ManufecturerItemCode?.Trim() ?? "";
+                    var mfgItemCodeB = b.ManufecturerItemCode?.Trim() ?? "";
+
+                    var manufacturerA = a.Manufecturer?.Trim() ?? "";
+                    var manufacturerB = b.Manufecturer?.Trim() ?? "";
+
                     return string.Equals(itemTypeA, itemTypeB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(inkColourA, inkColourB, StringComparison.OrdinalIgnoreCase) &&
-                           string.Equals(pantoneCodeA, pantoneCodeB, StringComparison.OrdinalIgnoreCase);
+                           string.Equals(pantoneCodeA, pantoneCodeB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(mfgItemCodeA, mfgItemCodeB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(manufacturerA, manufacturerB, StringComparison.OrdinalIgnoreCase);
                 }
                 else if (itemGroupId == 4) // VARNISHES & COATINGS: ItemType + Quality
                 {
@@ -458,7 +463,7 @@ public class ItemService : IItemService
                     return string.Equals(itemTypeA, itemTypeB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase);
                 }
-                else if (itemGroupId == 5) // LAMINATION FILM: Quality + SizeW + Thickness
+                else if (itemGroupId == 5) // LAMINATION FILM: Quality + SizeW + Thickness + StockRefCode
                 {
                     var qualityA = a.Quality?.Trim() ?? "";
                     var qualityB = b.Quality?.Trim() ?? "";
@@ -469,9 +474,13 @@ public class ItemService : IItemService
                     var thicknessA = a.Thickness?.ToString() ?? "";
                     var thicknessB = b.Thickness?.ToString() ?? "";
 
+                    var stockRefA = a.StockRefCode?.Trim() ?? "";
+                    var stockRefB = b.StockRefCode?.Trim() ?? "";
+
                     return string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase) &&
-                           string.Equals(thicknessA, thicknessB, StringComparison.OrdinalIgnoreCase);
+                           string.Equals(thicknessA, thicknessB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(stockRefA, stockRefB, StringComparison.OrdinalIgnoreCase);
                 }
                 else if (itemGroupId == 6) // FOIL: Quality + SizeW + Thickness
                 {
@@ -606,7 +615,15 @@ public class ItemService : IItemService
                 var unitValue = GetPropertyValue(item, unitField)?.ToString();
                 if (!string.IsNullOrWhiteSpace(unitValue))
                 {
-                    var isValidUnit = unitLookup.Contains(unitValue.Trim());
+                    List<string> validUnitsForField = new List<string>();
+                    if (string.Equals(unitField, "PurchaseUnit", StringComparison.OrdinalIgnoreCase))
+                        validUnitsForField = fieldUnits.PurchaseUnit;
+                    else if (string.Equals(unitField, "EstimationUnit", StringComparison.OrdinalIgnoreCase))
+                        validUnitsForField = fieldUnits.EstimationUnit;
+                    else if (string.Equals(unitField, "StockUnit", StringComparison.OrdinalIgnoreCase))
+                        validUnitsForField = fieldUnits.StockUnit;
+
+                    var isValidUnit = validUnitsForField.Contains(unitValue.Trim(), StringComparer.OrdinalIgnoreCase);
 
                     if (!isValidUnit)
                     {
@@ -1245,17 +1262,35 @@ public class ItemService : IItemService
         return results.ToList();
     }
 
-    public async Task<List<UnitDto>> GetUnitsAsync()
+    public async Task<FieldUnitsDto> GetFieldUnitsAsync(int itemGroupId)
     {
         var query = @"
-            SELECT UnitID, UnitSymbol
-            FROM UnitMaster
-            WHERE UnitSymbol IS NOT NULL 
-            AND UnitSymbol <> ''
-            ORDER BY UnitSymbol";
-
-        var results = await _connection.QueryAsync<UnitDto>(query);
-        return results.ToList();
+            SELECT FieldName, SelectBoxDefault 
+            FROM ItemGroupFieldMaster 
+            WHERE ItemGroupID = @ItemGroupID
+            AND FieldName IN ('PurchaseUnit', 'EstimationUnit', 'StockUnit')";
+            
+        var results = await _connection.QueryAsync<(string FieldName, string SelectBoxDefault)>(query, new { ItemGroupID = itemGroupId });
+        
+        var dto = new FieldUnitsDto();
+        foreach (var r in results)
+        {
+            if (!string.IsNullOrWhiteSpace(r.SelectBoxDefault))
+            {
+                var values = r.SelectBoxDefault.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                  .Select(s => s.Trim())
+                                  .Where(s => !string.IsNullOrEmpty(s))
+                                  .ToList();
+                                  
+                if (r.FieldName.Equals("PurchaseUnit", StringComparison.OrdinalIgnoreCase))
+                    dto.PurchaseUnit = values;
+                else if (r.FieldName.Equals("EstimationUnit", StringComparison.OrdinalIgnoreCase))
+                    dto.EstimationUnit = values;
+                else if (r.FieldName.Equals("StockUnit", StringComparison.OrdinalIgnoreCase))
+                    dto.StockUnit = values;
+            }
+        }
+        return dto;
     }
 
     public async Task<int> ClearAllItemDataAsync(string username, string password, string reason, int itemGroupId)

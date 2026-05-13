@@ -1,4 +1,4 @@
-using Backend.DTOs;
+﻿using Backend.DTOs;
 using Dapper;
 using Microsoft.Data.SqlClient;
 
@@ -19,7 +19,7 @@ public class ToolStockService : IToolStockService
             await _connection.OpenAsync();
     }
 
-    // ─── Warehouse List ─────────────────────────────────────────────────────────
+    // â”€â”€â”€ Warehouse List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<List<WarehouseDto>> GetWarehousesAsync()
     {
         await EnsureOpenAsync();
@@ -31,7 +31,7 @@ public class ToolStockService : IToolStockService
         return result.ToList();
     }
 
-    // ─── Bins by Warehouse ──────────────────────────────────────────────────────
+    // â”€â”€â”€ Bins by Warehouse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<List<WarehouseDto>> GetBinsByWarehouseAsync(string warehouseName)
     {
         await EnsureOpenAsync();
@@ -45,7 +45,7 @@ public class ToolStockService : IToolStockService
         return result.ToList();
     }
 
-    // ─── Enrich: validate ToolNames/ToolGroupNames, fill ToolID/ToolGroupID/BatchNo/StockUnit ─
+    // â”€â”€â”€ Enrich: validate ToolNames/ToolGroupNames, fill ToolID/ToolGroupID/BatchNo/StockUnit â”€
     public async Task<ToolStockEnrichResult> EnrichStockRowsAsync(List<ToolStockEnrichRowDto> rows)
     {
         await EnsureOpenAsync();
@@ -194,7 +194,7 @@ public class ToolStockService : IToolStockService
             enrichResult.Rows.Add(enriched);
         }
 
-        // ─── Step: Calculate Frequencies for BatchNo Logic ───
+        // â”€â”€â”€ Step: Calculate Frequencies for BatchNo Logic â”€â”€â”€
         var frequencies = enrichResult.Rows
             .Where(r => r.IsValid)
             .GroupBy(r => r.ToolID)
@@ -225,7 +225,7 @@ public class ToolStockService : IToolStockService
         return enrichResult;
     }
 
-    // ─── Import: final save to database ─────────────────────────────────────────
+    // â”€â”€â”€ Import: final save to database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     public async Task<ToolStockImportResult> ImportToolStockAsync(List<ToolStockRowDto> rows)
     {
         var result = new ToolStockImportResult { TotalRows = rows.Count };
@@ -240,7 +240,7 @@ public class ToolStockService : IToolStockService
         {
             await EnsureOpenAsync();
 
-            // ─── 1. Fetch tools for ToolID resolution ─────────────────────────
+            // â”€â”€â”€ 1. Fetch tools for ToolID resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var toolLookup = await _connection.QueryAsync<dynamic>(
                 @"SELECT t.ToolID, t.ToolName, t.ToolCode, t.ToolGroupID,
                          tg.ToolGroupName,
@@ -287,7 +287,7 @@ public class ToolStockService : IToolStockService
                     groupByName[gName] = (int)g.ToolGroupID;
             }
 
-            // ─── 2. Fetch warehouse lookup ──────────────────────────────────────
+            // â”€â”€â”€ 2. Fetch warehouse lookup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var warehouseLookup = await _connection.QueryAsync<dynamic>(
                 @"SELECT WarehouseID, WarehouseName, BinName
                   FROM WarehouseMaster
@@ -303,7 +303,7 @@ public class ToolStockService : IToolStockService
                     whMap[key] = (int)wh.WarehouseID;
             }
 
-            // ─── 3. Validate and resolve each row ───────────────────────────────
+            // â”€â”€â”€ 3. Validate and resolve each row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var validRows = new List<ToolStockRowDto>();
             var dateStr = DateTime.Now.ToString("dd-MM-yy");
 
@@ -316,14 +316,14 @@ public class ToolStockService : IToolStockService
                 if (string.IsNullOrWhiteSpace(row.ToolCode))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → ToolCode is missing");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ ToolCode is missing");
                     continue;
                 }
 
                 if (!groupByName.TryGetValue(row.ToolGroupName.Trim(), out int toolGroupId))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → ToolGroupName not found: {row.ToolGroupName}");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ ToolGroupName not found: {row.ToolGroupName}");
                     continue;
                 }
 
@@ -335,14 +335,14 @@ public class ToolStockService : IToolStockService
                 if (matched == null)
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → ToolCode are not Exist in database: {row.ToolCode}");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ ToolCode are not Exist in database: {row.ToolCode}");
                     continue;
                 }
 
                 if (row.ReceiptQuantity <= 0)
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → Invalid ReceiptQuantity ({row.ReceiptQuantity})");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ Invalid ReceiptQuantity ({row.ReceiptQuantity})");
                     continue;
                 }
 
@@ -354,13 +354,13 @@ public class ToolStockService : IToolStockService
 
                 // Use rate from Excel as is, no fallback to master
 
-                // Resolve WarehouseID — must find a valid match; never insert 0
+                // Resolve WarehouseID â€” must find a valid match; never insert 0
                 string whInputName = row.WarehouseName?.Trim() ?? "";
                 string whInputBin  = row.BinName?.Trim() ?? "";
                 if (string.IsNullOrEmpty(whInputName))
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → WarehouseName is required.");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ WarehouseName is required.");
                     continue;
                 }
 
@@ -372,7 +372,7 @@ public class ToolStockService : IToolStockService
                 else
                 {
                     result.FailedRows++;
-                    result.ErrorMessages.Add($"Row {row.RowIndex} → Warehouse '{row.WarehouseName}' / Bin '{row.BinName}' not found in WarehouseMaster. Check for extra spaces or spelling.");
+                    result.ErrorMessages.Add($"Row {row.RowIndex} â†’ Warehouse '{row.WarehouseName}' / Bin '{row.BinName}' not found in WarehouseMaster. Check for extra spaces or spelling.");
                     continue;
                 }
 
@@ -385,7 +385,7 @@ public class ToolStockService : IToolStockService
                 return result;
             }
 
-            // ─── Step: Calculate Frequencies for BatchNo Logic ───
+            // â”€â”€â”€ Step: Calculate Frequencies for BatchNo Logic â”€â”€â”€
             var frequencies = validRows
                 .GroupBy(r => r.ToolID)
                 .ToDictionary(g => g.Key, g => g.Count());
@@ -412,12 +412,12 @@ public class ToolStockService : IToolStockService
                 }
             }
 
-            // ─── 4. Generate Voucher Number ─────────────────────────────────────
+            // â”€â”€â”€ 4. Generate Voucher Number â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const string prefix = "PPH";
             const int voucherId = -41;
-            const int companyId = 2;
-            const int userId = 2;
-            const string fYear = "2025-2026";
+            var companyId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2;
+            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 2;
+            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
 
             var maxVoucherNo = await _connection.ExecuteScalarAsync<long?>(
                 @"SELECT ISNULL(MAX(MaxVoucherNo), 0) FROM ToolTransactionMain
@@ -431,10 +431,10 @@ public class ToolStockService : IToolStockService
             maxVoucherNo++;
             var voucherNo = $"{prefix}{maxVoucherNo:00000}";
 
-            // ─── 5. Calculate totals ────────────────────────────────────────────
+            // â”€â”€â”€ 5. Calculate totals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             decimal totalQuantity = validRows.Sum(r => Math.Round(r.ReceiptQuantity, 2));
 
-            // ─── 6. INSERT ToolTransactionMain ──────────────────────────────────
+            // â”€â”€â”€ 6. INSERT ToolTransactionMain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var transactionId = await _connection.ExecuteScalarAsync<int>(
                 @"INSERT INTO ToolTransactionMain
                     (TotalQuantity, Particular, Narration,
@@ -457,7 +457,7 @@ public class ToolStockService : IToolStockService
                     VoucherNo = voucherNo
                 });
 
-            // ─── 7. Bulk INSERT ToolTransactionDetail ───────────────────────────
+            // â”€â”€â”€ 7. Bulk INSERT ToolTransactionDetail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             var detailTable = new System.Data.DataTable();
             detailTable.Columns.Add("TransID", typeof(int));
             detailTable.Columns.Add("ToolID", typeof(int));
@@ -486,7 +486,7 @@ public class ToolStockService : IToolStockService
             {
                 var r = validRows[i];
                 var qty = Math.Round(r.ReceiptQuantity, 2);
-                var rate = Math.Round(r.LandedRate, 2);
+                var rate = Math.Round(r.LandedRate, 3);
 
                 detailTable.Rows.Add(
                     i + 1,              // TransID
@@ -519,7 +519,7 @@ public class ToolStockService : IToolStockService
 
             await bulkCopy.WriteToServerAsync(detailTable);
 
-            // ─── 8. Build result ───────────────────────────────────────────────
+            // â”€â”€â”€ 8. Build result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             result.Success = true;
             result.ImportedRows = validRows.Count;
             result.Message = result.FailedRows > 0
@@ -536,7 +536,7 @@ public class ToolStockService : IToolStockService
         return result;
     }
 
-    // ─── Validate: structured validation matching Import Master pattern ───────
+    // â”€â”€â”€ Validate: structured validation matching Import Master pattern â”€â”€â”€â”€â”€â”€â”€
     public async Task<ToolStockValidationResult> ValidateStockRowsAsync(List<ToolStockEnrichedRow> rows)
     {
         await EnsureOpenAsync();
@@ -550,7 +550,7 @@ public class ToolStockService : IToolStockService
             return validationResult;
         }
 
-        // ─── 1. Fetch lookup data ────────────────────────────────────────────
+        // â”€â”€â”€ 1. Fetch lookup data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var toolLookup = await _connection.QueryAsync<dynamic>(
             @"SELECT t.ToolID, t.ToolName, t.ToolGroupID, tg.ToolGroupName
               FROM ToolMaster t
@@ -586,7 +586,7 @@ public class ToolStockService : IToolStockService
               WHERE ISNULL(IsDeletedTransaction, 0) = 0");
         var validWarehouses = new HashSet<string>(warehouseNames, StringComparer.OrdinalIgnoreCase);
 
-        // Fetch warehouse → bin mapping
+        // Fetch warehouse â†’ bin mapping
         var warehouseBins = await _connection.QueryAsync<dynamic>(
             @"SELECT LTRIM(RTRIM(WarehouseName)) AS WarehouseName, LTRIM(RTRIM(BinName)) AS BinName
               FROM WarehouseMaster
@@ -605,7 +605,7 @@ public class ToolStockService : IToolStockService
             }
         }
 
-        // ─── 2. Duplicate detection by (ToolID, BatchNo, WarehouseName, BinName) ─
+        // â”€â”€â”€ 2. Duplicate detection by (ToolID, BatchNo, WarehouseName, BinName) â”€
         var compositeKeyCounts = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < rows.Count; i++)
         {
@@ -622,7 +622,7 @@ public class ToolStockService : IToolStockService
         var duplicateRowIndices = new HashSet<int>(
             compositeKeyCounts.Where(kv => kv.Value.Count > 1).SelectMany(kv => kv.Value.Skip(1)));
 
-        // ─── 3. Per-row validation ───────────────────────────────────────────
+        // â”€â”€â”€ 3. Per-row validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         for (int i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
@@ -777,7 +777,7 @@ public class ToolStockService : IToolStockService
             validationResult.Rows.Add(rowValidation);
         }
 
-        // ─── 4. Final summary ────────────────────────────────────────────────
+        // â”€â”€â”€ 4. Final summary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         validationResult.IsValid = validationResult.Summary.DuplicateCount == 0
             && validationResult.Summary.MissingDataCount == 0
             && validationResult.Summary.MismatchCount == 0
@@ -786,7 +786,7 @@ public class ToolStockService : IToolStockService
         return validationResult;
     }
 
-    // ─── Load Stock: fetch existing tool stock data from DB ────────────────────
+    // â”€â”€â”€ Load Stock: fetch existing tool stock data from DB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Returns actual batch-wise closing stock (ReceiptQuantity - IssueQuantity > 0)
     public async Task<List<ToolStockEnrichedRow>> GetStockDataAsync(int toolGroupId)
     {
@@ -842,7 +842,7 @@ public class ToolStockService : IToolStockService
         return rows.ToList();
     }
 
-    // ─── Load Master Data: fetch all tools for a group to use as template ───
+    // â”€â”€â”€ Load Master Data: fetch all tools for a group to use as template â”€â”€â”€
     public async Task<List<ToolStockEnrichedRow>> GetMasterDataAsync(int toolGroupId)
     {
         await EnsureOpenAsync();
@@ -867,3 +867,5 @@ public class ToolStockService : IToolStockService
         return result.ToList();
     }
 }
+
+

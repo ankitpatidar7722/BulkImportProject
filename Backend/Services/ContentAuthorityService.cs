@@ -249,6 +249,58 @@ public class ContentAuthorityService : IContentAuthorityService
         finally { if (!clientWasOpen) await _clientConn.CloseAsync(); }
     }
 
+    // ── UPDATE KEYLINE DETAILS (Only ContentWiseKeylineCoordinates + ContentWiseKeylineSheetPlanning) ──
+    public async Task<ContentAuthoritySaveResult> UpdateKeylineDetailsAsync(List<string> contentNames)
+    {
+        var result = new ContentAuthoritySaveResult();
+        if (contentNames == null || contentNames.Count == 0) return result;
+
+        await using var sourceConn = new SqlConnection(SourceConnStr);
+        await sourceConn.OpenAsync();
+
+        var clientWasOpen = _clientConn.State == ConnectionState.Open;
+        if (!clientWasOpen) await _clientConn.OpenAsync();
+
+        var sheetIdCols = await GetIdentityColumnsAsync(_clientConn, null, "ContentWiseKeylineSheetPlanning");
+        var coordIdCols = await GetIdentityColumnsAsync(_clientConn, null, "ContentWiseKeyLineCoordinates");
+
+        await using var transaction = (SqlTransaction)await _clientConn.BeginTransactionAsync();
+        try
+        {
+            DataTable? dtSheet = null; DataTable? dtCoord = null;
+
+            foreach (var name in contentNames)
+            {
+                result.ChildRowsDeleted += await _clientConn.ExecuteAsync("DELETE FROM ContentWiseKeylineSheetPlanning WHERE ContentType = @N", new { N = name }, transaction);
+                result.ChildRowsDeleted += await _clientConn.ExecuteAsync("DELETE FROM ContentWiseKeyLineCoordinates WHERE ContentType = @N", new { N = name }, transaction);
+
+                var srcSheets = (await sourceConn.QueryAsync<dynamic>("SELECT * FROM ContentWiseKeylineSheetPlanning WHERE ContentType = @N", new { N = name })).ToList();
+                var srcCoords = (await sourceConn.QueryAsync<dynamic>("SELECT * FROM ContentWiseKeyLineCoordinates WHERE ContentType = @N", new { N = name })).ToList();
+
+                if (srcSheets.Count > 0)
+                {
+                    dtSheet ??= BuildDataTable((IDictionary<string, object>)srcSheets[0], sheetIdCols);
+                    foreach (var r in srcSheets) { AppendRow(dtSheet, (IDictionary<string, object>)r, sheetIdCols); result.ChildRowsInserted++; }
+                }
+                if (srcCoords.Count > 0)
+                {
+                    dtCoord ??= BuildDataTable((IDictionary<string, object>)srcCoords[0], coordIdCols);
+                    foreach (var r in srcCoords) { AppendRow(dtCoord, (IDictionary<string, object>)r, coordIdCols); result.ChildRowsInserted++; }
+                }
+                result.Processed++;
+            }
+
+            if (dtSheet is { Rows.Count: > 0 }) await BulkInsertAsync(_clientConn, transaction, "ContentWiseKeylineSheetPlanning", dtSheet);
+            if (dtCoord is { Rows.Count: > 0 }) await BulkInsertAsync(_clientConn, transaction, "ContentWiseKeyLineCoordinates", dtCoord);
+
+            await transaction.CommitAsync();
+            result.Message = $"Keyline details refreshed for {result.Processed} contents. Child rows inserted: {result.ChildRowsInserted}.";
+            return result;
+        }
+        catch { await transaction.RollbackAsync(); throw; }
+        finally { if (!clientWasOpen) await _clientConn.CloseAsync(); }
+    }
+
     private static async Task BulkInsertAsync(SqlConnection conn, SqlTransaction tx, string table, DataTable dt)
     {
         using var bulk = new SqlBulkCopy(conn, SqlBulkCopyOptions.Default, tx) { DestinationTableName = table, BatchSize = 5000, BulkCopyTimeout = 120 };
