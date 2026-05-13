@@ -955,7 +955,7 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                     // ClientName for Consignee
                     const clientName = row.ClientName || row['Client Name'] || row.clientName;
 
-                    let refCode = row.RefCode || '';
+                    const refCode = row.RefCode || '';
 
                     let gstRegistrationType = 'Regular';
                     if (row.GSTRegistrationType !== undefined && row.GSTRegistrationType !== null && row.GSTRegistrationType !== '') {

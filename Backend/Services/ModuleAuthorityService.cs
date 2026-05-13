@@ -26,12 +26,12 @@ public class ModuleAuthorityService : IModuleAuthorityService
         // 1. Fetch source modules
         await using var sourceConn = new SqlConnection(SourceConnStr);
         var sourceModules = (await sourceConn.QueryAsync<dynamic>(
-            "SELECT ModuleHeadName, ModuleName, ModuleDisplayName FROM ModuleMaster WHERE IsDeletedTransaction = 0"
+            "SELECT ModuleHeadName, ModuleName, ModuleDisplayName FROM ModuleMaster WHERE IsDeletedTransaction = 0 and ModuleHeadName ='Dashboard'"
         )).ToList();
 
         // 2. Fetch login DB modules (all, including soft-deleted). ISNULL handles NULL values.
         var loginModules = (await _connection.QueryAsync<dynamic>(
-            "SELECT ModuleHeadName, ModuleDisplayName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster"
+            "SELECT ModuleHeadName, ModuleDisplayName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster where ModuleHeadName ='Dashboard'"
         )).ToList();
 
         // 3. Build lookup from login DB: key = HeadName|DisplayName, value = IsDeletedTransaction (bool)

@@ -746,7 +746,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
         const boolFields = new Set(['isStandardItem', 'isRegularItem']);
 
         return data.map(item => {
-            const { hsnCode, ...rest } = item;
+            const { hsnCode: _hsnCode, ...rest } = item;
             const cleaned: any = {};
             const rawValues: Record<string, string> = {};
 
@@ -898,7 +898,7 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
             if (duplicateRows.length > 0) {
                 setImportProgress(null);
                 const columnFailures = new Map<string, Set<string>>();
-                duplicateRows.forEach((_row: ItemRowValidation) => {
+                duplicateRows.forEach((_row) => {
                     const col = 'ItemName';
                     if (!columnFailures.has(col)) columnFailures.set(col, new Set());
                     columnFailures.get(col)!.add('Duplicate data found');

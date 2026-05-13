@@ -32,7 +32,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
         { name: 'Import Master', path: '/import-master', icon: Upload },
         { name: 'Stock Upload', path: '/stock-upload', icon: PackageOpen },
         { name: 'Company Master', path: '/company-master', icon: Building2 },
-        // { name: 'Module Authority', path: '/dynamic-module', icon: Layers },- because after discuss with mahesh sir then i recommented
+        { name: 'Module Authority', path: '/dynamic-module', icon: Layers },//- because after discuss with mahesh sir then i recommented
         { name: 'Content Authority', path: '/content-authority', icon: BookOpen },
         { name: 'ERP Transaction Delete', path: '/erp-transaction-delete', icon: Trash2 },
     ];
