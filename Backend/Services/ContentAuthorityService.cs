@@ -92,10 +92,11 @@ public class ContentAuthorityService : IContentAuthorityService
         var existingClientIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            var rows = await _clientConn.QueryAsync<dynamic>("SELECT ContentId, ContentName FROM ContentMaster");
-            foreach (var r in rows) existingClientIds[(string)r.ContentName] = (int)r.ContentId;
+            var rows = await _clientConn.QueryAsync<(int Id, string Name)>(
+                "SELECT ContentId AS Id, ContentName AS Name FROM ContentMaster");
+            foreach (var r in rows) existingClientIds[r.Name] = r.Id;
         }
-        catch { }
+        catch (Exception ex) { Console.WriteLine($"[ContentAuthority] existingClientIds load error: {ex.Message}"); }
 
         // Prep for potential bulk inserts (only if we have new rows)
         var sheetIdCols = await GetIdentityColumnsAsync(_clientConn, null, "ContentWiseKeylineSheetPlanning");
@@ -128,32 +129,47 @@ public class ContentAuthorityService : IContentAuthorityService
                 }
                 else
                 {
-                    // Case: NEW CONTENT -> INSERT + FULL DATA SYNC (per user request)
-                    var sourceRow = await sourceConn.QueryFirstOrDefaultAsync<dynamic>("SELECT * FROM ContentMaster WHERE ContentName = @N", new { N = name });
-                    if (sourceRow != null)
+                    // Double-check directly in DB — existingClientIds may have failed to load
+                    var existingId = await _clientConn.ExecuteScalarAsync<int?>(
+                        "SELECT ContentId FROM ContentMaster WHERE ContentName = @N", new { N = name }, transaction);
+
+                    if (existingId.HasValue)
                     {
-                        var srcDict = (IDictionary<string, object>)sourceRow;
-                        srcDict["IsActive"] = 1;
-                        var cols = srcDict.Keys.Where(k => !k.Equals("ContentId", StringComparison.OrdinalIgnoreCase)).ToList();
-                        var sql = $"INSERT INTO ContentMaster ({string.Join(",", cols.Select(c => $"[{c}]"))}) VALUES ({string.Join(",", cols.Select(c => "@" + c))})";
-                        var p = new DynamicParameters();
-                        foreach (var c in cols) p.Add("@" + c, srcDict[c]);
-                        await _clientConn.ExecuteAsync(sql, p, transaction);
-                        result.Inserted++;
-
-                        // SYNC CHILD TABLES FOR NEW CONTENT
-                        var srcSheets = (await sourceConn.QueryAsync<dynamic>("SELECT * FROM ContentWiseKeylineSheetPlanning WHERE ContentType = @N", new { N = name })).ToList();
-                        var srcCoords = (await sourceConn.QueryAsync<dynamic>("SELECT * FROM ContentWiseKeyLineCoordinates WHERE ContentType = @N", new { N = name })).ToList();
-
-                        if (srcSheets.Count > 0)
+                        // Content exists in DB but wasn't in our cache -> just activate, NO keyline sync
+                        await _clientConn.ExecuteAsync(
+                            "UPDATE ContentMaster SET IsActive = 1 WHERE ContentId = @Id",
+                            new { Id = existingId.Value }, transaction);
+                        result.Updated++;
+                    }
+                    else
+                    {
+                        // Case: TRULY NEW CONTENT -> INSERT + FULL DATA SYNC (keyline only for first time)
+                        var sourceRow = await sourceConn.QueryFirstOrDefaultAsync<dynamic>("SELECT * FROM ContentMaster WHERE ContentName = @N", new { N = name });
+                        if (sourceRow != null)
                         {
-                            dtSheet ??= BuildDataTable((IDictionary<string, object>)srcSheets[0], sheetIdCols);
-                            foreach (var r in srcSheets) { AppendRow(dtSheet, (IDictionary<string, object>)r, sheetIdCols); result.ChildRowsInserted++; }
-                        }
-                        if (srcCoords.Count > 0)
-                        {
-                            dtCoord ??= BuildDataTable((IDictionary<string, object>)srcCoords[0], coordIdCols);
-                            foreach (var r in srcCoords) { AppendRow(dtCoord, (IDictionary<string, object>)r, coordIdCols); result.ChildRowsInserted++; }
+                            var srcDict = (IDictionary<string, object>)sourceRow;
+                            srcDict["IsActive"] = 1;
+                            var cols = srcDict.Keys.Where(k => !k.Equals("ContentId", StringComparison.OrdinalIgnoreCase)).ToList();
+                            var sql = $"INSERT INTO ContentMaster ({string.Join(",", cols.Select(c => $"[{c}]"))}) VALUES ({string.Join(",", cols.Select(c => "@" + c))})";
+                            var p = new DynamicParameters();
+                            foreach (var c in cols) p.Add("@" + c, srcDict[c]);
+                            await _clientConn.ExecuteAsync(sql, p, transaction);
+                            result.Inserted++;
+
+                            // SYNC CHILD TABLES — only for first-time content
+                            var srcSheets = (await sourceConn.QueryAsync<dynamic>("SELECT * FROM ContentWiseKeylineSheetPlanning WHERE ContentType = @N", new { N = name })).ToList();
+                            var srcCoords = (await sourceConn.QueryAsync<dynamic>("SELECT * FROM ContentWiseKeyLineCoordinates WHERE ContentType = @N", new { N = name })).ToList();
+
+                            if (srcSheets.Count > 0)
+                            {
+                                dtSheet ??= BuildDataTable((IDictionary<string, object>)srcSheets[0], sheetIdCols);
+                                foreach (var r in srcSheets) { AppendRow(dtSheet, (IDictionary<string, object>)r, sheetIdCols); result.ChildRowsInserted++; }
+                            }
+                            if (srcCoords.Count > 0)
+                            {
+                                dtCoord ??= BuildDataTable((IDictionary<string, object>)srcCoords[0], coordIdCols);
+                                foreach (var r in srcCoords) { AppendRow(dtCoord, (IDictionary<string, object>)r, coordIdCols); result.ChildRowsInserted++; }
+                            }
                         }
                     }
                 }
@@ -243,6 +259,58 @@ public class ContentAuthorityService : IContentAuthorityService
 
             await transaction.CommitAsync();
             result.Message = $"Tech details refreshed for {result.Processed} contents. Child rows inserted: {result.ChildRowsInserted}.";
+            return result;
+        }
+        catch { await transaction.RollbackAsync(); throw; }
+        finally { if (!clientWasOpen) await _clientConn.CloseAsync(); }
+    }
+
+    // ── UPDATE KEYLINE DETAILS (Only ContentWiseKeylineCoordinates + ContentWiseKeylineSheetPlanning) ──
+    public async Task<ContentAuthoritySaveResult> UpdateKeylineDetailsAsync(List<string> contentNames)
+    {
+        var result = new ContentAuthoritySaveResult();
+        if (contentNames == null || contentNames.Count == 0) return result;
+
+        await using var sourceConn = new SqlConnection(SourceConnStr);
+        await sourceConn.OpenAsync();
+
+        var clientWasOpen = _clientConn.State == ConnectionState.Open;
+        if (!clientWasOpen) await _clientConn.OpenAsync();
+
+        var sheetIdCols = await GetIdentityColumnsAsync(_clientConn, null, "ContentWiseKeylineSheetPlanning");
+        var coordIdCols = await GetIdentityColumnsAsync(_clientConn, null, "ContentWiseKeyLineCoordinates");
+
+        await using var transaction = (SqlTransaction)await _clientConn.BeginTransactionAsync();
+        try
+        {
+            DataTable? dtSheet = null; DataTable? dtCoord = null;
+
+            foreach (var name in contentNames)
+            {
+                result.ChildRowsDeleted += await _clientConn.ExecuteAsync("DELETE FROM ContentWiseKeylineSheetPlanning WHERE ContentType = @N", new { N = name }, transaction);
+                result.ChildRowsDeleted += await _clientConn.ExecuteAsync("DELETE FROM ContentWiseKeyLineCoordinates WHERE ContentType = @N", new { N = name }, transaction);
+
+                var srcSheets = (await sourceConn.QueryAsync<dynamic>("SELECT * FROM ContentWiseKeylineSheetPlanning WHERE ContentType = @N", new { N = name })).ToList();
+                var srcCoords = (await sourceConn.QueryAsync<dynamic>("SELECT * FROM ContentWiseKeyLineCoordinates WHERE ContentType = @N", new { N = name })).ToList();
+
+                if (srcSheets.Count > 0)
+                {
+                    dtSheet ??= BuildDataTable((IDictionary<string, object>)srcSheets[0], sheetIdCols);
+                    foreach (var r in srcSheets) { AppendRow(dtSheet, (IDictionary<string, object>)r, sheetIdCols); result.ChildRowsInserted++; }
+                }
+                if (srcCoords.Count > 0)
+                {
+                    dtCoord ??= BuildDataTable((IDictionary<string, object>)srcCoords[0], coordIdCols);
+                    foreach (var r in srcCoords) { AppendRow(dtCoord, (IDictionary<string, object>)r, coordIdCols); result.ChildRowsInserted++; }
+                }
+                result.Processed++;
+            }
+
+            if (dtSheet is { Rows.Count: > 0 }) await BulkInsertAsync(_clientConn, transaction, "ContentWiseKeylineSheetPlanning", dtSheet);
+            if (dtCoord is { Rows.Count: > 0 }) await BulkInsertAsync(_clientConn, transaction, "ContentWiseKeyLineCoordinates", dtCoord);
+
+            await transaction.CommitAsync();
+            result.Message = $"Keyline details refreshed for {result.Processed} contents. Child rows inserted: {result.ChildRowsInserted}.";
             return result;
         }
         catch { await transaction.RollbackAsync(); throw; }

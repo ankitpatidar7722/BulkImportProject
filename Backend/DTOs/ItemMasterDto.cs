@@ -65,6 +65,14 @@ public class ItemMasterDto
     public decimal? AdhesiveGSM { get; set; }
     public decimal? TotalGSM { get; set; }
 
+    // SHIPPER CARTON-specific fields
+    public decimal? SizeH { get; set; }
+    public int? NoOfPly { get; set; }
+    public decimal? EmptyCartonWt { get; set; }
+    public decimal? Capacity { get; set; }
+    public decimal? CBF { get; set; }
+    public decimal? CBM { get; set; }
+
     // Dynamic fields from ItemMasterDetails
     public Dictionary<string, object?>? DynamicFields { get; set; }
 

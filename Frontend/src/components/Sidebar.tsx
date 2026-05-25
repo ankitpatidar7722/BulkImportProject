@@ -11,7 +11,9 @@ import {
     BookOpen,
     X,
     ChevronsLeft,
-    ChevronsRight
+    ChevronsRight,
+    PenTool,
+    PlusSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -25,16 +27,18 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggleCollapse }) => {
     const location = useLocation();
-    const { loginType } = useAuth();
+    const { loginType, authorizedModules } = useAuth();
 
     const customerMenuItems = [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
         { name: 'Import Master', path: '/import-master', icon: Upload },
         { name: 'Stock Upload', path: '/stock-upload', icon: PackageOpen },
         { name: 'Company Master', path: '/company-master', icon: Building2 },
-        { name: 'Module Authority', path: '/dynamic-module', icon: Layers },//- because after discuss with mahesh sir then i recommented
+        { name: 'Module Authority', path: '/dynamic-module', icon: Layers },
+        { name: 'New Module Addition', path: '/module-authority', icon: PlusSquare },
         { name: 'Content Authority', path: '/content-authority', icon: BookOpen },
         { name: 'ERP Transaction Delete', path: '/erp-transaction-delete', icon: Trash2 },
+        { name: 'Key Line Generator', path: '/keyline-generator', icon: PenTool },
     ];
 
     const indusMenuItems = [
@@ -42,7 +46,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
         { name: 'Module Group Authority', path: '/module-group-authority', icon: Layers },
     ];
 
-    const menuItems = loginType === 'indus' ? indusMenuItems : customerMenuItems;
+    const visibleCustomerItems = authorizedModules.length > 0
+        ? customerMenuItems.filter(item => authorizedModules.includes(item.path))
+        : customerMenuItems;
+
+    const menuItems = loginType === 'indus' ? indusMenuItems : visibleCustomerItems;
 
     return (
         <>

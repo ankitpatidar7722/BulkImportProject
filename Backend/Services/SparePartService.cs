@@ -78,12 +78,6 @@ public class SparePartService : ISparePartService
             StringComparer.OrdinalIgnoreCase
         );
 
-        // Fixed SparePartType values
-        var validSparePartTypes = new HashSet<string>(
-            new[] { "Electronics", "Electrical", "Mechanical", "Others" },
-            StringComparer.OrdinalIgnoreCase
-        );
-
         // Required fields
         var requiredFields = new[] { "SparePartName", "SparePartGroup", "HSNGroup", "Unit", "SparePartType" };
 
@@ -210,28 +204,7 @@ public class SparePartService : ISparePartService
                 }
             }
 
-            // 5. Check SparePartType mismatch (YELLOW)
-            if (!string.IsNullOrWhiteSpace(sparePart.SparePartType))
-            {
-                var isValidType = validSparePartTypes.Contains(sparePart.SparePartType.Trim());
-
-                if (!isValidType)
-                {
-                    rowValidation.CellValidations.Add(new CellValidation
-                    {
-                        ColumnName = "SparePartType",
-                        ValidationMessage = "SparePartType must be: Electronics, Electrical, Mechanical, or Others",
-                        Status = ValidationStatus.Mismatch
-                    });
-
-                    if (rowValidation.RowStatus == ValidationStatus.Valid)
-                        rowValidation.RowStatus = ValidationStatus.Mismatch;
-
-                    hasMismatch = true;
-                }
-            }
-
-            // 6. Check for Special Characters (InvalidContent)
+            // 5. Check for Special Characters (InvalidContent)
             var stringProperties = typeof(SparePartMasterDto)
                 .GetProperties()
                 .Where(p => p.PropertyType == typeof(string) && p.Name != "Narration");
@@ -284,6 +257,24 @@ public class SparePartService : ISparePartService
 
         if (_connection.State != System.Data.ConnectionState.Open)
             await _connection.OpenAsync();
+
+        // ─── 0. Ensure string columns are wide enough ────────────────────────
+        var colsToWiden = new[] { "SparePartName", "SparePartGroup", "SparePartType", "HSNGroup", "SupplierReference", "StockRefCode", "Narration" };
+        foreach (var col in colsToWiden)
+        {
+            var widenSql = $@"
+                IF EXISTS (
+                    SELECT 1 FROM sys.columns
+                    WHERE Name = '{col}'
+                    AND Object_ID = Object_ID(N'SparePartMaster')
+                    AND max_length != -1
+                    AND max_length / 2 < 500
+                )
+                BEGIN
+                    ALTER TABLE SparePartMaster ALTER COLUMN {col} NVARCHAR(500) NULL;
+                END";
+            await _connection.ExecuteAsync(widenSql);
+        }
 
         // ─── 1. Fetch lookup data ────────────────────────────────────────────
         var hsnGroups = await GetHSNGroupsAsync();

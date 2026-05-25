@@ -1,20 +1,23 @@
 using Backend.DTOs;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 
 namespace Backend.Services;
 
 public class ModuleAuthorityService : IModuleAuthorityService
 {
     private readonly SqlConnection _connection;
+    private readonly IConfiguration _config;
 
     private const string SourceConnStr =
         "Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseNewInstallation;" +
         "User ID=indus;Password=Param@99811;Persist Security Info=True;TrustServerCertificate=True";
 
-    public ModuleAuthorityService(SqlConnection connection)
+    public ModuleAuthorityService(SqlConnection connection, IConfiguration config)
     {
         _connection = connection;
+        _config = config;
     }
 
     /// <summary>
@@ -26,12 +29,13 @@ public class ModuleAuthorityService : IModuleAuthorityService
         // 1. Fetch source modules
         await using var sourceConn = new SqlConnection(SourceConnStr);
         var sourceModules = (await sourceConn.QueryAsync<dynamic>(
-            "SELECT ModuleHeadName, ModuleName, ModuleDisplayName FROM ModuleMaster WHERE IsDeletedTransaction = 0 and ModuleHeadName ='Dashboard'"
+
+            "SELECT ModuleHeadName, ModuleName, ModuleDisplayName FROM ModuleMaster WHERE IsDeletedTransaction = 0"
         )).ToList();
 
         // 2. Fetch login DB modules (all, including soft-deleted). ISNULL handles NULL values.
         var loginModules = (await _connection.QueryAsync<dynamic>(
-            "SELECT ModuleHeadName, ModuleDisplayName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster where ModuleHeadName ='Dashboard'"
+            "SELECT ModuleHeadName, ModuleDisplayName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster"
         )).ToList();
 
         // 3. Build lookup from login DB: key = HeadName|DisplayName, value = IsDeletedTransaction (bool)
@@ -185,6 +189,57 @@ public class ModuleAuthorityService : IModuleAuthorityService
             return new { inserted, deleted, maintained, total = modules.Count };
         }
         catch (Exception ex)
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    public async Task<List<IndusToolModuleDto>> GetModulesForCompanyAsync(string companyUserID)
+    {
+        var indusConnStr = _config.GetConnectionString("IndusConnection")
+            ?? throw new InvalidOperationException("IndusConnection not configured.");
+        await using var conn = new SqlConnection(indusConnStr);
+        var modules = (await conn.QueryAsync<IndusToolModuleDto>(
+            @"SELECT m.ModuleID, m.ModuleName, m.ModulePath, m.ModuleIcon, m.DisplayOrder,
+                     CASE WHEN a.ModuleID IS NOT NULL THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS IsEnabled
+              FROM IndusToolModuleMaster m
+              LEFT JOIN CompanyModuleAuthority a
+                ON a.ModuleID = m.ModuleID AND a.CompanyUserID = @CompanyUserID
+              ORDER BY m.DisplayOrder",
+            new { CompanyUserID = companyUserID })).ToList();
+        return modules;
+    }
+
+    public async Task<ModuleAuthorityResult> SaveCompanyModuleAuthorityAsync(SaveModuleAuthorityRequest request)
+    {
+        var indusConnStr = _config.GetConnectionString("IndusConnection")
+            ?? throw new InvalidOperationException("IndusConnection not configured.");
+        await using var conn = new SqlConnection(indusConnStr);
+        await conn.OpenAsync();
+        using var transaction = conn.BeginTransaction();
+        try
+        {
+            await conn.ExecuteAsync(
+                "DELETE FROM CompanyModuleAuthority WHERE CompanyUserID = @CompanyUserID",
+                new { request.CompanyUserID }, transaction: transaction);
+
+            foreach (var moduleId in request.EnabledModuleIDs)
+            {
+                await conn.ExecuteAsync(
+                    "INSERT INTO CompanyModuleAuthority (CompanyUserID, ModuleID) VALUES (@CompanyUserID, @ModuleID)",
+                    new { request.CompanyUserID, ModuleID = moduleId }, transaction: transaction);
+            }
+
+            transaction.Commit();
+            return new ModuleAuthorityResult
+            {
+                Success = true,
+                Message = "Module authority saved successfully.",
+                SavedCount = request.EnabledModuleIDs.Count
+            };
+        }
+        catch
         {
             transaction.Rollback();
             throw;

@@ -124,6 +124,7 @@ builder.Services.AddScoped<IMessageFormatService, MessageFormatService>();
 builder.Services.AddScoped<IActivityLogService, ActivityLogService>();
 builder.Services.AddScoped<IDatabaseBackupRestoreService, DatabaseBackupRestoreService>();
 builder.Services.AddScoped<IContentAuthorityService, ContentAuthorityService>();
+builder.Services.AddScoped<IKeylineService, KeylineService>();
 
 // Configure BackupRestore settings
 builder.Services.Configure<BackupRestoreConfig>(builder.Configuration.GetSection("BackupRestore"));
@@ -279,6 +280,29 @@ using (var scope = app.Services.CreateScope())
                     }
                 }
                 System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] SparePartMaster columns check/add completed\n");
+
+                // Widen string columns that may have been created with a small nvarchar size
+                var widenCols = new[]
+                {
+                    "SparePartName",
+                    "SparePartGroup",
+                    "SparePartType",
+                    "HSNGroup",
+                    "SupplierReference",
+                    "StockRefCode",
+                    "Narration"
+                };
+                foreach (var col in widenCols)
+                {
+                    var widenCmd = $@"
+                        IF COL_LENGTH('SparePartMaster', '{col}') IS NOT NULL
+                        AND COL_LENGTH('SparePartMaster', '{col}') < 500
+                        BEGIN
+                            ALTER TABLE SparePartMaster ALTER COLUMN {col} NVARCHAR(500) NULL;
+                        END";
+                    using (var cmd3 = new SqlCommand(widenCmd, conn))
+                        cmd3.ExecuteNonQuery();
+                }
             }
         }
 
@@ -448,6 +472,85 @@ using (var scope = app.Services.CreateScope())
     catch(Exception ex) {
          Console.WriteLine($"ItemMaster Init Error: {ex.Message}");
          System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMaster Init Error: {ex.Message}\n");
+    }
+
+    // IndusToolModuleMaster + CompanyModuleAuthority — runs against IndusDB (central admin tables)
+    try
+    {
+        var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var indusConnStr = config.GetConnectionString("IndusConnection");
+        if (!string.IsNullOrEmpty(indusConnStr))
+        {
+            using var indusConn = new SqlConnection(indusConnStr);
+            indusConn.Open();
+
+            var createModuleMasterCmd = @"
+                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[IndusToolModuleMaster]') AND type in (N'U'))
+                BEGIN
+                    CREATE TABLE [IndusToolModuleMaster] (
+                        [ModuleID]     INT           PRIMARY KEY IDENTITY(1,1),
+                        [ModuleName]   NVARCHAR(100) NOT NULL,
+                        [ModulePath]   NVARCHAR(200) NOT NULL,
+                        [ModuleIcon]   NVARCHAR(100) NOT NULL DEFAULT '',
+                        [DisplayOrder] INT           NOT NULL DEFAULT 0
+                    );
+                END";
+            using (var cmd = new SqlCommand(createModuleMasterCmd, indusConn)) cmd.ExecuteNonQuery();
+
+            var createCompanyAuthCmd = @"
+                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[CompanyModuleAuthority]') AND type in (N'U'))
+                BEGIN
+                    CREATE TABLE [CompanyModuleAuthority] (
+                        [ID]            INT           PRIMARY KEY IDENTITY(1,1),
+                        [CompanyUserID] NVARCHAR(100) NOT NULL,
+                        [ModuleID]      INT           NOT NULL
+                    );
+                END";
+            using (var cmd = new SqlCommand(createCompanyAuthCmd, indusConn)) cmd.ExecuteNonQuery();
+
+            int moduleCount;
+            using (var cmd = new SqlCommand("SELECT COUNT(*) FROM IndusToolModuleMaster", indusConn))
+                moduleCount = (int)cmd.ExecuteScalar();
+
+            if (moduleCount == 0)
+            {
+                var seedCmd = @"
+                    INSERT INTO IndusToolModuleMaster (ModuleName, ModulePath, ModuleIcon, DisplayOrder) VALUES
+                    ('Dashboard',               '/',                       'LayoutDashboard', 1),
+                    ('Import Master',           '/import-master',          'Upload',          2),
+                    ('Stock Upload',            '/stock-upload',           'PackageOpen',     3),
+                    ('Company Master',          '/company-master',         'Building2',       4),
+                    ('Module Authority',        '/dynamic-module',         'Layers',          5),
+                    ('Content Authority',       '/content-authority',      'BookOpen',        6),
+                    ('ERP Transaction Delete',  '/erp-transaction-delete', 'Trash2',          7),
+                    ('Key Line Generator',      '/keyline-generator',      'PenTool',         8)";
+                using (var cmd = new SqlCommand(seedCmd, indusConn)) cmd.ExecuteNonQuery();
+            }
+
+            // Idempotent insert for new modules added after initial seed
+            var newModules = new[]
+            {
+                ("New Module Addition", "/module-authority", "PlusSquare", 9)
+            };
+            foreach (var (name, path, icon, order) in newModules)
+            {
+                var insertCmd = $@"
+                    IF NOT EXISTS (SELECT 1 FROM IndusToolModuleMaster WHERE ModulePath = '{path}')
+                    BEGIN
+                        INSERT INTO IndusToolModuleMaster (ModuleName, ModulePath, ModuleIcon, DisplayOrder)
+                        VALUES ('{name}', '{path}', '{icon}', {order});
+                    END";
+                using (var cmd = new SqlCommand(insertCmd, indusConn)) cmd.ExecuteNonQuery();
+            }
+
+            indusConn.Close();
+            System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] IndusToolModuleMaster Init Completed\n");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"IndusToolModuleMaster Init Error: {ex.Message}");
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] IndusToolModuleMaster Init Error: {ex.Message}\n");
     }
 
     // ItemMasterDetails Schema Migration

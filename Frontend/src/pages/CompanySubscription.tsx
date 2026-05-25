@@ -3,7 +3,7 @@ import {
     CreditCard, Plus, Edit2, Trash2, Save, X, Loader2, RefreshCw,
     Database, Server, ChevronRight, ArrowLeft, CheckCircle2, Building2,
     GitBranch, Factory, PartyPopper, Settings, Copy, Search, Layers, AlertTriangle,
-    Download, PackagePlus
+    Download, PackagePlus, ShieldCheck
 } from 'lucide-react';
 import {
     getCompanySubscriptions,
@@ -47,6 +47,7 @@ import {
 import { useMessageModal } from '../components/MessageModal';
 import MessageFormatPopup from '../components/MessageFormatPopup';
 import NewModuleAdditionTab from '../components/NewModuleAdditionTab';
+import ModuleAuthorityTab from '../components/ModuleAuthorityTab';
 
 import DataGrid, {
     Column,
@@ -117,7 +118,7 @@ const CompanySubscription: React.FC = () => {
     const [deleteAuthPassword, setDeleteAuthPassword] = useState('');
     const [deleteAuthReason, setDeleteAuthReason] = useState('');
     const [isDeletingRecord, setIsDeletingRecord] = useState(false);
-    const [editTab, setEditTab] = useState<1 | 2 | 3 | 4>(1);
+    const [editTab, setEditTab] = useState<1 | 2 | 3 | 4 | 5>(1);
 
     // ─── Module Settings State ───
     const [moduleData, setModuleData] = useState<ModuleSettingsRow[]>([]);
@@ -1143,6 +1144,8 @@ const CompanySubscription: React.FC = () => {
 
             const response = await deleteCompanySubscription({
                 companyUserID: selectedRow.companyUserID,
+                companyName: selectedRow.companyName,
+                companyUniqueCode: selectedRow.companyUniqueCode ?? '',
                 userName: deleteAuthUserName.trim(),
                 password: deleteAuthPassword.trim(),
                 reason: deleteAuthReason.trim()
@@ -1862,7 +1865,10 @@ const CompanySubscription: React.FC = () => {
                                     { id: 2 as const, label: 'Module Settings', icon: <Settings className="w-3.5 h-3.5" /> },
                                     { id: 3 as const, label: 'Module Group Authority', icon: <Layers className="w-3.5 h-3.5" /> },
                                     { id: 4 as const, label: 'New Module Addition', icon: <PackagePlus className="w-3.5 h-3.5" /> },
-                                ]).map(tab => (
+                                    { id: 5 as const, label: 'Indus Tool Authority', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+                                ].filter(tab =>
+                                    formData.applicationName?.toLowerCase() !== 'desktop' || tab.id === 1
+                                )).map(tab => (
                                     <button key={tab.id} onClick={() => setEditTab(tab.id)}
                                         className={`flex items-center gap-1.5 px-4 py-2.5 text-[12px] font-medium border-b-2 -mb-px transition-all duration-150 ${editTab === tab.id
                                                 ? 'border-amber-500 text-amber-700 dark:text-amber-400 bg-white dark:bg-gray-900'
@@ -2113,8 +2119,8 @@ const CompanySubscription: React.FC = () => {
                                 {editTab === 4 && (
                                     <div className="flex flex-col" style={{ minHeight: '520px' }}>
                                         {formData.conn_String ? (
-                                            <NewModuleAdditionTab 
-                                                connectionString={formData.conn_String} 
+                                            <NewModuleAdditionTab
+                                                connectionString={formData.conn_String}
                                                 companyName={formData.companyName}
                                             />
                                         ) : (
@@ -2123,6 +2129,13 @@ const CompanySubscription: React.FC = () => {
                                                 <p className="text-[13px] text-gray-400 dark:text-gray-500">No connection string available for this subscription.</p>
                                             </div>
                                         )}
+                                    </div>
+                                )}
+
+                                {/* Tab 5: Module Authority */}
+                                {editTab === 5 && (
+                                    <div className="flex flex-col" style={{ minHeight: '520px' }}>
+                                        <ModuleAuthorityTab companyUserID={formData.companyUserID} />
                                     </div>
                                 )}
 

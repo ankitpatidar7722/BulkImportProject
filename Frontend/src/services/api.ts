@@ -979,6 +979,14 @@ export interface ItemMasterDto {
     releaseGSM?: number;
     adhesiveGSM?: number;
     totalGSM?: number;
+
+    // SHIPPER CARTON-specific fields
+    sizeH?: number;
+    noOfPly?: number;
+    emptyCartonWt?: number;
+    capacity?: number;
+    cbf?: number;
+    cbm?: number;
 }
 
 export interface ItemSubGroupDto {
@@ -1010,8 +1018,14 @@ export const getItemHSNGroups = async (): Promise<HSNGroupDto[]> => {
     return response.data;
 };
 
-export const getItemUnits = async (): Promise<UnitDto[]> => {
-    const response = await api.get('/item/units');
+export interface FieldUnitsDto {
+    purchaseUnit: string[];
+    estimationUnit: string[];
+    stockUnit: string[];
+}
+
+export const getItemUnits = async (itemGroupId: number): Promise<FieldUnitsDto> => {
+    const response = await api.get(`/item/units/${itemGroupId}`);
     return response.data;
 };
 
@@ -1340,6 +1354,7 @@ export interface UserLoginResponse {
     fYear: string;
     isAdmin: boolean;
     companyName: string;
+    authorizedModules: string[];
 }
 
 export const companyLogin = async (data: CompanyLoginRequest): Promise<CompanyLoginResponse> => {
@@ -1469,6 +1484,8 @@ export const updateCompanySubscription = async (data: CompanySubscriptionSaveReq
 
 export interface DeleteCompanySubscriptionRequest {
     companyUserID: string;
+    companyName: string;
+    companyUniqueCode: string;
     userName: string;
     password: string;
     reason: string;
@@ -2457,5 +2474,163 @@ export const updateContentTechDetails = async (contentNames: string[]): Promise<
     return response.data;
 };
 
+export const updateKeylineTechDetails = async (contentNames: string[]): Promise<ContentAuthoritySaveResult> => {
+    const response = await api.post<ContentAuthoritySaveResult>('/ContentAuthority/update-keyline-details', contentNames);
+    return response.data;
+};
 
+// ─── Keyline Generator ────────────────────────────────────────────────────────
 
+export interface KeylineCoordinateDto {
+    coordinateID?: number;
+    contentType?: string;
+    grain?: string;
+    upsType?: string;
+    shapeType?: string;
+    shapeName?: string;
+    lineType?: string;
+    addInX1?: string;
+    addInY1?: string;
+    addInX2?: string;
+    addInY2?: string;
+    addInXForUps?: string;
+    addInYForUps?: string;
+    lineStyles?: string;
+    sheetSize?: string;
+}
+
+export interface KeylineFormulaDto {
+    id: number;
+    formula?: string;
+}
+
+export interface KeylinePlanningDto {
+    formulaID?: number;
+    contentType?: string;
+    grain?: string;
+    upsType?: string;
+    sheetSize?: string;
+    formula?: string;
+}
+
+export interface SaveCoordinatesRequest {
+    coordinates: KeylineCoordinateDto[];
+    contentName: string;
+    grain: string;
+    upsType: string;
+}
+
+export interface SavePlanningRequest {
+    planning: KeylinePlanningDto[];
+    contentName: string;
+}
+
+export interface SaveFormulaRequest {
+    formula: string;
+    editFlag: boolean;
+    formulaID?: number;
+}
+
+export interface KeylineMetaDto {
+    shapeNames: string[];
+    formulaX1: string[];
+    formulaY1: string[];
+    formulaX2: string[];
+    formulaY2: string[];
+}
+
+export const keylineGetContentNames = async (): Promise<string[]> => {
+    const response = await api.get('/keyline/content-names');
+    return response.data;
+};
+
+export const keylineGetMeta = async (contentType: string, grain: string, upsType: string): Promise<KeylineMetaDto> => {
+    const response = await api.get<KeylineMetaDto>('/keyline/meta', { params: { contentType, grain, upsType } });
+    return response.data;
+};
+
+export const keylineGetShapeNames = async (contentType: string, grain: string, upsType: string): Promise<string[]> => {
+    const response = await api.get('/keyline/shape-names', { params: { contentType, grain, upsType } });
+    return response.data;
+};
+
+export const keylineGetCoordinates = async (contentType: string, grain: string, upsType: string): Promise<KeylineCoordinateDto[]> => {
+    const response = await api.get('/keyline/coordinates', { params: { contentType, grain, upsType } });
+    return response.data;
+};
+
+export const keylineGetShapeWiseData = async (contentType: string, grain: string, upsType: string, shapeName: string): Promise<KeylineCoordinateDto[]> => {
+    const response = await api.get('/keyline/shape-wise-data', { params: { contentType, grain, upsType, shapeName } });
+    return response.data;
+};
+
+export const keylineGetFormulas = async (): Promise<KeylineFormulaDto[]> => {
+    const response = await api.get('/keyline/formulas');
+    return response.data;
+};
+
+export const keylineGetFormulaValues = async (axis: string, contentType: string, grain: string, upsType: string): Promise<string[]> => {
+    const response = await api.get('/keyline/formula-values', { params: { axis, contentType, grain, upsType } });
+    return response.data;
+};
+
+export const keylineSaveCoordinates = async (request: SaveCoordinatesRequest): Promise<void> => {
+    await api.post('/keyline/save-coordinates', request);
+};
+
+export const keylineSaveFormula = async (request: SaveFormulaRequest): Promise<void> => {
+    await api.post('/keyline/save-formula', request);
+};
+
+export const keylineDeleteFormula = async (id: number): Promise<void> => {
+    await api.delete(`/keyline/formula/${id}`);
+};
+
+export const keylineDeleteCoordinates = async (contentName: string, grain: string, upsType: string): Promise<void> => {
+    await api.delete('/keyline/coordinates', { params: { contentName, grain, upsType } });
+};
+
+export const keylineGetPlanning = async (contentType: string): Promise<KeylinePlanningDto[]> => {
+    const response = await api.get('/keyline/planning', { params: { contentType } });
+    return response.data;
+};
+
+export const keylineSavePlanning = async (request: SavePlanningRequest): Promise<void> => {
+    await api.post('/keyline/save-planning', request);
+};
+
+export const keylineDeletePlanning = async (contentName: string): Promise<void> => {
+    await api.delete('/keyline/planning', { params: { contentName } });
+};
+
+// ─── Indus Tool Module Authority ──────────────────────────────────────────────
+
+export interface IndusToolModuleDto {
+    moduleID: number;
+    moduleName: string;
+    modulePath: string;
+    moduleIcon: string;
+    displayOrder: number;
+    isEnabled: boolean;
+}
+
+export interface SaveModuleAuthorityRequest {
+    companyUserID: string;
+    enabledModuleIDs: number[];
+}
+
+export interface IndusToolModuleAuthorityResult {
+    success: boolean;
+    message: string;
+    savedCount: number;
+}
+
+export const getModulesForCompany = async (companyUserID: string): Promise<IndusToolModuleDto[]> => {
+    const response = await api.get(`/moduleauthority/indus-tools/${encodeURIComponent(companyUserID)}`);
+    return response.data;
+};
+
+export const saveCompanyModuleAuthority = async (request: SaveModuleAuthorityRequest): Promise<IndusToolModuleAuthorityResult> => {
+    const response = await api.post('/moduleauthority/indus-tools', request);
+    return response.data;
+};

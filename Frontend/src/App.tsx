@@ -22,6 +22,7 @@ import CompanySubscription from './pages/CompanySubscription';
 import ModuleGroupAuthority from './pages/ModuleGroupAuthority';
 import ERPTransactionDelete from './pages/ERPTransactionDelete';
 import ContentAuthority from './pages/ContentAuthority';
+import KeyLineGenerator from './pages/KeyLineGenerator';
 
 // Login Route Coordinator
 const LoginRedirect = () => {
@@ -72,6 +73,7 @@ const AuthenticatedLayout = () => {
                         <Route path="/module-group-authority" element={<ModuleGroupAuthority />} />
                         <Route path="/erp-transaction-delete" element={<ERPTransactionDelete />} />
                         <Route path="/content-authority" element={<ContentAuthority />} />
+                        <Route path="/keyline-generator" element={<KeyLineGenerator />} />
                         <Route path="*" element={<Navigate to={defaultPath} replace />} />
                     </Routes>
                     </div>

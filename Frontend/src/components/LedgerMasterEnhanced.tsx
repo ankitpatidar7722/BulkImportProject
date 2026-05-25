@@ -300,15 +300,9 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
 
 
 
-    // Helper: Build dropdown params that include current value if missing
-    const getDropdownParams = (options: any[]) => (params: any) => {
+    // Helper: Build dropdown params strictly from options
+    const getDropdownParams = (options: any[]) => () => {
         const values = ['', ...options.map(o => String(o))];
-        if (params.value !== undefined && params.value !== null && params.value !== '') {
-            const strVal = String(params.value);
-            if (!values.includes(strVal)) {
-                values.push(strVal);
-            }
-        }
         return { values };
     };
 
@@ -437,19 +431,53 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
             {
                 field: 'gstApplicable',
                 headerName: 'GSTApplicable',
-                valueGetter: (params: any) => {
+                cellRenderer: (params: any) => {
                     const val = params.data?.gstApplicable;
-                    if (val === true || val === 'TRUE') return 'TRUE';
-                    if (val === false || val === 'FALSE') return 'FALSE';
-                    return val; // Invalid value, show as-is
+                    const isTrue = val === true || val === 'TRUE' || val === 'true';
+                    const isFalse = val === false || val === 'FALSE' || val === 'false';
+                    
+                    const toggleValue = () => {
+                        if (mode === 'preview' || mode === 'validated') {
+                            params.node.setDataValue('gstApplicable', !isTrue); // Toggle to false if true, true if false or undefined
+                        }
+                    };
+
+                    if (isTrue) {
+                        return (
+                            <div className="flex items-center justify-center w-full h-full cursor-pointer" onClick={toggleValue}>
+                                <div className="w-5 h-5 bg-green-500 rounded border border-green-600 flex items-center justify-center shadow-sm">
+                                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                                </div>
+                            </div>
+                        );
+                    }
+                    
+                    if (isFalse) {
+                        return (
+                            <div className="flex items-center justify-center w-full h-full cursor-pointer" onClick={toggleValue}>
+                                <div className="w-5 h-5 bg-white dark:bg-[#1e293b] rounded border border-gray-300 dark:border-gray-600 shadow-sm hover:border-green-400 dark:hover:border-green-500 transition-colors"></div>
+                            </div>
+                        );
+                    }
+                    
+                    // Invalid value state
+                    return (
+                        <div className="flex items-center justify-center w-full h-full cursor-pointer" onClick={toggleValue}>
+                             <span className="text-purple-600 dark:text-purple-400 text-xs font-bold">{val}</span>
+                        </div>
+                    );
                 },
                 cellStyle: (params: any): Record<string, string> | null => {
                     const val = params.data?.gstApplicable;
+                    const isValid = val === true || val === false || val === 'TRUE' || val === 'FALSE' || val === 'true' || val === 'false';
                     // Purple highlight for invalid boolean values
-                    if (val !== true && val !== false && val !== 'TRUE' && val !== 'FALSE') {
+                    if (!isValid) {
                         return {
                             backgroundColor: isDark ? 'rgba(147, 51, 234, 0.2)' : '#f3e8ff',
-                            color: isDark ? '#e9d5ff' : '#581c87'
+                            color: isDark ? '#e9d5ff' : '#581c87',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                         };
                     }
                     // Otherwise use default cellStyle logic
@@ -1317,7 +1345,29 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
         worksheet.columns = exportColumns.map(col => ({ header: col, key: col, width: 20 }));
         worksheet.getRow(1).font = { bold: true };
 
-        ledgerData.forEach((ledger) => {
+        const exportColors = {
+            duplicate: 'FFFFE0E0',
+            missing: 'FFD0E8FF',
+            mismatch: 'FFFFFF99',
+            invalid: 'FFE8D0FF'
+        };
+
+        const passesExportFilter = (rowIndex: number): boolean => {
+            if (filterType === 'all' || !validationResult) return true;
+            const v = validationMap.get(rowIndex);
+            if (!v) return filterType === 'valid';
+            switch (filterType) {
+                case 'valid': return v.rowStatus === ValidationStatus.Valid;
+                case 'duplicate': return v.rowStatus === ValidationStatus.Duplicate;
+                case 'missing': return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.MissingData) ?? false;
+                case 'mismatch': return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.Mismatch) ?? false;
+                case 'invalid': return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
+                default: return true;
+            }
+        };
+
+        ledgerData.forEach((ledger, rowIndex) => {
+            if (!passesExportFilter(rowIndex)) return;
             const rowValues: any = {
                 LedgerName: ledger.ledgerName,
                 MailingName: ledger.mailingName,
@@ -1371,7 +1421,28 @@ const LedgerMasterEnhanced: React.FC<LedgerMasterEnhancedProps> = ({ ledgerGroup
                 rowValues.CreditDays = ledger.creditDays;
             }
 
-            worksheet.addRow(rowValues);
+            const excelRow = worksheet.addRow(rowValues);
+
+            const rowValidation = validationMap.get(rowIndex);
+            if (rowValidation) {
+                if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
+                    excelRow.eachCell(cell => {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: exportColors.duplicate } };
+                    });
+                } else {
+                    rowValidation.cellValidations?.forEach((cellVal: any) => {
+                        const colIdx = exportColumns.findIndex(c => c.toLowerCase() === cellVal.columnName.toLowerCase()) + 1;
+                        if (colIdx > 0) {
+                            const cell = excelRow.getCell(colIdx);
+                            let argb = '';
+                            if (cellVal.status === ValidationStatus.MissingData) argb = exportColors.missing;
+                            else if (cellVal.status === ValidationStatus.Mismatch) argb = exportColors.mismatch;
+                            else if (cellVal.status === ValidationStatus.InvalidContent) argb = exportColors.invalid;
+                            if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+                        }
+                    });
+                }
+            }
         });
 
         const buffer = await workbook.xlsx.writeBuffer();

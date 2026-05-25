@@ -18,6 +18,7 @@ interface AuthContextType {
     companyName: string;
     userName: string;
     fYear: string;
+    authorizedModules: string[];
     isAuthenticated: boolean;
     companyLogin: (data: CompanyLoginRequest) => Promise<void>;
     userLogin: (data: UserLoginRequest) => Promise<void>;
@@ -35,6 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [companyName, setCompanyName] = useState('');
     const [userName, setUserName] = useState('');
     const [fYear, setFYear] = useState('');
+    const [authorizedModules, setAuthorizedModules] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
@@ -46,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCompanyName('');
             setUserName('');
             setFYear('');
+            setAuthorizedModules([]);
             window.location.href = '/CompanyLogin';
         };
         window.addEventListener('auth:unauthorized', handleUnauthorized);
@@ -71,6 +74,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         setUserName(storedUserName);
                         setFYear(storedFYear || '');
                         setLoginType(storedLoginType || 'customer');
+                        const storedModules = localStorage.getItem('authorizedModules');
+                        setAuthorizedModules(storedModules ? JSON.parse(storedModules) : []);
                         setLoginStep(2);
                     }
                     // If !isValid: the 401 interceptor already fired auth:unauthorized above,
@@ -121,10 +126,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             localStorage.setItem('authToken', response.token);
             localStorage.setItem('userName', response.userName);
             localStorage.setItem('fYear', response.fYear);
-            localStorage.setItem('enableAutoLogin', 'true'); // Enable session persistence
+            localStorage.setItem('enableAutoLogin', 'true');
+            const modules = response.authorizedModules ?? [];
+            localStorage.setItem('authorizedModules', JSON.stringify(modules));
 
             setUserName(response.userName);
             setFYear(response.fYear);
+            setAuthorizedModules(modules);
             setLoginStep(2);
         } else {
             throw new Error(response.message || 'User login failed. Please check your credentials.');
@@ -157,6 +165,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCompanyName('');
         setUserName('');
         setFYear('');
+        setAuthorizedModules([]);
         window.location.href = '/CompanyLogin';
     };
 
@@ -187,6 +196,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             companyName,
             userName,
             fYear,
+            authorizedModules,
             isAuthenticated: loginStep === 2,
             companyLogin,
             userLogin,

@@ -871,7 +871,23 @@ const SparePartMasterEnhanced: React.FC = () => {
             invalid: 'FFE8D0FF'        // Light Purple
         };
 
+        const passesExportFilter = (rowIndex: number): boolean => {
+            if (filterType === 'all' || !validationResult) return true;
+            const v = validationMap.get(rowIndex);
+            if (!v) return filterType === 'valid';
+            switch (filterType) {
+                case 'valid':     return v.rowStatus === ValidationStatus.Valid;
+                case 'duplicate': return v.rowStatus === ValidationStatus.Duplicate;
+                case 'missing':   return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.MissingData) ?? false;
+                case 'mismatch':  return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.Mismatch) ?? false;
+                case 'invalid':   return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
+                default: return true;
+            }
+        };
+
         sparePartData.forEach((sparePart, rowIndex) => {
+            if (!passesExportFilter(rowIndex)) return;
+
             const rowValues: any = {
                 SparePartName: sparePart.sparePartName,
                 SparePartGroup: sparePart.sparePartGroup,

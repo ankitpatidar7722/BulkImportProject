@@ -33,6 +33,8 @@ public class UserLoginResponse
     public string FYear { get; set; } = string.Empty;
     public bool IsAdmin { get; set; }
     public string CompanyName { get; set; } = string.Empty;
+    /// <summary>List of module paths the company is authorised to use. Empty = all modules allowed.</summary>
+    public List<string> AuthorizedModules { get; set; } = new();
 }
 
 public class UserInfoResponse

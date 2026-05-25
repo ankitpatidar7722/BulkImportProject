@@ -191,7 +191,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             const data = await file.arrayBuffer();
             const workbook = XLSX.read(data);
             const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet)
+            const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: null })
                 .filter((r: any) => r.ItemCode || r.itemCode || r.ITEMCODE);
 
             if (jsonData.length === 0) {
@@ -229,7 +229,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 return {
                     itemCode: String(row.ItemCode || row.itemCode || row.ITEMCODE || '').trim() || undefined,
                     receiptQuantity: isPaper ? Math.round(rawQty) : rawQty,
-                    landedRate: Number(row.LandedRate || row.landedRate || row.Rate || row.rate || 0),
+                    landedRate: Math.round(Number(row.LandedRate || row.landedRate || row.Rate || row.rate || 0) * 1000) / 1000,
                     stockUnit: String(row.StockUnit || row.stockUnit || row.STOCKUNIT || '').trim() || undefined,
                     warehouseName: String(row.WarehouseName || row.warehouseName || row.WAREHOUSENAME || '').trim() || undefined,
                     binName: String(row.BinName || row.binName || row.BINNAME || '').trim() || undefined,
@@ -874,7 +874,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 { field: 'sizeW', headerName: 'SizeW', width: 90, editable: false, cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' } } as ColDef,
             ] : []),
             { field: 'receiptQuantity', headerName: 'ReceiptQuantity', width: 140, editable: mode !== 'loaded', type: 'numericColumn' },
-            { field: 'landedRate', headerName: 'LandedRate', width: 120, editable: mode !== 'loaded', type: 'numericColumn' },
+            { field: 'landedRate', headerName: 'LandedRate', width: 120, editable: mode !== 'loaded', type: 'numericColumn', valueFormatter: (p: any) => p.value != null ? Number(p.value).toFixed(3) : '' },
             {
                 field: 'batchNo', headerName: 'BatchNo', width: 220, editable: false,
                 cellStyle: { backgroundColor: isDark ? '#374151' : '#f3f4f6' }

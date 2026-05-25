@@ -108,20 +108,43 @@ public class AuthService : IAuthService
             // Update session with user details
             session.UserID = (user.UserID != null) ? (int)user.UserID : 0;
             // Handle UserMasterID if used elsewhere, but for now stick to UserID
-            
+
             session.CompanyID = (int)user.CompanyID;
             session.BranchID = (int)user.BranchID;
             // Handle IsAdmin being null or bool/int
             session.IsAdmin = user.IsAdmin != null && (bool)user.IsAdmin;
             session.FYear = request.FYear;
             session.LoginStep = 2; // Step 2 completed
-            
+
             _sessionStore.UpdateSession(sessionId, session);
-            
+
+            // Fetch authorized module paths for this company from IndusDB
+            var authorizedModules = new List<string>();
+            try
+            {
+                var indusConnStr = _config.GetConnectionString("IndusConnection");
+                if (!string.IsNullOrEmpty(indusConnStr))
+                {
+                    using var indusConn = new SqlConnection(indusConnStr);
+                    var paths = (await indusConn.QueryAsync<string>(
+                        @"SELECT m.ModulePath
+                          FROM IndusToolModuleMaster m
+                          INNER JOIN CompanyModuleAuthority a ON a.ModuleID = m.ModuleID
+                          WHERE a.CompanyUserID = @CompanyUserID",
+                        new { CompanyUserID = session.CompanyUserID })).ToList();
+                    authorizedModules = paths;
+                }
+            }
+            catch (Exception modEx)
+            {
+                Console.WriteLine($"[UserLogin] AuthorizedModules fetch failed (non-fatal): {modEx.Message}");
+                // Empty list = all modules shown
+            }
+
             // Generate Step-2 Token (Full Access)
-            var token = GenerateJwtToken(sessionId, 2, session.CompanyUserID, session.CompanyName, 
+            var token = GenerateJwtToken(sessionId, 2, session.CompanyUserID, session.CompanyName,
                                          session.UserID, session.CompanyID, session.BranchID, session.IsAdmin);
-            
+
             return new UserLoginResponse
             {
                 Success = true,
@@ -133,6 +156,7 @@ public class AuthService : IAuthService
                 IsAdmin = session.IsAdmin,
                 FYear = session.FYear,
                 CompanyName = session.CompanyName,
+                AuthorizedModules = authorizedModules,
                 Message = "Login Successful"
             };
         }

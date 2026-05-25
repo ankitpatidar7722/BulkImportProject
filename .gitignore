@@ -142,6 +142,8 @@ build_output.txt
 DbFix/
 wwwroot/uploads/
 App_Data/
+KeyLine/
+
 
 # ==========================================
 # Database

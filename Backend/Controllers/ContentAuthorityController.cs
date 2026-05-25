@@ -40,4 +40,14 @@ public class ContentAuthorityController : ControllerBase
         var result = await _service.UpdateContentDetailsAsync(contentNames);
         return Ok(result);
     }
+
+    [HttpPost("update-keyline-details")]
+    public async Task<IActionResult> UpdateKeylineDetails([FromBody] List<string> contentNames)
+    {
+        if (contentNames == null || contentNames.Count == 0)
+            return BadRequest("No contents selected for keyline update.");
+
+        var result = await _service.UpdateKeylineDetailsAsync(contentNames);
+        return Ok(result);
+    }
 }

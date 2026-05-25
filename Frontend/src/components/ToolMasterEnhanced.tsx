@@ -226,15 +226,9 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         return map;
     }, [validationResult]);
 
-    // Helper: Build dropdown params that include current value if missing
-    const getDropdownParams = (options: any[]) => (params: any) => {
+    // Helper: Build dropdown params strictly from options
+    const getDropdownParams = (options: any[]) => () => {
         const values = ['', ...options.map(o => String(o))];
-        if (params.value !== undefined && params.value !== null && params.value !== '') {
-            const strVal = String(params.value);
-            if (!values.includes(strVal)) {
-                values.push(strVal);
-            }
-        }
         return { values };
     };
 
@@ -281,6 +275,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 cellEditorParams: getDropdownParams(hsnGroups.map(h => h.displayName)),
                 cellRenderer: DropdownCellRenderer
             },
+            { field: 'toolRefCode', headerName: 'ToolRefCode', minWidth: 120 },
         ];
 
         // DIE columns (ToolGroupId == 3)
@@ -343,6 +338,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
+            { field: 'toolRefCode', headerName: 'ToolRefCode', minWidth: 120 },
         ];
 
         // ANILOX CYLINDER columns (ToolGroupId == 6)
@@ -371,6 +367,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
+            { field: 'toolRefCode', headerName: 'ToolRefCode', minWidth: 120 },
         ];
 
         // EMBOSSING CYLINDER columns (ToolGroupId == 7)
@@ -400,6 +397,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 cellRenderer: DropdownCellRenderer
             },
             { field: 'toolName', headerName: 'ToolName', minWidth: 150 },
+            { field: 'toolRefCode', headerName: 'ToolRefCode', minWidth: 120 },
         ];
 
         // FLEXO DIE columns (ToolGroupId == 8)
@@ -442,6 +440,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
                 cellRenderer: DropdownCellRenderer
             },
+            { field: 'toolRefCode', headerName: 'ToolRefCode', minWidth: 120 },
         ];
 
         // Select columns based on toolGroupId
@@ -847,6 +846,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
                             stockUnit: toStr(row.StockUnit),
                             toolName: toStr(row.ToolName),
+                            toolRefCode: toStr(row.ToolRefCode),
                         };
                     } else if (toolGroupId === 6) { // ANILOX CYLINDER
                         return {
@@ -860,6 +860,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
                             stockUnit: toStr(row.StockUnit),
                             toolName: toStr(row.ToolName),
+                            toolRefCode: toStr(row.ToolRefCode),
                         };
                     } else if (toolGroupId === 7) { // EMBOSSING CYLINDER
                         return {
@@ -874,6 +875,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
                             stockUnit: toStr(row.StockUnit),
                             toolName: toStr(row.ToolName),
+                            toolRefCode: toStr(row.ToolRefCode),
                         };
                     } else if (toolGroupId === 8) { // FLEXO DIE
                         return {
@@ -896,6 +898,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             referenceToolNo: toStr(row.ReferenceToolNo),
                             estimateRate: row.EstimateRate !== undefined && row.EstimateRate !== '' && !isNaN(parseFloat(row.EstimateRate)) ? parseFloat(row.EstimateRate) : undefined,
                             stockUnit: toStr(row.StockUnit),
+                            toolRefCode: toStr(row.ToolRefCode),
                         };
                     } else { // PLATES (default)
                         return {
@@ -910,6 +913,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             stockUnit: toStr(row.StockUnit),
                             toolName: toStr(row.ToolName) || toStr(row.JobName),
                             productHSNName: toStr(row.ProductHSNName),
+                            toolRefCode: toStr(row.ToolRefCode),
                         };
                     }
                 }).filter((item: ToolMasterDto) => {
@@ -1170,124 +1174,95 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
         } else if (toolGroupId === 5) { // PRINTING CYLINDER
             exportColumns = [
                 'SizeW', 'Manufacturer', 'NoOfTeeth', 'CircumferenceMM', 'CircumferenceInch',
-                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName', 'ToolRefCode'
             ];
         } else if (toolGroupId === 6) { // ANILOX CYLINDER
             exportColumns = [
                 'SizeW', 'Manufacturer', 'BCM', 'LPI',
-                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName', 'ToolRefCode'
             ];
         } else if (toolGroupId === 7) { // EMBOSSING CYLINDER
             exportColumns = [
                 'SizeW', 'Manufacturer', 'NoOfTeeth', 'CircumferenceMM', 'CircumferenceInch',
-                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+                'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName', 'ToolRefCode'
             ];
         } else if (toolGroupId === 8) { // FLEXO DIE
             exportColumns = [
                 'LedgerName', 'JobName', 'SizeL', 'SizeH', 'UpsAround', 'UpsAcross', 'TotalUps',
                 'ProductHSNName', 'ToolName', 'ToolType', 'AroundGap', 'AcrossGap',
-                'UnitSymbol', 'PurchaseUnit', 'PurchaseRate', 'ReferenceToolNo', 'EstimateRate', 'StockUnit'
+                'UnitSymbol', 'PurchaseUnit', 'PurchaseRate', 'ReferenceToolNo', 'EstimateRate', 'StockUnit', 'ToolRefCode'
             ];
         } else { // PLATES (default)
             exportColumns = [
                 'ToolType', 'JobName', 'SizeL', 'SizeW', 'TotalUps',
-                'PurchaseRate', 'PurchaseUnit', 'StockUnit', 'ToolName', 'ProductHSNName'
+                'PurchaseRate', 'PurchaseUnit', 'StockUnit', 'ToolName', 'ProductHSNName', 'ToolRefCode'
             ];
         }
 
         worksheet.columns = exportColumns.map(col => ({ header: col, key: col, width: 20 }));
         worksheet.getRow(1).font = { bold: true };
 
+        const exportColors = {
+            duplicate: 'FFFFE0E0',
+            missing: 'FFD0E8FF',
+            mismatch: 'FFFFFF99',
+            invalid: 'FFE8D0FF'
+        };
+
+        const passesExportFilter = (rowIndex: number): boolean => {
+            if (filterType === 'all' || !validationResult) return true;
+            const v = validationMap.get(rowIndex);
+            if (!v) return filterType === 'valid';
+            switch (filterType) {
+                case 'valid': return v.rowStatus === ValidationStatus.Valid;
+                case 'duplicate': return v.rowStatus === ValidationStatus.Duplicate;
+                case 'missing': return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.MissingData) ?? false;
+                case 'mismatch': return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.Mismatch) ?? false;
+                case 'invalid': return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
+                default: return true;
+            }
+        };
+
         toolData.forEach((tool) => {
+            const rowIdx = (tool as any)._rowIndex as number;
+            if (!passesExportFilter(rowIdx)) return;
+
+            let rowVals: any = {};
             if (toolGroupId === 3) { // DIE
-                worksheet.addRow({
-                    ClientName: tool.clientName,
-                    JobName: tool.jobName,
-                    SizeL: tool.sizeL,
-                    SizeW: tool.sizeW,
-                    SizeH: tool.sizeH,
-                    UpsAround: tool.upsAround,
-                    UpsAcross: tool.upsAcross,
-                    TotalUps: tool.totalUps,
-                    ProductHSNName: tool.productHSNName,
-                    PurchaseUnit: tool.purchaseUnit,
-                    PurchaseRate: tool.purchaseRate,
-                    StockUnit: tool.stockUnit,
-                    ToolName: tool.toolName,
-                    ToolRefCode: tool.toolRefCode,
-                });
+                rowVals = { ClientName: tool.clientName, JobName: tool.jobName, SizeL: tool.sizeL, SizeW: tool.sizeW, SizeH: tool.sizeH, UpsAround: tool.upsAround, UpsAcross: tool.upsAcross, TotalUps: tool.totalUps, ProductHSNName: tool.productHSNName, PurchaseUnit: tool.purchaseUnit, PurchaseRate: tool.purchaseRate, StockUnit: tool.stockUnit, ToolName: tool.toolName, ToolRefCode: tool.toolRefCode };
             } else if (toolGroupId === 5) { // PRINTING CYLINDER
-                worksheet.addRow({
-                    SizeW: tool.sizeW,
-                    Manufacturer: tool.manufacturer,
-                    NoOfTeeth: tool.noOfTeeth,
-                    CircumferenceMM: tool.circumferenceMM,
-                    CircumferenceInch: tool.circumferenceInch,
-                    ProductHSNName: tool.productHSNName,
-                    PurchaseUnit: tool.purchaseUnit,
-                    PurchaseRate: tool.purchaseRate,
-                    StockUnit: tool.stockUnit,
-                    ToolName: tool.toolName,
-                });
+                rowVals = { SizeW: tool.sizeW, Manufacturer: tool.manufacturer, NoOfTeeth: tool.noOfTeeth, CircumferenceMM: tool.circumferenceMM, CircumferenceInch: tool.circumferenceInch, ProductHSNName: tool.productHSNName, PurchaseUnit: tool.purchaseUnit, PurchaseRate: tool.purchaseRate, StockUnit: tool.stockUnit, ToolName: tool.toolName, ToolRefCode: tool.toolRefCode };
             } else if (toolGroupId === 6) { // ANILOX CYLINDER
-                worksheet.addRow({
-                    SizeW: tool.sizeW,
-                    Manufacturer: tool.manufacturer,
-                    BCM: tool.bcm,
-                    LPI: tool.lpi,
-                    ProductHSNName: tool.productHSNName,
-                    PurchaseUnit: tool.purchaseUnit,
-                    PurchaseRate: tool.purchaseRate,
-                    StockUnit: tool.stockUnit,
-                    ToolName: tool.toolName,
-                });
+                rowVals = { SizeW: tool.sizeW, Manufacturer: tool.manufacturer, BCM: tool.bcm, LPI: tool.lpi, ProductHSNName: tool.productHSNName, PurchaseUnit: tool.purchaseUnit, PurchaseRate: tool.purchaseRate, StockUnit: tool.stockUnit, ToolName: tool.toolName, ToolRefCode: tool.toolRefCode };
             } else if (toolGroupId === 7) { // EMBOSSING CYLINDER
-                worksheet.addRow({
-                    SizeW: tool.sizeW,
-                    Manufacturer: tool.manufacturer,
-                    NoOfTeeth: tool.noOfTeeth,
-                    CircumferenceMM: tool.circumferenceMM,
-                    CircumferenceInch: tool.circumferenceInch,
-                    ProductHSNName: tool.productHSNName,
-                    PurchaseUnit: tool.purchaseUnit,
-                    PurchaseRate: tool.purchaseRate,
-                    StockUnit: tool.stockUnit,
-                    ToolName: tool.toolName,
-                });
+                rowVals = { SizeW: tool.sizeW, Manufacturer: tool.manufacturer, NoOfTeeth: tool.noOfTeeth, CircumferenceMM: tool.circumferenceMM, CircumferenceInch: tool.circumferenceInch, ProductHSNName: tool.productHSNName, PurchaseUnit: tool.purchaseUnit, PurchaseRate: tool.purchaseRate, StockUnit: tool.stockUnit, ToolName: tool.toolName, ToolRefCode: tool.toolRefCode };
             } else if (toolGroupId === 8) { // FLEXO DIE
-                worksheet.addRow({
-                    LedgerName: tool.clientName,
-                    JobName: tool.jobName,
-                    SizeL: tool.sizeL,
-                    SizeH: tool.sizeH,
-                    UpsAround: tool.upsAround,
-                    UpsAcross: tool.upsAcross,
-                    TotalUps: tool.totalUps,
-                    ProductHSNName: tool.productHSNName,
-                    ToolName: tool.toolName,
-                    ToolType: tool.toolType,
-                    AroundGap: tool.aroundGap,
-                    AcrossGap: tool.acrossGap,
-                    UnitSymbol: tool.unitSymbol,
-                    PurchaseUnit: tool.purchaseUnit,
-                    PurchaseRate: tool.purchaseRate,
-                    ReferenceToolNo: tool.referenceToolNo,
-                    EstimateRate: tool.estimateRate,
-                    StockUnit: tool.stockUnit,
-                });
+                rowVals = { LedgerName: tool.clientName, JobName: tool.jobName, SizeL: tool.sizeL, SizeH: tool.sizeH, UpsAround: tool.upsAround, UpsAcross: tool.upsAcross, TotalUps: tool.totalUps, ProductHSNName: tool.productHSNName, ToolName: tool.toolName, ToolType: tool.toolType, AroundGap: tool.aroundGap, AcrossGap: tool.acrossGap, UnitSymbol: tool.unitSymbol, PurchaseUnit: tool.purchaseUnit, PurchaseRate: tool.purchaseRate, ReferenceToolNo: tool.referenceToolNo, EstimateRate: tool.estimateRate, StockUnit: tool.stockUnit, ToolRefCode: tool.toolRefCode };
             } else { // PLATES (default)
-                worksheet.addRow({
-                    ToolType: tool.toolType,
-                    JobName: tool.jobName,
-                    SizeL: tool.sizeL,
-                    SizeW: tool.sizeW,
-                    TotalUps: tool.totalUps,
-                    PurchaseRate: tool.purchaseRate,
-                    PurchaseUnit: tool.purchaseUnit,
-                    StockUnit: tool.stockUnit,
-                    ToolName: tool.toolName,
-                    ProductHSNName: tool.productHSNName,
-                });
+                rowVals = { ToolType: tool.toolType, JobName: tool.jobName, SizeL: tool.sizeL, SizeW: tool.sizeW, TotalUps: tool.totalUps, PurchaseRate: tool.purchaseRate, PurchaseUnit: tool.purchaseUnit, StockUnit: tool.stockUnit, ToolName: tool.toolName, ProductHSNName: tool.productHSNName, ToolRefCode: tool.toolRefCode };
+            }
+
+            const excelRow = worksheet.addRow(rowVals);
+
+            const rowValidation = validationMap.get(rowIdx);
+            if (rowValidation) {
+                if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
+                    excelRow.eachCell(cell => {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: exportColors.duplicate } };
+                    });
+                } else {
+                    rowValidation.cellValidations?.forEach((cellVal: any) => {
+                        const colIdx = exportColumns.findIndex(c => c.toLowerCase() === cellVal.columnName.toLowerCase()) + 1;
+                        if (colIdx > 0) {
+                            const cell = excelRow.getCell(colIdx);
+                            let argb = '';
+                            if (cellVal.status === ValidationStatus.MissingData) argb = exportColors.missing;
+                            else if (cellVal.status === ValidationStatus.Mismatch) argb = exportColors.mismatch;
+                            else if (cellVal.status === ValidationStatus.InvalidContent) argb = exportColors.invalid;
+                            if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+                        }
+                    });
+                }
             }
         });
 

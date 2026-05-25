@@ -76,6 +76,16 @@ public class LedgerService : ILedgerService
                 return str == "1" || str == "true";
             }
 
+            bool? GetNullableBool(string key)
+            {
+                var val = GetValue(key);
+                if (val == null || val == DBNull.Value) return null;
+                if (val is bool b) return b;
+                var str = val.ToString()?.Trim().ToLower();
+                if (string.IsNullOrEmpty(str)) return null;
+                return str == "1" || str == "true";
+            }
+
             // Map all properties, handling malformed column names
             ledger.LedgerID = GetInt("LedgerID") ?? 0;
             ledger.LedgerName = GetString("LedgerName");
@@ -110,6 +120,7 @@ public class LedgerService : ILedgerService
             ledger.GSTRegistrationType = GetString("GSTRegistrationType") ?? GetString("GSTRegistrationType=");
             ledger.RefCode = GetString("RefCode") ?? GetString("RefCode=");
             ledger.CurrencyCode = GetString("CurrencyCode") ?? GetString("CurrencyCode=");
+            ledger.GSTApplicable = GetNullableBool("GSTApplicable") ?? GetNullableBool("GSTApplicable=");
 
             // Additional fields from stored procedure
             ledger.DepartmentName = GetString("DepartmentName");
@@ -127,8 +138,8 @@ public class LedgerService : ILedgerService
         // Uses a JOIN to LedgerMaster (filtered by LedgerGroupID) instead of IN @LedgerIDs
         // to avoid SQL Server's 2100-parameter limit when there are many records.
         string fieldFilter = ledgerGroupId == 1
-            ? "'RefCode','CurrencyCode'"
-            : "'GSTRegistrationType','RefCode','CreditDays','CurrencyCode'";
+            ? "'RefCode','CurrencyCode','GSTApplicable'"
+            : "'GSTRegistrationType','RefCode','CreditDays','CurrencyCode','GSTApplicable'";
 
         var detailsQuery = $@"
             SELECT LD.LedgerID, LD.FieldName, LD.FieldValue
@@ -164,6 +175,13 @@ public class LedgerService : ILedgerService
 
             if (fields.TryGetValue("CurrencyCode", out var currencyCode))
                 ledger.CurrencyCode = currencyCode;
+
+            if (fields.TryGetValue("GSTApplicable", out var gstApplicableStr))
+            {
+                var str = gstApplicableStr?.Trim().ToLower();
+                if (!string.IsNullOrEmpty(str))
+                    ledger.GSTApplicable = (str == "1" || str == "true");
+            }
 
             // Only needed for non-Clients groups (SP PIVOT already covers Group 1)
             if (ledgerGroupId != 1)

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     FileText, Save, RefreshCw, CheckSquare, Square,
     Search, AlertCircle, CheckCircle2, Database,
@@ -8,6 +8,7 @@ import {
     getContentAuthorityData,
     saveContentAuthority,
     updateContentTechDetails,
+    updateKeylineTechDetails,
     ContentAuthorityRowDto,
     ContentAuthoritySaveResult
 } from '../services/api';
@@ -185,9 +186,16 @@ const ContentAuthority: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isUpdatingDetails, setIsUpdatingDetails] = useState(false);
+    const [isUpdatingKeyline, setIsUpdatingKeyline] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterMode, setFilterMode] = useState<'all' | 'synced' | 'unsynced' | 'inactive'>('all');
     const [saveResult, setSaveResult] = useState<ContentAuthoritySaveResult | null>(null);
+
+    // Split-button dropdown state
+    const [detailsDropOpen, setDetailsDropOpen] = useState(false);
+    const [keylineDropOpen, setKeylineDropOpen] = useState(false);
+    const detailsDropRef = useRef<HTMLDivElement>(null);
+    const keylineDropRef = useRef<HTMLDivElement>(null);
 
     // Image Preview State
     const [previewImage, setPreviewImage] = useState<{ src: string; title: string } | null>(null);
@@ -252,12 +260,12 @@ const ContentAuthority: React.FC = () => {
             return;
         }
 
-        const totalToSave = rows.filter(r => r.isSelected).length;
+        const totalToSave = selected.length + deselected.length;
 
         // Show Confirmation
         showMessage(
-            'confirmation', 
-            'Save Changes', 
+            'confirmation',
+            'Save Changes',
             `Are you sure you want to save ${totalToSave} content(s)?`,
             {
                 confirmLabel: 'Yes, Save',
@@ -278,32 +286,70 @@ const ContentAuthority: React.FC = () => {
         );
     };
 
+    // Close dropdowns when clicking outside
+    useEffect(() => {
+        const handle = (e: MouseEvent) => {
+            if (detailsDropRef.current && !detailsDropRef.current.contains(e.target as Node))
+                setDetailsDropOpen(false);
+            if (keylineDropRef.current && !keylineDropRef.current.contains(e.target as Node))
+                setKeylineDropOpen(false);
+        };
+        document.addEventListener('mousedown', handle);
+        return () => document.removeEventListener('mousedown', handle);
+    }, []);
+
     // ── UPDATE DETAILS (Tech specs sync) ───────────────────────────────────────
-    const handleUpdateDetails = async () => {
-        const active = rows.filter(r => r.isSelected).map(r => r.contentName);
-        if (active.length === 0) {
-            showMessage('warning', 'Nothing Selected', 'Please select (sync) at least one content first.');
+    const handleUpdateDetails = async (contentNames: string[], scopeLabel: string) => {
+        if (contentNames.length === 0) {
+            showMessage('warning', 'Nothing to Update', 'No synced content in the current selection.');
             return;
         }
-
-        // Show Confirmation
         showMessage(
             'confirmation',
-            'Update Physical Details',
-            `Are you sure you want to update/sync technical details for ${active.length} selected content(s)?`,
+            'Update Content Details',
+            `Update physical specs for ${contentNames.length} content(s) [${scopeLabel}]?`,
             {
                 confirmLabel: 'Yes, Update',
                 onConfirm: async () => {
                     setIsUpdatingDetails(true);
                     try {
-                        const result = await updateContentTechDetails(active);
+                        const result = await updateContentTechDetails(contentNames);
                         setSaveResult(result);
-                        showMessage('success', 'Details Updated', 'Physical specs and child coordinates have been refreshed for selected contents.');
+                        showMessage('success', 'Details Updated', `Physical specs refreshed for ${contentNames.length} content(s).`);
                         await loadData();
                     } catch (err: any) {
                         showMessage('error', 'Sync Failed', err?.response?.data?.error || 'Failed to update content technical details.');
                     } finally {
                         setIsUpdatingDetails(false);
+                    }
+                }
+            }
+        );
+    };
+
+    // ── UPDATE KEYLINE DETAILS (Only Coordinates + SheetPlanning, no ContentMaster) ──
+    const handleUpdateKeylineDetails = async (contentNames: string[], scopeLabel: string) => {
+        if (contentNames.length === 0) {
+            showMessage('warning', 'Nothing to Update', 'No synced content in the current selection.');
+            return;
+        }
+        showMessage(
+            'confirmation',
+            'Update Keyline Details',
+            `Update keyline coordinates for ${contentNames.length} content(s) [${scopeLabel}]? ContentMaster will not be changed.`,
+            {
+                confirmLabel: 'Yes, Update',
+                onConfirm: async () => {
+                    setIsUpdatingKeyline(true);
+                    try {
+                        const result = await updateKeylineTechDetails(contentNames);
+                        setSaveResult(result);
+                        showMessage('success', 'Keyline Details Updated', `Keyline coordinates refreshed for ${contentNames.length} content(s).`);
+                        await loadData();
+                    } catch (err: any) {
+                        showMessage('error', 'Update Failed', err?.response?.data?.error || 'Failed to update keyline details.');
+                    } finally {
+                        setIsUpdatingKeyline(false);
                     }
                 }
             }
@@ -350,14 +396,109 @@ const ContentAuthority: React.FC = () => {
                         {changedCount > 0 && <span className="px-2 py-0.5 bg-white/20 rounded-full text-xs font-bold">{changedCount}</span>}
                     </button>
 
-                    <button
-                        onClick={handleUpdateDetails}
-                        disabled={isUpdatingDetails || syncedCount === 0}
-                        className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold text-sm transition-all shadow-md active:scale-95 disabled:opacity-50"
-                    >
-                        <Zap className={`w-4 h-4 ${isUpdatingDetails ? 'animate-bounce' : ''}`} />
-                        Update Content Details
-                    </button>
+                    {/* ── Update Content Details split button ── */}
+                    <div className="relative" ref={detailsDropRef}>
+                        <div className="flex items-stretch rounded-xl overflow-hidden shadow-md">
+                            <button
+                                onClick={() => { setDetailsDropOpen(false); handleUpdateDetails(rows.filter(r => r.isSelected).map(r => r.contentName), 'All Synced'); }}
+                                disabled={isUpdatingDetails || syncedCount === 0}
+                                className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-semibold text-sm transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                <Zap className={`w-4 h-4 ${isUpdatingDetails ? 'animate-bounce' : ''}`} />
+                                Update Content Details
+                            </button>
+                            <div className="w-px bg-amber-400/60 self-stretch" />
+                            <button
+                                onClick={() => { setKeylineDropOpen(false); setDetailsDropOpen(p => !p); }}
+                                disabled={isUpdatingDetails || syncedCount === 0}
+                                className="px-2.5 bg-amber-500 hover:bg-amber-600 text-white transition-all disabled:opacity-50"
+                                title="More options"
+                            >
+                                <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${detailsDropOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                        </div>
+                        {detailsDropOpen && (
+                            <div className="absolute right-0 top-full mt-1.5 z-50 w-60 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                                <div className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                                    Content Details Scope
+                                </div>
+                                <button
+                                    onClick={() => { setDetailsDropOpen(false); handleUpdateDetails(rows.filter(r => r.isSelected).map(r => r.contentName), 'All Synced'); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                                >
+                                    <Database className="w-4 h-4 text-amber-500 shrink-0" />
+                                    <div className="text-left">
+                                        <div className="font-semibold text-gray-700 dark:text-gray-200">Update All Synced</div>
+                                        <div className="text-xs text-gray-400">{syncedCount} content(s)</div>
+                                    </div>
+                                </button>
+                                <div className="border-t border-gray-100 dark:border-gray-700" />
+                                <button
+                                    onClick={() => { setDetailsDropOpen(false); handleUpdateDetails(displayRows.filter(r => r.isSelected).map(r => r.contentName), 'Visible / Filtered'); }}
+                                    disabled={displayRows.filter(r => r.isSelected).length === 0}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <Filter className="w-4 h-4 text-amber-500 shrink-0" />
+                                    <div className="text-left">
+                                        <div className="font-semibold text-gray-700 dark:text-gray-200">Update Visible Only</div>
+                                        <div className="text-xs text-gray-400">{displayRows.filter(r => r.isSelected).length} visible synced</div>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Update Keyline Details split button ── */}
+                    <div className="relative" ref={keylineDropRef}>
+                        <div className="flex items-stretch rounded-xl overflow-hidden shadow-md">
+                            <button
+                                onClick={() => { setKeylineDropOpen(false); handleUpdateKeylineDetails(rows.filter(r => r.isSelected).map(r => r.contentName), 'All Synced'); }}
+                                disabled={isUpdatingKeyline || syncedCount === 0}
+                                className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold text-sm transition-all active:scale-95 disabled:opacity-50"
+                            >
+                                <Zap className={`w-4 h-4 ${isUpdatingKeyline ? 'animate-bounce' : ''}`} />
+                                Update Keyline Details
+                            </button>
+                            <div className="w-px bg-violet-400/60 self-stretch" />
+                            <button
+                                onClick={() => { setDetailsDropOpen(false); setKeylineDropOpen(p => !p); }}
+                                disabled={isUpdatingKeyline || syncedCount === 0}
+                                className="px-2.5 bg-violet-600 hover:bg-violet-700 text-white transition-all disabled:opacity-50"
+                                title="More options"
+                            >
+                                <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${keylineDropOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                        </div>
+                        {keylineDropOpen && (
+                            <div className="absolute right-0 top-full mt-1.5 z-50 w-60 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
+                                <div className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                                    Keyline Details Scope
+                                </div>
+                                <button
+                                    onClick={() => { setKeylineDropOpen(false); handleUpdateKeylineDetails(rows.filter(r => r.isSelected).map(r => r.contentName), 'All Synced'); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors"
+                                >
+                                    <Database className="w-4 h-4 text-violet-500 shrink-0" />
+                                    <div className="text-left">
+                                        <div className="font-semibold text-gray-700 dark:text-gray-200">Update All Synced</div>
+                                        <div className="text-xs text-gray-400">{syncedCount} content(s)</div>
+                                    </div>
+                                </button>
+                                <div className="border-t border-gray-100 dark:border-gray-700" />
+                                <button
+                                    onClick={() => { setKeylineDropOpen(false); handleUpdateKeylineDetails(displayRows.filter(r => r.isSelected).map(r => r.contentName), 'Visible / Filtered'); }}
+                                    disabled={displayRows.filter(r => r.isSelected).length === 0}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <Filter className="w-4 h-4 text-violet-500 shrink-0" />
+                                    <div className="text-left">
+                                        <div className="font-semibold text-gray-700 dark:text-gray-200">Update Visible Only</div>
+                                        <div className="text-xs text-gray-400">{displayRows.filter(r => r.isSelected).length} visible synced</div>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 

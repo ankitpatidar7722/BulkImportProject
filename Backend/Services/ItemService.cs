@@ -92,6 +92,12 @@ public class ItemService : IItemService
                     TotalGSM            = Dec("TotalGSM"),
                     CertificationType   = Str("CertificationType"),
                     PaperGroup          = Str("PaperGroup"),
+                    SizeH               = Dec("SizeH"),
+                    NoOfPly             = Int32("NoOfPly"),
+                    EmptyCartonWt       = Dec("EmptyCartonWt"),
+                    Capacity            = Dec("Capacity"),
+                    CBF                 = Dec("CBF"),
+                    CBM                 = Dec("CBM"),
                     IsDeletedTransaction = Bool("IsDeletedTransaction") ?? false,
                 });
             }
@@ -118,11 +124,12 @@ public class ItemService : IItemService
                 i.UnitPerPacking, i.WtPerPacking, i.ConversionFactor,
                 i.ItemSubGroupID, isg.ItemSubGroupName,
                 i.ItemType, i.StockType, i.StockCategory,
-                i.SizeW, i.SizeL, i.ItemSize, i.PurchaseRate, i.StockRefCode, i.ItemDescription,
+                i.SizeW, i.SizeL, i.SizeH, i.ItemSize, i.PurchaseRate, i.StockRefCode, i.ItemDescription,
                 i.Quality, i.GSM, i.Manufecturer, i.Finish, i.ManufecturerItemCode, i.Caliper,
                 i.ShelfLife, i.MinimumStockQty, i.IsStandardItem, i.IsRegularItem,
                 i.PackingType, i.BF, i.InkColour, i.PantoneCode, i.PurchaseOrderQuantity,
                 i.Thickness, i.Density, i.ReleaseGSM, i.AdhesiveGSM, i.TotalGSM,
+                i.NoOfPly, i.EmptyCartonWt, i.Capacity, i.CBF, i.CBM,
                 CAST(ISNULL(i.IsDeletedTransaction, 0) AS BIT) as IsDeletedTransaction
             FROM ItemMaster i
             LEFT JOIN ItemGroupMaster ig ON i.ItemGroupID = ig.ItemGroupID
@@ -182,6 +189,12 @@ public class ItemService : IItemService
                         case "ReleaseGSM": if (decimal.TryParse(fv, out var rg)) item.ReleaseGSM = rg; break;
                         case "AdhesiveGSM": if (decimal.TryParse(fv, out var ag)) item.AdhesiveGSM = ag; break;
                         case "TotalGSM": if (decimal.TryParse(fv, out var tg)) item.TotalGSM = tg; break;
+                        case "SizeH": if (decimal.TryParse(fv, out var sh)) item.SizeH = sh; break;
+                        case "NoOfPly": if (int.TryParse(fv, out var np)) item.NoOfPly = np; break;
+                        case "EmptyCartonWt": if (decimal.TryParse(fv, out var ec)) item.EmptyCartonWt = ec; break;
+                        case "Capacity": if (decimal.TryParse(fv, out var cap)) item.Capacity = cap; break;
+                        case "CBF": if (decimal.TryParse(fv, out var cbf)) item.CBF = cbf; break;
+                        case "CBM": if (decimal.TryParse(fv, out var cbm)) item.CBM = cbm; break;
                     }
                 }
             }
@@ -231,11 +244,8 @@ public class ItemService : IItemService
             validHSNGroups.Select(h => h.DisplayName.Trim())
         );
 
-        // Get valid Units
-        var validUnits = await GetUnitsAsync();
-        var unitLookup = new HashSet<string>(
-            validUnits.Select(u => u.UnitSymbol.Trim())
-        );
+        // Get valid Units for fields dynamically from ItemGroupFieldMaster
+        var fieldUnits = await GetFieldUnitsAsync(itemGroupId);
 
         // Get valid Packing Types
         var validPackingTypes = new HashSet<string>(
@@ -306,6 +316,14 @@ public class ItemService : IItemService
                 "StockUnit", "ProductHSNName"
             };
         }
+        else if (itemGroupId == 7) // SHIPPER CARTON
+        {
+            requiredFields = new[] {
+                "Quality", "ItemSubGroupName", "NoOfPly",
+                "SizeL", "SizeW", "SizeH",
+                "PurchaseUnit", "EstimationUnit", "StockUnit", "ProductHSNName"
+            };
+        }
         else if (itemGroupId == 8) // OTHER MATERIAL
         {
             requiredFields = new[] {
@@ -333,15 +351,16 @@ public class ItemService : IItemService
 
         // Pre-compute PAPER group flag (everything that is NOT a named item group ID)
         bool isPaperGroup = !(itemGroupId == 2 || itemGroupId == 3 || itemGroupId == 4 ||
-                              itemGroupId == 5 || itemGroupId == 6 || itemGroupId == 8 || itemGroupId == 13);
+                              itemGroupId == 5 || itemGroupId == 6 || itemGroupId == 7 ||
+                              itemGroupId == 8 || itemGroupId == 13);
 
         // Look up the exact 'SHEET' unit symbol from UnitMaster once (preserve DB casing)
         string? sheetUnitSymbol = null;
         if (isPaperGroup)
         {
-            sheetUnitSymbol = validUnits
-                .FirstOrDefault(u => string.Equals(u.UnitSymbol.Trim(), "SHEET", StringComparison.OrdinalIgnoreCase))
-                ?.UnitSymbol.Trim();
+            sheetUnitSymbol = fieldUnits.StockUnit
+                .FirstOrDefault(u => string.Equals(u.Trim(), "SHEET", StringComparison.OrdinalIgnoreCase))
+                ?.Trim();
         }
 
         for (int i = 0; i < items.Count; i++)
@@ -373,7 +392,7 @@ public class ItemService : IItemService
                 bool isMissing = false;
 
                 // Handle numeric fields
-                var numericFields = new[] { "GSM", "SizeL", "SizeW", "PurchaseRate", "EstimationRate",
+                var numericFields = new[] { "GSM", "SizeL", "SizeW", "SizeH", "NoOfPly", "PurchaseRate", "EstimationRate",
                                            "UnitPerPacking", "MinimumStockQty", "ShelfLife" };
 
                 if (numericFields.Contains(field))
@@ -432,7 +451,7 @@ public class ItemService : IItemService
                            string.Equals(finishA, finishB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase);
                 }
-                else if (itemGroupId == 3) // INK & ADDITIVES: ItemType + InkColour + PantoneCode
+                else if (itemGroupId == 3) // INK & ADDITIVES: ItemType + InkColour + PantoneCode + ManufacturerItemCode + Manufacturer
                 {
                     var itemTypeA = a.ItemType?.Trim() ?? "";
                     var itemTypeB = b.ItemType?.Trim() ?? "";
@@ -443,9 +462,17 @@ public class ItemService : IItemService
                     var pantoneCodeA = a.PantoneCode?.Trim() ?? "";
                     var pantoneCodeB = b.PantoneCode?.Trim() ?? "";
 
+                    var mfgItemCodeA = a.ManufecturerItemCode?.Trim() ?? "";
+                    var mfgItemCodeB = b.ManufecturerItemCode?.Trim() ?? "";
+
+                    var manufacturerA = a.Manufecturer?.Trim() ?? "";
+                    var manufacturerB = b.Manufecturer?.Trim() ?? "";
+
                     return string.Equals(itemTypeA, itemTypeB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(inkColourA, inkColourB, StringComparison.OrdinalIgnoreCase) &&
-                           string.Equals(pantoneCodeA, pantoneCodeB, StringComparison.OrdinalIgnoreCase);
+                           string.Equals(pantoneCodeA, pantoneCodeB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(mfgItemCodeA, mfgItemCodeB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(manufacturerA, manufacturerB, StringComparison.OrdinalIgnoreCase);
                 }
                 else if (itemGroupId == 4) // VARNISHES & COATINGS: ItemType + Quality
                 {
@@ -458,7 +485,7 @@ public class ItemService : IItemService
                     return string.Equals(itemTypeA, itemTypeB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase);
                 }
-                else if (itemGroupId == 5) // LAMINATION FILM: Quality + SizeW + Thickness
+                else if (itemGroupId == 5) // LAMINATION FILM: Quality + SizeW + Thickness + StockRefCode
                 {
                     var qualityA = a.Quality?.Trim() ?? "";
                     var qualityB = b.Quality?.Trim() ?? "";
@@ -469,9 +496,13 @@ public class ItemService : IItemService
                     var thicknessA = a.Thickness?.ToString() ?? "";
                     var thicknessB = b.Thickness?.ToString() ?? "";
 
+                    var stockRefA = a.StockRefCode?.Trim() ?? "";
+                    var stockRefB = b.StockRefCode?.Trim() ?? "";
+
                     return string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase) &&
-                           string.Equals(thicknessA, thicknessB, StringComparison.OrdinalIgnoreCase);
+                           string.Equals(thicknessA, thicknessB, StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(stockRefA, stockRefB, StringComparison.OrdinalIgnoreCase);
                 }
                 else if (itemGroupId == 6) // FOIL: Quality + SizeW + Thickness
                 {
@@ -487,6 +518,15 @@ public class ItemService : IItemService
                     return string.Equals(qualityA, qualityB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(sizeWA, sizeWB, StringComparison.OrdinalIgnoreCase) &&
                            string.Equals(thicknessA, thicknessB, StringComparison.OrdinalIgnoreCase);
+                }
+                else if (itemGroupId == 7) // SHIPPER CARTON: Quality + ItemSubGroupName + NoOfPly + SizeL + SizeW + SizeH
+                {
+                    return string.Equals(a.Quality?.Trim(), b.Quality?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(a.ItemSubGroupName?.Trim(), b.ItemSubGroupName?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(a.NoOfPly?.ToString(), b.NoOfPly?.ToString(), StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(a.SizeL?.ToString(), b.SizeL?.ToString(), StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(a.SizeW?.ToString(), b.SizeW?.ToString(), StringComparison.OrdinalIgnoreCase) &&
+                           string.Equals(a.SizeH?.ToString(), b.SizeH?.ToString(), StringComparison.OrdinalIgnoreCase);
                 }
                 else if (itemGroupId == 8) // OTHER MATERIAL: ItemSubGroupName + Quality + Manufacturer
                 {
@@ -606,7 +646,15 @@ public class ItemService : IItemService
                 var unitValue = GetPropertyValue(item, unitField)?.ToString();
                 if (!string.IsNullOrWhiteSpace(unitValue))
                 {
-                    var isValidUnit = unitLookup.Contains(unitValue.Trim());
+                    List<string> validUnitsForField = new List<string>();
+                    if (string.Equals(unitField, "PurchaseUnit", StringComparison.OrdinalIgnoreCase))
+                        validUnitsForField = fieldUnits.PurchaseUnit;
+                    else if (string.Equals(unitField, "EstimationUnit", StringComparison.OrdinalIgnoreCase))
+                        validUnitsForField = fieldUnits.EstimationUnit;
+                    else if (string.Equals(unitField, "StockUnit", StringComparison.OrdinalIgnoreCase))
+                        validUnitsForField = fieldUnits.StockUnit;
+
+                    var isValidUnit = validUnitsForField.Contains(unitValue.Trim(), StringComparer.OrdinalIgnoreCase);
 
                     if (!isValidUnit)
                     {
@@ -666,7 +714,7 @@ public class ItemService : IItemService
             }
 
             // 4c. Check ItemSubGroupName mismatch (YELLOW) - for groups with ItemSubGroupName
-            if ((itemGroupId == 3 || itemGroupId == 4 || itemGroupId == 5 || itemGroupId == 6 || itemGroupId == 8) && !string.IsNullOrWhiteSpace(item.ItemSubGroupName))
+            if ((itemGroupId == 3 || itemGroupId == 4 || itemGroupId == 5 || itemGroupId == 6 || itemGroupId == 7 || itemGroupId == 8) && !string.IsNullOrWhiteSpace(item.ItemSubGroupName))
             {
                 var isValidSubGroup = itemSubGroupLookup.Contains(item.ItemSubGroupName.Trim());
 
@@ -930,6 +978,7 @@ public class ItemService : IItemService
         string defaultItemType = itemGroupId == 4 ? "Varnish"
             : itemGroupId == 5 ? "LAMINATION FILM"
             : itemGroupId == 6 ? "FOIL"
+            : itemGroupId == 7 ? "E"
             : itemGroupId == 8 ? "OTHER MATERIAL"
             : itemGroupId == 13 ? "Paper" : "PAPER";
 
@@ -961,6 +1010,8 @@ public class ItemService : IItemService
                 if (!string.IsNullOrEmpty(item.Finish))       descParts.Add($"Finish:{item.Finish}");
                 if (item.SizeW.HasValue)                      descParts.Add($"SizeW:{item.SizeW}");
                 if (item.SizeL.HasValue)                      descParts.Add($"SizeL:{item.SizeL}");
+                if (item.SizeH.HasValue)                      descParts.Add($"SizeH:{item.SizeH}");
+                if (item.NoOfPly.HasValue)                    descParts.Add($"NoOfPly:{item.NoOfPly}");
                 if (item.Caliper.HasValue)                    descParts.Add($"Caliper:{item.Caliper}");
 
                 int productHSNID = 0;
@@ -1038,6 +1089,12 @@ public class ItemService : IItemService
         masterTable.Columns.Add("ReleaseGSM",            typeof(object));
         masterTable.Columns.Add("AdhesiveGSM",           typeof(object));
         masterTable.Columns.Add("TotalGSM",              typeof(object));
+        masterTable.Columns.Add("SizeH",                 typeof(object));
+        masterTable.Columns.Add("NoOfPly",               typeof(object));
+        masterTable.Columns.Add("EmptyCartonWt",         typeof(object));
+        masterTable.Columns.Add("Capacity",              typeof(object));
+        masterTable.Columns.Add("CBF",                   typeof(object));
+        masterTable.Columns.Add("CBM",                   typeof(object));
         masterTable.Columns.Add("ISItemActive",          typeof(int));
         masterTable.Columns.Add("CompanyID",             typeof(int));
         masterTable.Columns.Add("UserID",                typeof(int));
@@ -1068,6 +1125,7 @@ public class ItemService : IItemService
                 N(it.PackingType), N(it.BF), N(it.InkColour), N(it.PantoneCode),
                 N(it.PurchaseOrderQuantity), N(it.Thickness), N(it.Density),
                 N(it.ReleaseGSM), N(it.AdhesiveGSM), N(it.TotalGSM),
+                N(it.SizeH), N(it.NoOfPly), N(it.EmptyCartonWt), N(it.Capacity), N(it.CBF), N(it.CBM),
                 1, 2, 2, "2025-2026", 2, DateTime.Now, false
             );
         }
@@ -1159,6 +1217,8 @@ public class ItemService : IItemService
             if (it.Caliper.HasValue)           AddDetail("Caliper",          it.Caliper.ToString());
             if (it.SizeW.HasValue)             AddDetail("SizeW",            it.SizeW.ToString());
             if (it.SizeL.HasValue)             AddDetail("SizeL",            it.SizeL.ToString());
+            if (it.SizeH.HasValue)             AddDetail("SizeH",            it.SizeH.ToString());
+            if (it.EmptyCartonWt.HasValue)     AddDetail("EmptyCartonWt",    it.EmptyCartonWt.ToString());
             AddDetail("PurchaseUnit",          it.PurchaseUnit);
             if (it.PurchaseRate.HasValue)      AddDetail("PurchaseRate",     it.PurchaseRate.ToString());
             if (it.ShelfLife.HasValue)         AddDetail("ShelfLife",        it.ShelfLife.ToString());
@@ -1185,6 +1245,10 @@ public class ItemService : IItemService
             AddDetail("StockRefCode",          it.StockRefCode);
             AddDetail("CertificationType",     it.CertificationType);
             AddDetail("PaperGroup",            it.PaperGroup);
+            if (it.NoOfPly.HasValue)           AddDetail("NoOfPly",          it.NoOfPly.ToString());
+            if (it.Capacity.HasValue)          AddDetail("Capacity",         it.Capacity.ToString());
+            if (it.CBF.HasValue)               AddDetail("CBF",              it.CBF.ToString());
+            if (it.CBM.HasValue)               AddDetail("CBM",              it.CBM.ToString());
             AddDetail("ISItemActive",          "True");
         }
 
@@ -1245,17 +1309,61 @@ public class ItemService : IItemService
         return results.ToList();
     }
 
-    public async Task<List<UnitDto>> GetUnitsAsync()
+    public async Task<FieldUnitsDto> GetFieldUnitsAsync(int itemGroupId)
     {
-        var query = @"
-            SELECT UnitID, UnitSymbol
+        // 1. ItemGroupFieldMaster: comma-separated preferred values per field
+        var fieldQuery = @"
+            SELECT FieldName, SelectBoxDefault
+            FROM ItemGroupFieldMaster
+            WHERE ItemGroupID = @ItemGroupID
+            AND FieldName IN ('PurchaseUnit', 'EstimationUnit', 'StockUnit')";
+
+        var fieldResults = await _connection.QueryAsync<(string FieldName, string SelectBoxDefault)>(
+            fieldQuery, new { ItemGroupID = itemGroupId });
+
+        // 2. UnitMaster: all DISTINCT unit symbols (fallback/supplement)
+        var unitMasterQuery = @"
+            SELECT DISTINCT LTRIM(RTRIM(UnitSymbol)) AS UnitSymbol
             FROM UnitMaster
-            WHERE UnitSymbol IS NOT NULL 
-            AND UnitSymbol <> ''
+            WHERE UnitSymbol IS NOT NULL AND LTRIM(RTRIM(UnitSymbol)) <> ''
             ORDER BY UnitSymbol";
 
-        var results = await _connection.QueryAsync<UnitDto>(query);
-        return results.ToList();
+        var unitMasterValues = (await _connection.QueryAsync<string>(unitMasterQuery)).ToList();
+
+        // Parse ItemGroupFieldMaster values into a per-field map
+        var fieldMap = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in fieldResults)
+        {
+            if (!string.IsNullOrWhiteSpace(r.SelectBoxDefault))
+            {
+                fieldMap[r.FieldName] = r.SelectBoxDefault
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim())
+                    .Where(s => !string.IsNullOrEmpty(s))
+                    .ToList();
+            }
+        }
+
+        // Merge: ItemGroupFieldMaster first (preserves preferred casing), then UnitMaster for extras
+        static List<string> Merge(List<string> primary, List<string> secondary)
+        {
+            var seen   = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var result = new List<string>();
+            foreach (var v in primary)
+                if (seen.Add(v)) result.Add(v);
+            foreach (var v in secondary)
+                if (seen.Add(v)) result.Add(v);
+            return result;
+        }
+
+        var empty = new List<string>();
+        var dto = new FieldUnitsDto
+        {
+            PurchaseUnit   = Merge(fieldMap.GetValueOrDefault("PurchaseUnit",   empty), unitMasterValues),
+            EstimationUnit = Merge(fieldMap.GetValueOrDefault("EstimationUnit", empty), unitMasterValues),
+            StockUnit      = Merge(fieldMap.GetValueOrDefault("StockUnit",      empty), unitMasterValues)
+        };
+        return dto;
     }
 
     public async Task<int> ClearAllItemDataAsync(string username, string password, string reason, int itemGroupId)

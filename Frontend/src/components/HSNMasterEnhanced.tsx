@@ -100,15 +100,9 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
     // No Data Popup State
     const [noDataPopupGroup, setNoDataPopupGroup] = useState<string | null>(null);
 
-    // Helper: Build dropdown params that include current value if missing
-    const getDropdownParams = (options: any[]) => (params: any) => {
+    // Helper: Build dropdown params strictly from options
+    const getDropdownParams = (options: any[]) => () => {
         const values = ['', ...options.map(o => String(o))];
-        if (params.value !== undefined && params.value !== null && params.value !== '') {
-            const strVal = String(params.value);
-            if (!values.includes(strVal)) {
-                values.push(strVal);
-            }
-        }
         return { values };
     };
 
@@ -951,11 +945,34 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('HSN Master');
 
-        const headers = ['Group Name', 'Display Name', 'HSN Code', 'ProductType', 'GST %', 'CGST %', 'SGST %', 'IGST %', 'ItemGroupName'];
-        worksheet.addRow(headers);
+        const exportColumns = ['Group Name', 'Display Name', 'HSN Code', 'ProductType', 'GST %', 'CGST %', 'SGST %', 'IGST %', 'ItemGroupName'];
+        worksheet.addRow(exportColumns);
 
-        hsnData.forEach(row => {
-            worksheet.addRow([
+        const exportColors = {
+            duplicate: 'FFFFE0E0',
+            missing:   'FFD0E8FF',
+            mismatch:  'FFFFFF99',
+            invalid:   'FFE8D0FF'
+        };
+
+        const passesExportFilter = (rowIndex: number): boolean => {
+            if (filterType === 'all' || !validationResult) return true;
+            const v = validationMap.get(rowIndex);
+            if (!v) return filterType === 'valid';
+            switch (filterType) {
+                case 'valid':     return v.rowStatus === ValidationStatus.Valid;
+                case 'duplicate': return v.rowStatus === ValidationStatus.Duplicate;
+                case 'missing':   return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.MissingData) ?? false;
+                case 'mismatch':  return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.Mismatch) ?? false;
+                case 'invalid':   return v.cellValidations?.some((cv: any) => cv.status === ValidationStatus.InvalidContent) ?? false;
+                default: return true;
+            }
+        };
+
+        hsnData.forEach((row, rowIndex) => {
+            if (!passesExportFilter(rowIndex)) return;
+
+            const excelRow = worksheet.addRow([
                 row.productHSNName,
                 row.displayName,
                 row.hsnCode,
@@ -966,6 +983,27 @@ const HSNMasterEnhanced: React.FC<HSNMasterEnhancedProps> = () => {
                 row.igstTaxPercentage,
                 row.itemGroupName
             ]);
+
+            const rowValidation = validationMap.get(rowIndex);
+            if (rowValidation) {
+                if (rowValidation.rowStatus === ValidationStatus.Duplicate) {
+                    excelRow.eachCell(cell => {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: exportColors.duplicate } };
+                    });
+                } else {
+                    rowValidation.cellValidations?.forEach((cellVal: any) => {
+                        const colIdx = exportColumns.findIndex(c => c.toLowerCase() === (cellVal.columnName ?? '').toLowerCase()) + 1;
+                        if (colIdx > 0) {
+                            const cell = excelRow.getCell(colIdx);
+                            let argb = '';
+                            if (cellVal.status === ValidationStatus.MissingData)    argb = exportColors.missing;
+                            else if (cellVal.status === ValidationStatus.Mismatch)  argb = exportColors.mismatch;
+                            else if (cellVal.status === ValidationStatus.InvalidContent) argb = exportColors.invalid;
+                            if (argb) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+                        }
+                    });
+                }
+            }
         });
 
         workbook.xlsx.writeBuffer().then((buffer) => {

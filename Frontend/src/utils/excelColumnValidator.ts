@@ -60,6 +60,14 @@ const ITEM_MASTER_COLUMNS: Record<string, string[]> = {
         'StockUnit', 'MinimumStockQty', 'StockType', 'IsStandardItem', 'IsRegularItem',
         'PurchaseOrderQuantity', 'StockRefCode', 'ProductHSNName', 'ItemName'
     ],
+    'SHIPPER CARTON': [
+        'Quality', 'ItemSubGroupName', 'NoOfPly', 'ItemType',
+        'SizeL', 'SizeW', 'SizeH', 'Manufecturer', 'ManufecturerItemCode',
+        'EmptyCartonWt', 'PurchaseUnit', 'PurchaseRate', 'PurchaseOrderQuantity',
+        'ShelfLife', 'EstimationUnit', 'EstimationRate', 'StockUnit',
+        'MinimumStockQty', 'StockType', 'IsRegularItem', 'ProductHSNName',
+        'Capacity', 'CBF', 'CBM', 'StockRefCode', 'ItemName'
+    ],
     '__DEFAULT__': [
         'ItemName', 'HSNGroup', 'StockUnit', 'PurchaseUnit', 'EstimationUnit',
         'UnitPerPacking', 'WtPerPacking', 'ConversionFactor',
@@ -90,24 +98,24 @@ const TOOL_MASTER_COLUMNS: Record<number, string[]> = {
     ],
     5: [ // PRINTING CYLINDER
         'SizeW', 'Manufacturer', 'NoOfTeeth', 'CircumferenceMM', 'CircumferenceInch',
-        'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+        'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName', 'ToolRefCode'
     ],
     6: [ // ANILOX CYLINDER
         'SizeW', 'Manufacturer', 'BCM', 'LPI',
-        'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+        'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName', 'ToolRefCode'
     ],
     7: [ // EMBOSSING CYLINDER
         'SizeW', 'Manufacturer', 'NoOfTeeth', 'CircumferenceMM', 'CircumferenceInch',
-        'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName'
+        'ProductHSNName', 'PurchaseUnit', 'PurchaseRate', 'StockUnit', 'ToolName', 'ToolRefCode'
     ],
     8: [ // FLEXO DIE
         'LedgerName', 'JobName', 'SizeL', 'SizeH', 'UpsAround', 'UpsAcross', 'TotalUps',
         'ProductHSNName', 'ToolName', 'ToolType', 'AroundGap', 'AcrossGap',
-        'UnitSymbol', 'PurchaseUnit', 'PurchaseRate', 'ReferenceToolNo', 'EstimateRate', 'StockUnit'
+        'UnitSymbol', 'PurchaseUnit', 'PurchaseRate', 'ReferenceToolNo', 'EstimateRate', 'StockUnit', 'ToolRefCode'
     ],
     0: [ // PLATES (default)
         'ToolType', 'JobName', 'SizeL', 'SizeW', 'TotalUps',
-        'PurchaseRate', 'PurchaseUnit', 'StockUnit', 'ToolName', 'ProductHSNName'
+        'PurchaseRate', 'PurchaseUnit', 'StockUnit', 'ToolName', 'ProductHSNName', 'ToolRefCode'
     ]
 };
 

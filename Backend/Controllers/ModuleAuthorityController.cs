@@ -50,4 +50,36 @@ public class ModuleAuthorityController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+
+    /// <summary>Returns all Indus Tool modules with IsEnabled flag for the given company.</summary>
+    [HttpGet("indus-tools/{companyUserID}")]
+    public async Task<IActionResult> GetModulesForCompany(string companyUserID)
+    {
+        try
+        {
+            var data = await _service.GetModulesForCompanyAsync(companyUserID);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching indus tool modules for {CompanyUserID}", companyUserID);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Saves which Indus Tool modules are enabled for a company.</summary>
+    [HttpPost("indus-tools")]
+    public async Task<IActionResult> SaveCompanyModuleAuthority([FromBody] SaveModuleAuthorityRequest request)
+    {
+        try
+        {
+            var result = await _service.SaveCompanyModuleAuthorityAsync(request);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving indus tool module authority for {CompanyUserID}", request.CompanyUserID);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 }

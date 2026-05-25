@@ -96,7 +96,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         try
         {
             using var conn = GetIndusConnection();
-            var query = @"SELECT * FROM Indus_Company_Authentication_For_Web_Modules ORDER BY CompanyName";
+            var query = @"SELECT * FROM Indus_Company_Authentication_For_Web_Modules WHERE ISNULL(IsActive, 1) = 1 ORDER BY CompanyName";
 
             var data = (await conn.QueryAsync<CompanySubscriptionDto>(query)).ToList();
 
@@ -358,18 +358,18 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             var oldDataQuery = "SELECT * FROM Indus_Company_Authentication_For_Web_Modules WHERE CompanyUserID = @CompanyUserID";
             var oldData = await conn.QueryFirstOrDefaultAsync<CompanySubscriptionDto>(oldDataQuery, new { CompanyUserID = companyUserID });
 
-            var query = "DELETE FROM Indus_Company_Authentication_For_Web_Modules WHERE CompanyUserID = @CompanyUserID";
+            var query = "UPDATE Indus_Company_Authentication_For_Web_Modules SET IsActive = 0 WHERE CompanyUserID = @CompanyUserID";
             var affected = await conn.ExecuteAsync(query, new { CompanyUserID = companyUserID });
 
             if (affected == 0)
                 return new CompanySubscriptionResponse { Success = false, Message = "Record not found." };
 
-            Console.WriteLine($"[CompanySubscription] Deleted CompanyUserID={companyUserID}");
+            Console.WriteLine($"[CompanySubscription] Soft-deleted (IsActive=0) CompanyUserID={companyUserID}");
 
             // Log activity
             await LogActivityAsync(
                 actionType: "Delete",
-                actionDescription: $"Deleted company subscription: {oldData?.CompanyName ?? companyUserID} (ID: {companyUserID})",
+                actionDescription: $"Deactivated company subscription: {oldData?.CompanyName ?? companyUserID} (ID: {companyUserID})",
                 entityName: "Subscription",
                 oldValue: oldData != null ? System.Text.Json.JsonSerializer.Serialize(new
                 {
@@ -667,7 +667,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Helper: Connect to client DB using their connection string ───
+    // â”€â”€â”€ Helper: Connect to client DB using their connection string â”€â”€â”€
     private static SqlConnection ClientConnection(string connString)
     {
         var builder = new SqlConnectionStringBuilder(connString)
@@ -678,7 +678,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         return new SqlConnection(builder.ConnectionString);
     }
 
-    // ─── Step 3: Company Master ───
+    // â”€â”€â”€ Step 3: Company Master â”€â”€â”€
     public async Task<CompanyMasterResponse> SaveCompanyMasterAsync(CompanyMasterRequest request)
     {
         try
@@ -753,7 +753,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Step 4: Branch Master ───
+    // â”€â”€â”€ Step 4: Branch Master â”€â”€â”€
     public async Task<BranchMasterResponse> SaveBranchMasterAsync(BranchMasterRequest request)
     {
         try
@@ -837,7 +837,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Step 5: Production Unit Master ───
+    // â”€â”€â”€ Step 5: Production Unit Master â”€â”€â”€
     public async Task<ProductionUnitResponse> SaveProductionUnitAsync(ProductionUnitRequest request)
     {
         try
@@ -893,7 +893,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Module Settings ───
+    // â”€â”€â”€ Module Settings â”€â”€â”€
     private static string GetMasterModuleTable(string applicationName)
     {
         return applicationName.ToLower() switch
@@ -932,7 +932,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 "SELECT ModuleName, ISNULL(IsDeletedTransaction, 0) AS IsDeletedTransaction FROM ModuleMaster"
             )).ToList();
 
-            // Build lookup: ModuleName → IsDeletedTransaction
+            // Build lookup: ModuleName â†’ IsDeletedTransaction
             var clientLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             foreach (var cm in clientModules)
             {
@@ -1008,7 +1008,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             var adminUserId = await clientConn.ExecuteScalarAsync<int?>(
                 "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'");
             var companyId = await clientConn.ExecuteScalarAsync<int?>(
-                "SELECT TOP 1 CompanyID FROM CompanyMaster");
+                "SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0");
 
             // Get existing client modules
             var existingModules = (await clientConn.QueryAsync<dynamic>(
@@ -1032,7 +1032,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                     // Should be active
                     if (existsInClient)
                     {
-                        // Exists but may be soft-deleted → undelete
+                        // Exists but may be soft-deleted â†’ undelete
                         if (existingLookup[mod.ModuleName] == 1)
                         {
                             await clientConn.ExecuteAsync(
@@ -1135,7 +1135,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Copy Modules ───
+    // â”€â”€â”€ Copy Modules â”€â”€â”€
     public async Task<ClientDropdownResponse> GetClientDropdownAsync()
     {
         try
@@ -1193,7 +1193,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 var adminUserId = await targetConn.ExecuteScalarAsync<int?>(
                     "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'", transaction: transaction);
                 var companyId = await targetConn.ExecuteScalarAsync<int?>(
-                    "SELECT TOP 1 CompanyID FROM CompanyMaster", transaction: transaction);
+                    "SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0", transaction: transaction);
 
                 // Delete existing data (UserModuleAuthentication first, then ModuleMaster)
                 await targetConn.ExecuteAsync("DELETE FROM UserModuleAuthentication", transaction: transaction);
@@ -1284,7 +1284,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Final Step: Complete Setup ───
+    // â”€â”€â”€ Final Step: Complete Setup â”€â”€â”€
     public async Task<CompleteSetupResponse> CompleteSetupAsync(CompleteSetupRequest request)
     {
         try
@@ -1346,7 +1346,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 
-    // ─── Module Group Authority ───
+    // â”€â”€â”€ Module Group Authority â”€â”€â”€
     public async Task<ModuleGroupDropdownResponse> GetModuleGroupsAsync(string applicationName)
     {
         try
@@ -1430,12 +1430,12 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             // Use default metadata values (these tables don't exist in Indus DB)
             var companyID = 2;
-            var userID = 1;
-            var fYear = "2024-25";
 
             // Get module details from IndusEnterpriseNewInstallation
             using var masterConn = new SqlConnection("Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseNewInstallation;User ID=INDUS;Password=Param@99811;TrustServerCertificate=True");
             await masterConn.OpenAsync();
+            var fYear = await masterConn.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='admin'") ?? "2024-25";
+            var userID = await masterConn.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 1;
 
             // Use transaction for atomicity
             using var transaction = indusConn.BeginTransaction();
@@ -1582,12 +1582,12 @@ public class CompanySubscriptionService : ICompanySubscriptionService
 
             // Use default metadata values
             var companyID = 2;
-            var userID = 1;
-            var fYear = "2024-25";
 
             // Get module details from IndusEnterpriseNewInstallation
             using var masterConn = new SqlConnection("Data Source=13.200.122.70,1433;Initial Catalog=IndusEnterpriseNewInstallation;User ID=INDUS;Password=Param@99811;TrustServerCertificate=True");
             await masterConn.OpenAsync();
+            var fYear = await masterConn.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='admin'") ?? "2024-25";
+            var userID = await masterConn.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedUser=0") ?? 1;
 
             // Use transaction for atomicity
             using var transaction = indusConn.BeginTransaction();
@@ -1734,7 +1734,7 @@ public class CompanySubscriptionService : ICompanySubscriptionService
             var adminUserId = await clientConn.ExecuteScalarAsync<int?>(
                 "SELECT TOP 1 UserID FROM UserMaster WHERE UserName = 'admin'");
             var companyId = await clientConn.ExecuteScalarAsync<int?>(
-                "SELECT TOP 1 CompanyID FROM CompanyMaster");
+                "SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0");
 
             if (!adminUserId.HasValue)
                 return new ApplyModuleGroupToClientResponse { Success = false, Message = "Admin user not found in client database." };
@@ -2006,18 +2006,22 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 return new DeleteCompanySubscriptionResponse { Success = false, Message = $"Company subscription '{request.CompanyUserID}' does not exist." };
             }
 
-            // Step 3: Delete the record
-            Console.WriteLine($"[DeleteCompanySubscription] Proceeding with deletion");
+            // Step 3: Soft-delete — set IsActive = 0 using exact row match (no hard DELETE)
+            Console.WriteLine($"[DeleteCompanySubscription] Proceeding with soft-delete (IsActive = 0)");
             var deletedCount = await indusConn.ExecuteAsync(
-                "DELETE FROM Indus_Company_Authentication_For_Web_Modules WHERE CompanyUserID = @CompanyUserID",
-                new { CompanyUserID = request.CompanyUserID });
+                @"UPDATE Indus_Company_Authentication_For_Web_Modules
+                  SET IsActive = 0
+                  WHERE CompanyUserID = @CompanyUserID
+                    AND CompanyName = @CompanyName
+                    AND ISNULL(CompanyUniqueCode, '') = ISNULL(@CompanyUniqueCode, '')",
+                new { request.CompanyUserID, request.CompanyName, request.CompanyUniqueCode });
 
-            Console.WriteLine($"[DeleteCompanySubscription] SUCCESS - Deleted company subscription '{request.CompanyUserID}' by user '{request.UserName}'. Reason: {request.Reason}");
+            Console.WriteLine($"[DeleteCompanySubscription] SUCCESS - Soft-deleted (IsActive=0) company subscription '{request.CompanyUserID}' by user '{request.UserName}'. Reason: {request.Reason}");
 
             // Log activity
             await LogActivityAsync(
                 actionType: "Delete",
-                actionDescription: $"Deleted company subscription (Auth): {oldData.CompanyName} (ID: {request.CompanyUserID}). Reason: {request.Reason}",
+                actionDescription: $"Deactivated company subscription (Auth): {oldData.CompanyName} (ID: {request.CompanyUserID}). Reason: {request.Reason}",
                 entityName: "Subscription",
                 oldValue: System.Text.Json.JsonSerializer.Serialize(new
                 {
@@ -2043,3 +2047,4 @@ public class CompanySubscriptionService : ICompanySubscriptionService
         }
     }
 }
+

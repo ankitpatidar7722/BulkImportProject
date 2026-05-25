@@ -64,12 +64,15 @@ public class ItemController : ControllerBase
         }
     }
 
-    [HttpGet("units")]
-    public async Task<IActionResult> GetUnits()
+    [HttpGet("units/{itemGroupId}")]
+    public async Task<IActionResult> GetUnits(int itemGroupId)
     {
         try
         {
-            var units = await _itemService.GetUnitsAsync();
+            if (itemGroupId <= 0)
+                return BadRequest(new { message = "ItemGroupId is required" });
+
+            var units = await _itemService.GetFieldUnitsAsync(itemGroupId);
             return Ok(units);
         }
         catch (Exception ex)

@@ -406,6 +406,8 @@ public class DeleteModuleGroupResponse
 public class DeleteCompanySubscriptionRequest
 {
     public string CompanyUserID { get; set; } = string.Empty;
+    public string CompanyName { get; set; } = string.Empty;
+    public string CompanyUniqueCode { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
