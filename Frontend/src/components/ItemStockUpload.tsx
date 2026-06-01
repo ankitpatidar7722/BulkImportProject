@@ -223,24 +223,43 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             // (e.g. 18 stored as 17.999999999999943 in IEEE-754).
             const isPaper = itemGroupName.toUpperCase() === 'PAPER';
 
+            // Safe converters: backend requires decimal (non-nullable) for qty/rate,
+            // decimal? for gsm/sizeL/sizeW, and string? for quality/finish/manufecturer.
+            // JSON.stringify converts NaN → null, which fails model binding for non-nullable decimals.
+            const toSafeNum = (val: any): number => {
+                const n = Number(val);
+                return isFinite(n) ? n : 0;
+            };
+            const toOptNum = (val: any): number | undefined => {
+                if (val === null || val === undefined || val === '') return undefined;
+                const n = Number(val);
+                return isFinite(n) ? n : undefined;
+            };
+            const toOptStr = (val: any): string | undefined => {
+                if (val === null || val === undefined) return undefined;
+                const s = String(val).trim();
+                return s === '' ? undefined : s;
+            };
+
             // Map Excel rows
             const rows = jsonData.map((row: any) => {
-                const rawQty = Number(row.ReceiptQuantity ?? row.receiptQuantity ?? row.Quantity ?? row.quantity ?? 0);
+                const rawQty = toSafeNum(row.ReceiptQuantity ?? row.receiptQuantity ?? row.Quantity ?? row.quantity ?? 0);
+                const rawRate = toSafeNum(row.LandedRate ?? row.landedRate ?? row.Rate ?? row.rate ?? 0);
                 return {
                     itemCode: String(row.ItemCode || row.itemCode || row.ITEMCODE || '').trim() || undefined,
                     receiptQuantity: isPaper ? Math.round(rawQty) : rawQty,
-                    landedRate: Math.round(Number(row.LandedRate || row.landedRate || row.Rate || row.rate || 0) * 1000) / 1000,
+                    landedRate: Math.round(rawRate * 1000) / 1000,
                     stockUnit: String(row.StockUnit || row.stockUnit || row.STOCKUNIT || '').trim() || undefined,
                     warehouseName: String(row.WarehouseName || row.warehouseName || row.WAREHOUSENAME || '').trim() || undefined,
                     binName: String(row.BinName || row.binName || row.BINNAME || '').trim() || undefined,
                     batchNo: String(row.BatchNo || row.batchNo || row.BATCHNO || '').trim() || undefined,
                     supplierBatchNo: String(row.SupplierBatchNo || row.supplierBatchNo || row.SUPPLIERBATCHNO || '').trim() || undefined,
-                    quality: row.Quality || row.quality || row.QUALITY,
-                    gsm: row.GSM || row.gsm || row.GSMValue || row.GSMvalue,
-                    manufecturer: row.Manufecturer || row.manufecturer || row.Manufacturer || row.manufacturer,
-                    finish: row.Finish || row.finish || row.FINISH,
-                    sizeL: row.SizeL || row.sizeL || row.SIZEL,
-                    sizeW: row.SizeW || row.sizeW || row.SIZEW,
+                    quality: toOptStr(row.Quality ?? row.quality ?? row.QUALITY),
+                    gsm: toOptNum(row.GSM ?? row.gsm ?? row.GSMValue ?? row.GSMvalue),
+                    manufecturer: toOptStr(row.Manufecturer ?? row.manufecturer ?? row.Manufacturer ?? row.manufacturer),
+                    finish: toOptStr(row.Finish ?? row.finish ?? row.FINISH),
+                    sizeL: toOptNum(row.SizeL ?? row.sizeL ?? row.SIZEL),
+                    sizeW: toOptNum(row.SizeW ?? row.sizeW ?? row.SIZEW),
                 };
             });
 
@@ -267,7 +286,11 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             }
 
         } catch (error: any) {
-            showMessage('error', 'Upload Error', error?.response?.data?.message || error?.message || 'Failed to process Excel file.');
+            const errMsg = error?.response?.data?.message
+                || error?.response?.data?.title
+                || error?.message
+                || 'Failed to process Excel file.';
+            showMessage('error', 'Upload Error', errMsg);
         } finally {
             setIsLoading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';

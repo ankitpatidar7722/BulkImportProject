@@ -804,8 +804,8 @@ public class ItemStockService : IItemStockService
             const string prefix = "PHY";
             const int voucherId = -16;
             var companyId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2;
-            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedTransaction=0") ?? 2;
-            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
+            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin'") ?? 2;
+            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT TOP 1 FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
 
             var maxVoucherNo = await _connection.ExecuteScalarAsync<long?>(
                 @"SELECT ISNULL(MAX(MaxVoucherNo), 0) FROM ItemTransactionMain
@@ -1043,8 +1043,8 @@ public class ItemStockService : IItemStockService
             const int voucherIdForMax = -16;  // Used for MaxVoucherNo lookup (matches VB.NET)
             const int voucherIdForInsert = -25;  // Actual VoucherID in the record (matches JS)
             var companyId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 CompanyID FROM CompanyMaster WHERE IsDeletedTransaction=0") ?? 2;
-            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin' AND IsDeletedTransaction=0") ?? 2;
-            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
+            var userId = await _connection.ExecuteScalarAsync<int?>("SELECT TOP 1 UserID FROM UserMaster WHERE UserName='Admin'") ?? 2;
+            var fYear = await _connection.ExecuteScalarAsync<string>("SELECT TOP 1 FYear FROM UserMaster WHERE UserName='Admin'") ?? "2025-2026";
 
             var maxVoucherNo = await _connection.ExecuteScalarAsync<long?>(
                 @"SELECT ISNULL(MAX(MaxVoucherNo), 0) FROM ItemConsumptionMain
@@ -1097,6 +1097,7 @@ public class ItemStockService : IItemStockService
             detailTable.Columns.Add("CompanyID", typeof(int));
             detailTable.Columns.Add("FYear", typeof(string));
             detailTable.Columns.Add("CreatedBy", typeof(int));
+            detailTable.Columns.Add("IsDeletedTransaction", typeof(int));
 
             var now = DateTime.Now;
             for (int i = 0; i < floorStock.Count; i++)
@@ -1121,7 +1122,8 @@ public class ItemStockService : IItemStockService
                     (int)row.FloorWarehouseID,                // FloorWarehouseID
                     (string?)row.StockUnit ?? "",             // StockUnit
                     consumptionTxnId,                         // ConsumptionTransactionID
-                    now, userId, companyId, fYear, userId
+                    now, userId, companyId, fYear, userId,
+                    0                                         // IsDeletedTransaction = 0 (active record)
                 );
             }
 

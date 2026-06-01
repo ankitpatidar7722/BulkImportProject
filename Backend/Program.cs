@@ -586,6 +586,36 @@ using (var scope = app.Services.CreateScope())
          Console.WriteLine($"ItemMasterDetails Init Error: {ex.Message}");
          System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemMasterDetails Init Error: {ex.Message}\n");
     }
+
+    // ItemConsumptionDetail Schema Migration (IsDeletedTransaction column)
+    try
+    {
+        var conn = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+        conn.Open();
+        var tableExistsCmd = "SELECT COUNT(*) FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ItemConsumptionDetail]') AND type in (N'U')";
+        using (var cmd = new SqlCommand(tableExistsCmd, conn))
+        {
+            int tableExists = (int)cmd.ExecuteScalar();
+            if (tableExists > 0)
+            {
+                var alterCmd = @"
+                    IF NOT EXISTS(SELECT * FROM sys.columns WHERE Name = N'IsDeletedTransaction' AND Object_ID = Object_ID(N'ItemConsumptionDetail'))
+                    BEGIN
+                        ALTER TABLE ItemConsumptionDetail ADD IsDeletedTransaction BIT NOT NULL DEFAULT 0;
+                    END";
+                using (var cmd2 = new SqlCommand(alterCmd, conn))
+                {
+                    cmd2.ExecuteNonQuery();
+                }
+                System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemConsumptionDetail IsDeletedTransaction column check/add completed\n");
+            }
+        }
+        conn.Close();
+    }
+    catch(Exception ex) {
+        Console.WriteLine($"ItemConsumptionDetail Migration Error: {ex.Message}");
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemConsumptionDetail Migration Error: {ex.Message}\n");
+    }
 }
 
 // Configure the HTTP request pipeline.
