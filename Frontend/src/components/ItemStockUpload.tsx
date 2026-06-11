@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Database, Upload, Download, Trash2, AlertCircle, CheckCircle2, RotateCcw, Lock, ShieldAlert, RefreshCw } from 'lucide-react';
+import { Database, Upload, Download, Trash2, AlertCircle, CheckCircle2, RotateCcw, Lock, ShieldAlert, RefreshCw, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, ColDef, GridApi, RowClassRules, IRowNode } from 'ag-grid-community';
@@ -55,6 +55,13 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
     const [captchaInput, setCaptchaInput] = useState('');
     const [captchaError, setCaptchaError] = useState(false);
     const [resetAuthError, setResetAuthError] = useState<string | null>(null);
+
+    // Item selection modal (before CAPTCHA — only for 'item' reset)
+    const [showItemSelect, setShowItemSelect] = useState(false);
+    const [itemSelectList, setItemSelectList] = useState<{ itemId: number; itemCode: string; itemName: string; totalQty: number; stockUnit: string }[]>([]);
+    const [itemSelectLoading, setItemSelectLoading] = useState(false);
+    const [itemSelectSearch, setItemSelectSearch] = useState('');
+    const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(new Set());
 
     // State-switch confirmation
     const [switchConfirm, setSwitchConfirm] = useState<{ action: 'upload' | 'load' | 'load-master' | 'reset-item' | 'reset-floor'; message: string } | null>(null);
@@ -638,8 +645,69 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         }
 
         setResetFlowType(type);
+
+        if (type === 'item') {
+            openItemSelectModal();
+        } else {
+            setResetFlowStep(1);
+            generateCaptcha();
+        }
+    };
+
+    // ─── Item Selection Modal: open and load items ───────────────────────────
+    const openItemSelectModal = async () => {
+        setShowItemSelect(true);
+        setItemSelectLoading(true);
+        setItemSelectSearch('');
+        setSelectedItemIds(new Set());
+        try {
+            const data = await loadStockData(itemGroupId);
+            const grouped = new Map<number, { itemId: number; itemCode: string; itemName: string; totalQty: number; stockUnit: string }>();
+            for (const row of data) {
+                if (!grouped.has(row.itemID)) {
+                    grouped.set(row.itemID, {
+                        itemId: row.itemID,
+                        itemCode: row.itemCode ?? '',
+                        itemName: row.itemName ?? '',
+                        totalQty: 0,
+                        stockUnit: row.stockUnit ?? '',
+                    });
+                }
+                grouped.get(row.itemID)!.totalQty += row.receiptQuantity;
+            }
+            const list = [...grouped.values()].sort((a, b) => a.itemCode.localeCompare(b.itemCode));
+            setItemSelectList(list);
+
+            if (selectedRows.size > 0) {
+                // Pre-select only the items the user chose in the grid
+                const gridSelectedItemIds = new Set<number>(
+                    Array.from(selectedRows)
+                        .map(idx => gridData[idx]?.itemID)
+                        .filter((id): id is number => id != null && id > 0)
+                );
+                setSelectedItemIds(gridSelectedItemIds);
+            } else {
+                // No grid selection → default all selected
+                setSelectedItemIds(new Set(list.map(i => i.itemId)));
+            }
+        } catch {
+            showMessage('error', 'Error', 'Failed to load stock items for selection.');
+            setShowItemSelect(false);
+        } finally {
+            setItemSelectLoading(false);
+        }
+    };
+
+    const handleItemSelectNext = () => {
+        setShowItemSelect(false);
         setResetFlowStep(1);
         generateCaptcha();
+    };
+
+    const handleItemSelectCancel = () => {
+        setShowItemSelect(false);
+        setItemSelectList([]);
+        setSelectedItemIds(new Set());
     };
 
     // ─── Reset Flow: Confirm CAPTCHA (Steps 1→2→3→4) ────────────────────────
@@ -659,6 +727,9 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         setResetCredentials({ username: '', password: '', reason: '' });
         setCaptchaInput('');
         setCaptchaError(false);
+        setShowItemSelect(false);
+        setItemSelectList([]);
+        setSelectedItemIds(new Set());
     };
 
     // ─── State-Switch Confirmation Handler ────────────────────────────────────
@@ -687,8 +758,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             await processLoadMasterData();
         } else if (action === 'reset-item') {
             setResetFlowType('item');
-            setResetFlowStep(1);
-            generateCaptcha();
+            openItemSelectModal();
         } else if (action === 'reset-floor') {
             setResetFlowType('floor');
             setResetFlowStep(1);
@@ -710,7 +780,12 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         try {
             const { username, password, reason } = resetCredentials;
             const result = resetFlowType === 'item'
-                ? await resetItemStock(itemGroupId, username, password, reason)
+                ? await resetItemStock(
+                    itemGroupId, username, password, reason,
+                    selectedItemIds.size > 0 && selectedItemIds.size < itemSelectList.length
+                        ? [...selectedItemIds]
+                        : undefined
+                )
                 : await resetFloorStock(itemGroupId, username, password, reason);
 
             const label = resetFlowType === 'item' ? 'Item Stock' : 'Floor Stock';
@@ -1447,6 +1522,134 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                                 className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium"
                             >
                                 OK, Continue
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Item Selection Modal (Step 0 for Item Reset) ─────────────────── */}
+            {showItemSelect && (
+                <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh]">
+
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Select Items to Reset</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    {itemGroupName} — only selected items' stock will be zeroed out
+                                </p>
+                            </div>
+                            <button onClick={handleItemSelectCancel} className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Search + Select All */}
+                        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 space-y-2">
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Search item code or name..."
+                                    value={itemSelectSearch}
+                                    onChange={e => setItemSelectSearch(e.target.value)}
+                                    className="w-full px-3 py-2 pr-8 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                                {itemSelectSearch && (
+                                    <button
+                                        onClick={() => setItemSelectSearch('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={!itemSelectLoading && itemSelectList.length > 0 && selectedItemIds.size === itemSelectList.length}
+                                        onChange={e => {
+                                            if (e.target.checked) setSelectedItemIds(new Set(itemSelectList.map(i => i.itemId)));
+                                            else setSelectedItemIds(new Set());
+                                        }}
+                                        className="rounded accent-blue-600"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Select All</span>
+                                </label>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    {selectedItemIds.size} of {itemSelectList.length} selected
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Item List */}
+                        <div className="flex-1 overflow-y-auto px-4 py-2">
+                            {itemSelectLoading ? (
+                                <div className="flex items-center justify-center py-12 gap-2 text-gray-500">
+                                    <RefreshCw className="w-5 h-5 animate-spin text-blue-500" />
+                                    <span className="text-sm">Loading stock items...</span>
+                                </div>
+                            ) : itemSelectList.length === 0 ? (
+                                <div className="text-center py-12 text-sm text-gray-400">No stock items found for this group.</div>
+                            ) : (
+                                itemSelectList
+                                    .filter(item =>
+                                        item.itemCode.toLowerCase().includes(itemSelectSearch.toLowerCase()) ||
+                                        item.itemName.toLowerCase().includes(itemSelectSearch.toLowerCase())
+                                    )
+                                    .map(item => (
+                                        <label
+                                            key={item.itemId}
+                                            className="flex items-center gap-3 py-2.5 px-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedItemIds.has(item.itemId)}
+                                                onChange={e => {
+                                                    const next = new Set(selectedItemIds);
+                                                    if (e.target.checked) next.add(item.itemId);
+                                                    else next.delete(item.itemId);
+                                                    setSelectedItemIds(next);
+                                                }}
+                                                className="rounded accent-blue-600 shrink-0"
+                                            />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{item.itemCode}</div>
+                                                {item.itemName && (
+                                                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.itemName}</div>
+                                                )}
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <div className="text-sm font-semibold text-orange-600 dark:text-orange-400">{item.totalQty.toLocaleString()}</div>
+                                                <div className="text-xs text-gray-400">{item.stockUnit || 'units'}</div>
+                                            </div>
+                                        </label>
+                                    ))
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                            <button
+                                onClick={handleItemSelectCancel}
+                                className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded-lg border border-gray-300 dark:border-gray-600"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleItemSelectNext}
+                                disabled={selectedItemIds.size === 0 || itemSelectLoading}
+                                className="px-5 py-2 text-sm bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium flex items-center gap-2"
+                            >
+                                Next
+                                {selectedItemIds.size > 0 && selectedItemIds.size < itemSelectList.length && (
+                                    <span className="bg-white/25 text-xs px-1.5 py-0.5 rounded-full">{selectedItemIds.size} items</span>
+                                )}
+                                {selectedItemIds.size === itemSelectList.length && itemSelectList.length > 0 && (
+                                    <span className="bg-white/25 text-xs px-1.5 py-0.5 rounded-full">All</span>
+                                )}
                             </button>
                         </div>
                     </div>

@@ -702,7 +702,7 @@ public class ItemStockService : IItemStockService
     // 1. Query all batch-wise closing stock for the ItemGroup
     // 2. Create a new PHY transaction with IssueQuantity = ClosingQty (zeroes out stock)
     // 3. Update BatchID and call UPDATE_ITEM_STOCK_VALUES
-    public async Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId, string username, string password, string reason)
+    public async Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId, string username, string password, string reason, List<int>? itemIds = null)
     {
         var result = new ItemStockImportResult();
 
@@ -748,8 +748,11 @@ public class ItemStockService : IItemStockService
             catch { }
 
             // â”€â”€â”€ 1. Fetch all batch-wise closing stock (same query as VB.NET GetAllBatchStock) â”€
+            var hasItemFilter = itemIds != null && itemIds.Count > 0;
+            var itemIdFilter = hasItemFilter ? "AND IM.ItemID IN @ItemIds" : "";
+
             var batchStock = (await _connection.QueryAsync<dynamic>(
-                @"SELECT
+                $@"SELECT
                     ISNULL(IM.ItemID, 0) AS ItemID,
                     ISNULL(IM.ItemGroupID, 0) AS ItemGroupID,
                     ISNULL(ITD.WarehouseID, 0) AS WarehouseID,
@@ -779,6 +782,7 @@ public class ItemStockService : IItemStockService
                     ON IBD.BatchID = ITD.BatchID AND IBD.CompanyID = ITD.CompanyID
                   WHERE ITD.CompanyID = 2
                     AND IM.ItemGroupID = @GroupId
+                    {itemIdFilter}
                     AND ISNULL(IM.IsDeletedTransaction, 0) = 0
                   GROUP BY
                     ISNULL(IM.ItemID, 0), ISNULL(ITD.ParentTransactionID, 0),
@@ -790,7 +794,9 @@ public class ItemStockService : IItemStockService
                     ISNULL(SUM(ISNULL(ITD.ReceiptQuantity, 0)), 0)
                   - ISNULL(SUM(ISNULL(ITD.IssueQuantity, 0)), 0)
                   - ISNULL(SUM(ISNULL(ITD.RejectedQuantity, 0)), 0), 2) > 0",
-                new { GroupId = itemGroupId },
+                hasItemFilter
+                    ? (object)new { GroupId = itemGroupId, ItemIds = itemIds }
+                    : new { GroupId = itemGroupId },
                 commandTimeout: 120)).ToList();
 
             if (batchStock.Count == 0)
@@ -1109,7 +1115,7 @@ public class ItemStockService : IItemStockService
                     i + 1,                                    // TransID
                     (int)row.ParentTransactionID,             // ParentTransactionID
                     (int)row.TransactionID,                   // IssueTransactionID (the floor issue txn)
-                    0,                                        // DepartmentID = 0 (matches JS)
+                    (int)row.DepartmentID,                    // DepartmentID from original floor issue
                     (int)row.ItemID,                          // ItemID
                     (int)row.ItemGroupID,                     // ItemGroupID
                     (int)row.JobBookingID,                    // JobBookingID

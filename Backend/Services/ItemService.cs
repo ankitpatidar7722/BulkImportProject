@@ -395,10 +395,16 @@ public class ItemService : IItemService
                 var numericFields = new[] { "GSM", "SizeL", "SizeW", "SizeH", "NoOfPly", "PurchaseRate", "EstimationRate",
                                            "UnitPerPacking", "MinimumStockQty", "ShelfLife" };
 
+                // Fields where 0 is a valid value — only check presence, not positivity
+                var allowZeroFields = new[] { "SizeL", "SizeW", "SizeH", "NoOfPly" };
+
                 if (numericFields.Contains(field))
                 {
-                    isMissing = value == null || string.IsNullOrWhiteSpace(value.ToString()) ||
-                                Convert.ToDecimal(value) <= 0;
+                    if (allowZeroFields.Contains(field))
+                        isMissing = value == null || string.IsNullOrWhiteSpace(value.ToString());
+                    else
+                        isMissing = value == null || string.IsNullOrWhiteSpace(value.ToString()) ||
+                                    Convert.ToDecimal(value) <= 0;
                 }
                 else
                 {

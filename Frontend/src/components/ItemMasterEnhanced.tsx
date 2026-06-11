@@ -301,8 +301,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     conversionFactor: row.ConversionFactor || row.conversionFactor,
                     stockType: toStringOrUndefined(row.StockType || row.stockType),
                     stockCategory: toStringOrUndefined(row.StockCategory || row.stockCategory),
-                    sizeW: row.SizeW || row.sizeW,
-                    sizeL: row.SizeL || row.sizeL,
+                    sizeW: row.SizeW ?? row.sizeW,
+                    sizeL: row.SizeL ?? row.sizeL,
                     purchaseRate: row.PurchaseRate || row.purchaseRate,
                     stockRefCode: toStringOrUndefined(row.StockRefCode || row.stockRefCode),
                     itemDescription: toStringOrUndefined(row.ItemDescription || row.itemDescription),
@@ -359,8 +359,8 @@ const ItemMasterEnhanced: React.FC<ItemMasterEnhancedProps> = ({ itemGroupId, it
                     totalGSM: row.TotalGSM || row.totalGSM,
 
                     // SHIPPER CARTON-specific fields
-                    sizeH: row.SizeH || row.sizeH,
-                    noOfPly: row.NoOfPly || row.noOfPly,
+                    sizeH: row.SizeH ?? row.sizeH,
+                    noOfPly: row.NoOfPly ?? row.noOfPly,
                     emptyCartonWt: row.EmptyCartonWt || row.emptyCartonWt,
                     capacity: row.Capacity || row.capacity,
                     cbf: row.CBF || row.cbf,

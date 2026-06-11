@@ -111,7 +111,8 @@ public class ItemStockController : ControllerBase
                 return BadRequest(new { message = "Username is required" });
 
             var result = await _itemStockService.ResetItemStockAsync(
-                request.ItemGroupId, request.Username, request.Password, request.Reason);
+                request.ItemGroupId, request.Username, request.Password, request.Reason,
+                request.ItemIds.Count > 0 ? request.ItemIds : null);
             return Ok(result);
         }
         catch (UnauthorizedAccessException)

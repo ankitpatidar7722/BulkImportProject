@@ -5,6 +5,7 @@ public class ContentAuthorityRowDto
     public string ContentName { get; set; } = string.Empty;
     public bool IsSelected { get; set; }      // true = exists in client DB AND IsActive = 1
     public bool ExistsInClientDb { get; set; } // content row exists in client DB (even if inactive)
+    public string ContentCaption { get; set; } = string.Empty;
     public string ContentOpenHref { get; set; } = string.Empty;
     public string ContentClosedHref { get; set; } = string.Empty;
 }

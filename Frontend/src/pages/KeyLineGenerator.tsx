@@ -87,7 +87,19 @@ const Select: React.FC<SelectProps> = ({ value, onChange, options, placeholder, 
                 <span className={value ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 truncate'}>
                     {value || placeholder || 'Select...'}
                 </span>
-                <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 ml-1 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+                <span className="flex items-center shrink-0 ml-1 gap-0.5">
+                    {value && !disabled && (
+                        <span
+                            role="button"
+                            onClick={e => { e.stopPropagation(); onChange(''); close(); }}
+                            className="p-0.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors cursor-pointer"
+                            title="Clear"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </span>
+                    )}
+                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+                </span>
             </button>
 
             {open && (

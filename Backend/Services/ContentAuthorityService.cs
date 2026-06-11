@@ -24,7 +24,7 @@ public class ContentAuthorityService : IContentAuthorityService
     {
         await using var sourceConn = new SqlConnection(SourceConnStr);
         var sourceRows = (await sourceConn.QueryAsync<dynamic>(
-            "SELECT DISTINCT ContentName, ISNULL(ContentOpenHref,'') as OpenHref, ISNULL(ContentClosedHref,'') as ClosedHref FROM ContentMaster WHERE ISNULL(ContentName,'') <> '' and Isactive=1 ORDER BY ContentName"
+            "SELECT DISTINCT ContentName, ISNULL(ContentCaption,'') as ContentCaption, ISNULL(ContentOpenHref,'') as OpenHref, ISNULL(ContentClosedHref,'') as ClosedHref FROM ContentMaster WHERE ISNULL(ContentName,'') <> '' and Isactive=1 ORDER BY ContentName"
         )).ToList();
 
         var clientLookup = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
@@ -64,6 +64,7 @@ public class ContentAuthorityService : IContentAuthorityService
         return sourceRows.Select(r => new ContentAuthorityRowDto
         {
             ContentName = (string)r.ContentName,
+            ContentCaption = (string)r.ContentCaption,
             ContentOpenHref = (string)r.OpenHref,
             ContentClosedHref = (string)r.ClosedHref,
             IsSelected = clientLookup.TryGetValue((string)r.ContentName, out var active) && active,

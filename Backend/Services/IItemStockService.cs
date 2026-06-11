@@ -10,7 +10,7 @@ public interface IItemStockService
     Task<ItemStockImportResult> ImportItemStockAsync(List<ItemStockRowDto> rows, int itemGroupId);
     Task<ItemStockValidationResult> ValidateStockRowsAsync(List<ItemStockEnrichedRow> rows, int itemGroupId);
     Task<List<ItemStockEnrichedRow>> GetStockDataAsync(int itemGroupId);
-    Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId, string username, string password, string reason);
+    Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId, string username, string password, string reason, List<int>? itemIds = null);
     Task<ItemStockImportResult> ResetFloorStockAsync(int itemGroupId, string username, string password, string reason);
     Task<List<ItemStockEnrichedRow>> GetMasterDataAsync(int itemGroupId);
 }

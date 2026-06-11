@@ -107,6 +107,7 @@ public class ResetStockRequest
     public string Username { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
+    public List<int> ItemIds { get; set; } = new(); // empty = reset all items
 }
 
 public class ItemStockValidationRequest

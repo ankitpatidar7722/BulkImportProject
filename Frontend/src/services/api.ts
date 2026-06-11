@@ -1308,8 +1308,14 @@ export const loadStockData = async (itemGroupId: number): Promise<ItemStockEnric
     return response.data;
 };
 
-export const resetItemStock = async (itemGroupId: number, username: string, password: string, reason: string): Promise<ItemStockImportResult> => {
-    const response = await api.post('/itemstock/reset-item-stock', { itemGroupId, username, password, reason });
+export const resetItemStock = async (
+    itemGroupId: number, username: string, password: string, reason: string,
+    itemIds?: number[]
+): Promise<ItemStockImportResult> => {
+    const response = await api.post('/itemstock/reset-item-stock', {
+        itemGroupId, username, password, reason,
+        itemIds: itemIds ?? []
+    });
     return response.data;
 };
 
@@ -2438,6 +2444,7 @@ export const deleteUnusedMasterData = async (
 
 export interface ContentAuthorityRowDto {
     contentName: string;
+    contentCaption: string;
     isSelected: boolean;      // In Client DB AND IsActive=1
     existsInClientDb: boolean; // In Client DB (regardless of IsActive)
     contentOpenHref: string;

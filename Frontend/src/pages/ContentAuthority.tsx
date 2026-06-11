@@ -220,7 +220,8 @@ const ContentAuthority: React.FC = () => {
 
     const displayRows = useMemo(() =>
         rows.filter(r => {
-            const matchSearch = r.contentName.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchSearch = r.contentName.toLowerCase().includes(searchTerm.toLowerCase())
+                || r.contentCaption.toLowerCase().includes(searchTerm.toLowerCase());
             const matchFilter =
                 filterMode === 'synced' ? r.isSelected :
                 filterMode === 'unsynced' ? !r.existsInClientDb :
@@ -538,17 +539,43 @@ const ContentAuthority: React.FC = () => {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 p-4 border-b border-gray-100 dark:border-gray-700">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                        <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search content name..." className="w-full pl-9 pr-4 py-2.5 text-sm bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            placeholder="Search content name..."
+                            className={`w-full pl-9 py-2.5 text-sm bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${searchTerm ? 'pr-8' : 'pr-4'}`}
+                        />
+                        {searchTerm && (
+                            <button
+                                onClick={() => setSearchTerm('')}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors"
+                                title="Clear search"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        )}
                     </div>
-                    <div className="relative">
-                        <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                        <select value={filterMode} onChange={e => setFilterMode(e.target.value as any)} className="appearance-none pl-9 pr-8 py-2.5 text-sm bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
-                            <option value="all">All Content</option>
-                            <option value="synced">Synced</option>
-                            <option value="unsynced">Not Synced</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
-                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    <div className="flex items-center gap-1.5">
+                        <div className="relative">
+                            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                            <select value={filterMode} onChange={e => setFilterMode(e.target.value as any)} className="appearance-none pl-9 pr-8 py-2.5 text-sm bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                                <option value="all">All Content</option>
+                                <option value="synced">Synced</option>
+                                <option value="unsynced">Not Synced</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                        </div>
+                        {filterMode !== 'all' && (
+                            <button
+                                onClick={() => setFilterMode('all')}
+                                className="p-1.5 rounded-md bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-500 dark:bg-gray-700 dark:hover:bg-red-900/30 dark:hover:text-red-400 transition-colors"
+                                title="Clear filter"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        )}
                     </div>
                     <button onClick={toggleAllVisible} disabled={displayRows.length === 0} className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-gray-50 dark:bg-gray-700 border border-gray-200 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 transition-all">
                         {allFilteredSelected ? <CheckSquare className="w-4 h-4 text-blue-600" /> : <Square className="w-4 h-4" />}
@@ -556,8 +583,8 @@ const ContentAuthority: React.FC = () => {
                     </button>
                 </div>
 
-                <div className="grid grid-cols-[40px_1.8fr_1fr_1fr_130px_70px] bg-gray-50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700 px-4 py-2.5">
-                    {['#', 'Content Name', 'Open View', 'Close View', 'DB Status', 'Select'].map(h => (
+                <div className="grid grid-cols-[40px_1.4fr_1.2fr_1fr_1fr_130px_70px] bg-gray-50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700 px-4 py-2.5">
+                    {['#', 'Content Name', 'Content Display Name', 'Open View', 'Close View', 'DB Status', 'Select'].map(h => (
                         <div key={h} className="text-xs font-semibold uppercase tracking-wider text-gray-400">{h === 'Select' ? '' : h}</div>
                     ))}
                 </div>
@@ -565,10 +592,11 @@ const ContentAuthority: React.FC = () => {
                 <div className="divide-y divide-gray-100 dark:divide-gray-700/50 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 340px)', minHeight: '300px' }}>
                     {isLoading && <div className="py-20 flex flex-col items-center gap-3 text-gray-400"><RefreshCw className="w-10 h-10 animate-spin opacity-40" /><p className="text-sm">Loading...</p></div>}
                     {!isLoading && displayRows.map((row, idx) => (
-                        <div key={row.contentName} onClick={() => toggleRow(row.contentName)} className={`grid grid-cols-[40px_1.8fr_1fr_1fr_130px_70px] items-center px-4 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors ${row.isSelected ? 'bg-blue-50/70 dark:bg-blue-900/10' : ''}`}>
+                        <div key={row.contentName} onClick={() => toggleRow(row.contentName)} className={`grid grid-cols-[40px_1.4fr_1.2fr_1fr_1fr_130px_70px] items-center px-4 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors ${row.isSelected ? 'bg-blue-50/70 dark:bg-blue-900/10' : ''}`}>
                             <span className="text-xs font-mono text-gray-400">{idx + 1}</span>
                             <span className={`text-sm font-medium pr-4 ${row.isSelected ? 'text-blue-700' : 'text-gray-800 dark:text-gray-200'}`}>{row.contentName}</span>
-                            
+                            <span className="text-sm text-gray-600 dark:text-gray-400 pr-4 truncate" title={row.contentCaption}>{row.contentCaption || '—'}</span>
+
                             {/* Images Views */}
                             <ImageCell src={row.contentOpenHref} alt={`${row.contentName} - Open View`} onPreview={openPreview} />
                             <ImageCell src={row.contentClosedHref} alt={`${row.contentName} - Close View`} onPreview={openPreview} />
