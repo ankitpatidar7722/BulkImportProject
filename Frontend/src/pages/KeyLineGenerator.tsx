@@ -187,6 +187,15 @@ const SvgPreview: React.FC<SvgPreviewProps> = ({ rows, vars, zoom, highlightedId
         const rx1 = xd + x1, ry1 = yd + y1, rx2 = xd + x2, ry2 = yd + y2;
         const isHighlighted = row._id === highlightedId;
         const isDashed = row.lineStyles === 'Dashed';
+        const isDim = row.shapeType?.toUpperCase().startsWith('DIM');
+
+        if (isDim && !isHighlighted) {
+            return (
+                <line key={idx} x1={rx1} y1={ry1} x2={rx2} y2={ry2}
+                    stroke="#2563eb" strokeWidth={0.6}
+                    markerStart="url(#dim-start)" markerEnd="url(#dim-end)" />
+            );
+        }
 
         const strokeProps = isHighlighted
             ? { stroke: '#ef4444', strokeWidth: 1.5 }
@@ -215,6 +224,14 @@ const SvgPreview: React.FC<SvgPreviewProps> = ({ rows, vars, zoom, highlightedId
                 viewBox={`0 0 ${svgSize} ${svgSize}`}
                 style={{ display: 'block' }}
             >
+                <defs>
+                    <marker id="dim-end" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
+                        <polygon points="0 0, 5 2, 0 4" fill="#2563eb" />
+                    </marker>
+                    <marker id="dim-start" markerWidth="5" markerHeight="4" refX="0" refY="2" orient="auto">
+                        <polygon points="5 0, 0 2, 5 4" fill="#2563eb" />
+                    </marker>
+                </defs>
                 <rect width={svgSize} height={svgSize} fill="white" />
                 <g>{normalRows.map((r, i) => renderShape(r, i))}</g>
                 {highlightedRow && <g>{renderShape(highlightedRow, 9999)}</g>}
@@ -244,6 +261,16 @@ const FullscreenSvgPreview: React.FC<SvgPreviewProps> = ({ rows, vars, zoom, hig
 
         const isHighlighted = row._id === highlightedId;
         const isDashed = row.lineStyles === 'Dashed';
+        const isDim = row.shapeType?.toUpperCase().startsWith('DIM');
+
+        if (isDim && !isHighlighted) {
+            return (
+                <line key={idx} x1={rx1} y1={ry1} x2={rx2} y2={ry2}
+                    stroke="#2563eb" strokeWidth={1.2}
+                    markerStart="url(#dim-start-fs)" markerEnd="url(#dim-end-fs)" />
+            );
+        }
+
         const strokeProps = isHighlighted
             ? { stroke: '#ef4444', strokeWidth: 2.5 }
             : { stroke: '#1e3a5f', strokeWidth: 0.8, ...(isDashed ? { strokeDasharray: '4,3' } : {}) };
@@ -269,6 +296,14 @@ const FullscreenSvgPreview: React.FC<SvgPreviewProps> = ({ rows, vars, zoom, hig
             viewBox={`0 0 ${svgSize} ${svgSize}`}
             style={{ display: 'block', background: 'white', borderRadius: 8, boxShadow: '0 4px 24px rgba(0,0,0,0.12)' }}
         >
+            <defs>
+                <marker id="dim-end-fs" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#2563eb" />
+                </marker>
+                <marker id="dim-start-fs" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+                    <polygon points="8 0, 0 3, 8 6" fill="#2563eb" />
+                </marker>
+            </defs>
             <rect width={svgSize} height={svgSize} fill="white" />
             <g>{normalRows.map((r, i) => renderShape(r, i))}</g>
             {highlightedRow && <g>{renderShape(highlightedRow, 9999)}</g>}
@@ -1227,7 +1262,11 @@ const KeyLineGenerator: React.FC = () => {
             const rx2 = xd + x2v, ry2 = yd + y2v;
             const dash = row.lineStyles === 'Dashed' ? ' stroke-dasharray="2,2"' : '';
             const stroke = 'stroke="#1e3a5f" stroke-width="0.5" fill="none"';
+            const isDim = row.shapeType?.toUpperCase().startsWith('DIM');
 
+            if (isDim) {
+                return `<line x1="${rx1}" y1="${ry1}" x2="${rx2}" y2="${ry2}" stroke="#2563eb" stroke-width="0.6" fill="none" marker-start="url(#dim-start)" marker-end="url(#dim-end)"/>`;
+            }
             if (row.lineType === 'Circle') {
                 const r = Math.sqrt((rx2 - rx1) ** 2 + (ry2 - ry1) ** 2) / 2;
                 return `<path d="M ${rx1} ${ry1} A ${r} ${r} 0 1 1 ${rx2} ${ry2}" ${stroke}${dash}/>`;
@@ -1238,9 +1277,19 @@ const KeyLineGenerator: React.FC = () => {
             return `<line x1="${rx1}" y1="${ry1}" x2="${rx2}" y2="${ry2}" ${stroke}${dash}/>`;
         }).filter(Boolean).join('\n  ');
 
+        const dimDefs = `  <defs>
+    <marker id="dim-end" markerWidth="5" markerHeight="4" refX="5" refY="2" orient="auto">
+      <polygon points="0 0, 5 2, 0 4" fill="#2563eb"/>
+    </marker>
+    <marker id="dim-start" markerWidth="5" markerHeight="4" refX="0" refY="2" orient="auto">
+      <polygon points="5 0, 0 2, 5 4" fill="#2563eb"/>
+    </marker>
+  </defs>`;
+
         const svgContent = [
             '<?xml version="1.0" encoding="UTF-8"?>',
             `<svg width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}" xmlns="http://www.w3.org/2000/svg">`,
+            dimDefs,
             `  <rect width="${svgSize}" height="${svgSize}" fill="white"/>`,
             `  ${shapes}`,
             '</svg>'
