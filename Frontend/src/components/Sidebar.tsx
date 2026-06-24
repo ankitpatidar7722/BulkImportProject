@@ -13,7 +13,9 @@ import {
     ChevronsLeft,
     ChevronsRight,
     PenTool,
-    PlusSquare
+    PlusSquare,
+    Sparkles,
+    Tag
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -43,6 +45,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
 
     const indusMenuItems = [
         { name: 'Company Subscription', path: '/company-subscription', icon: CreditCard },
+        { name: 'Manage Plans', path: '/manage-plans', icon: Tag },
+        { name: 'Sahay & Email Subscriptions', path: '/feature-subscription', icon: Sparkles },
         { name: 'Module Group Authority', path: '/module-group-authority', icon: Layers },
     ];
 
