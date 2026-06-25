@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Trash2, Save, X } from 'lucide-react';
+import { Plus, Trash2, Save, X, ChevronDown } from 'lucide-react';
 import {
     getCatalogFeatures, upsertFeature,
     getPlans, upsertPlan, deletePlan,
     type FeatureDto, type PlanDto, type PlanSubFeature,
 } from '../services/api';
+import { getCatalogSubFeatures } from '../data/subFeatureCatalog';
 
 /* ════════════════════════════════════════════════════════════════════════
    Manage Plans (Internal App, indus admins) — the GLOBAL plan catalog.
@@ -59,6 +60,9 @@ const ManagePlans: React.FC = () => {
 
     // Plan editor (null = closed)
     const [editPlan, setEditPlan] = useState<PlanDto | null>(null);
+    // Sub-feature multi-select dropdown open/closed.
+    const [subOpen, setSubOpen] = useState(false);
+    const subBoxRef = useRef<HTMLDivElement>(null);
     // Whether the user has manually edited the plan code (so we stop auto-filling it).
     const [codeTouched, setCodeTouched] = useState(false);
     // True only when a mousedown started on the modal backdrop — used so a text-selection
@@ -80,6 +84,16 @@ const ManagePlans: React.FC = () => {
 
     useEffect(() => { loadFeatures(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => { loadPlans(featureId); }, [featureId, loadPlans]);
+
+    // Close the sub-feature multi-select when clicking outside it.
+    useEffect(() => {
+        if (!subOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (subBoxRef.current && !subBoxRef.current.contains(e.target as Node)) setSubOpen(false);
+        };
+        document.addEventListener('mousedown', onDown);
+        return () => document.removeEventListener('mousedown', onDown);
+    }, [subOpen]);
 
     // ── Feature actions ────────────────────────────────────────────────────
     const addFeature = async () => {
@@ -111,6 +125,18 @@ const ManagePlans: React.FC = () => {
         setField('planCode', code);
     };
 
+    // Feature change inside the popup: re-point the plan to another feature. If the
+    // code is still auto-filling (untouched), regenerate it with the new feature's code.
+    const onPlanFeatureChange = (newFeatureId: number) => {
+        const newFeatureCode = features.find(f => f.featureID === newFeatureId)?.featureCode || '';
+        setEditPlan((p) => {
+            if (!p) return p;
+            const next = { ...p, featureID: newFeatureId, featureCode: newFeatureCode };
+            if (!codeTouched) next.planCode = slugCode(newFeatureCode, p.planName);
+            return next;
+        });
+    };
+
     const setField = <K extends keyof PlanDto>(key: K, val: PlanDto[K]) =>
         setEditPlan((p) => (p ? { ...p, [key]: val } : p));
 
@@ -119,12 +145,46 @@ const ManagePlans: React.FC = () => {
     const setFeaturesText = (text: string) =>
         setField('features', text.split('\n').map((s) => s.trim()).filter(Boolean));
 
-    // Sub-feature on/off rows (key/label/enabled).
-    const addSubRow = () => setField('subFeatures', [...(editPlan?.subFeatures ?? []), { key: '', label: '', enabled: true }]);
-    const setSubRow = (i: number, patch: Partial<PlanSubFeature>) =>
-        setField('subFeatures', (editPlan?.subFeatures ?? []).map((s, idx) => idx === i ? { ...s, ...patch } : s));
-    const removeSubRow = (i: number) =>
-        setField('subFeatures', (editPlan?.subFeatures ?? []).filter((_, idx) => idx !== i));
+    // ── Sub-features (from the hardcoded catalog) ────────────────────────────
+    // The available sub-features for a feature come from the catalog file, keyed by
+    // the feature CODE of the plan being edited. We merge in any keys the plan
+    // already has (legacy/custom) so nothing saved earlier disappears from the list.
+    const editingFeatureCode = features.find(f => f.featureID === editPlan?.featureID)?.featureCode || '';
+    const knownSubFeatures: PlanSubFeature[] = React.useMemo(() => {
+        const map = new Map<string, PlanSubFeature>();
+        const add = (key: string, label?: string) => {
+            const k = key?.trim();
+            if (!k) return;
+            const existing = map.get(k);
+            map.set(k, { key: k, label: label?.trim() || existing?.label || k, enabled: true });
+        };
+        // 1. The defined catalog for this feature (the main source).
+        getCatalogSubFeatures(editingFeatureCode).forEach(s => add(s.key, s.label));
+        // 2. Anything already on the plan that isn't in the catalog (don't lose it).
+        (editPlan?.subFeatures ?? []).forEach(s => add(s.key, s.label));
+        return Array.from(map.values());
+    }, [editingFeatureCode, editPlan]);
+
+    // Keys ticked on the plan being edited (enabled rows present in subFeatures).
+    const checkedKeys = new Set((editPlan?.subFeatures ?? []).map(s => s.key.trim()).filter(Boolean));
+
+    // Add a sub-feature to the plan by its key (chosen from the dropdown).
+    const addSubByKey = (key: string) => {
+        const k = key.trim();
+        if (!k) return;
+        const current = editPlan?.subFeatures ?? [];
+        if (current.some(s => s.key.trim() === k)) return; // already included
+        const sf = knownSubFeatures.find(s => s.key === k);
+        setField('subFeatures', [...current, { key: k, label: sf?.label || k, enabled: true }]);
+    };
+
+    // Remove a sub-feature from the plan by key (the chip's × button).
+    const removeSubByKey = (key: string) =>
+        setField('subFeatures', (editPlan?.subFeatures ?? []).filter(s => s.key.trim() !== key.trim()));
+
+    // Tick/untick a sub-feature from the multi-select checkbox dropdown.
+    const toggleSubByKey = (key: string) =>
+        checkedKeys.has(key.trim()) ? removeSubByKey(key) : addSubByKey(key);
 
     const savePlan = async () => {
         if (!editPlan || !editPlan.planName.trim()) { flash(false, 'Plan name is required.'); return; }
@@ -260,6 +320,14 @@ const ManagePlans: React.FC = () => {
                             <button onClick={() => setEditPlan(null)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
                         </div>
                         <div className="space-y-3">
+                            <div>
+                                <label className={label}>Feature</label>
+                                <select className={`${input} mt-1`} value={editPlan.featureID} onChange={e => onPlanFeatureChange(Number(e.target.value))}>
+                                    {features.length === 0 && <option value={0}>No features yet</option>}
+                                    {features.map(f => <option key={f.featureID} value={f.featureID}>{f.featureName} ({f.featureCode})</option>)}
+                                </select>
+                                <p className="text-[11px] text-gray-400 mt-1">Which feature this plan belongs to.</p>
+                            </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label className={label}>Plan name (internal)</label>
@@ -321,23 +389,58 @@ const ManagePlans: React.FC = () => {
                             </div>
 
                             <div>
-                                <div className="flex items-center justify-between">
-                                    <label className={label}>Sub-features (on/off)</label>
-                                    <button type="button" className="text-blue-600 hover:text-blue-800 text-xs font-semibold" onClick={addSubRow}>
-                                        <Plus size={13} className="inline -mt-0.5 mr-0.5" />Add
+                                <label className={label}>Sub-features (select to include)</label>
+                                <p className="text-[11px] text-gray-400 mt-0.5 mb-1">
+                                    Open the dropdown and tick every sub-feature this plan includes. You can select more than one.
+                                </p>
+
+                                {/* Multi-select CHECKBOX dropdown — stays open while ticking. */}
+                                <div className="relative mt-1" ref={subBoxRef}>
+                                    <button
+                                        type="button"
+                                        className={`${input} flex items-center justify-between text-left`}
+                                        onClick={() => setSubOpen(o => !o)}
+                                    >
+                                        <span className={(editPlan.subFeatures ?? []).length ? '' : 'text-gray-400'}>
+                                            {(editPlan.subFeatures ?? []).length
+                                                ? `${(editPlan.subFeatures ?? []).length} selected`
+                                                : 'Select sub-features…'}
+                                        </span>
+                                        <ChevronDown size={16} className={`shrink-0 transition-transform ${subOpen ? 'rotate-180' : ''}`} />
                                     </button>
-                                </div>
-                                <div className="space-y-1 mt-1">
-                                    {(editPlan.subFeatures ?? []).length === 0 && <p className="text-xs text-gray-500">None. Sub-features are optional.</p>}
-                                    {(editPlan.subFeatures ?? []).map((s, i) => (
-                                        <div key={i} className="flex items-center gap-2">
-                                            <input className={`${input} flex-1`} value={s.key} onChange={e => setSubRow(i, { key: e.target.value })} placeholder="key (e.g. auto_charts)" />
-                                            <input className={`${input} flex-1`} value={s.label} onChange={e => setSubRow(i, { label: e.target.value })} placeholder="Label" />
-                                            <label className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-300 shrink-0">
-                                                <input type="checkbox" checked={s.enabled} onChange={e => setSubRow(i, { enabled: e.target.checked })} />On
-                                            </label>
-                                            <button type="button" className="text-red-500 hover:text-red-700 shrink-0" onClick={() => removeSubRow(i)}><Trash2 size={15} /></button>
+
+                                    {subOpen && (
+                                        <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-lg">
+                                            {knownSubFeatures.length === 0 && (
+                                                <p className="text-xs text-gray-500 px-3 py-2">No sub-features defined for this feature.</p>
+                                            )}
+                                            {knownSubFeatures.map(sf => (
+                                                <label key={sf.key} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checkedKeys.has(sf.key)}
+                                                        onChange={() => toggleSubByKey(sf.key)}
+                                                    />
+                                                    <span className="flex-1">{sf.label}</span>
+                                                    <span className="text-[11px] text-gray-400 font-mono">{sf.key}</span>
+                                                </label>
+                                            ))}
                                         </div>
+                                    )}
+                                </div>
+
+                                {/* Selected sub-feature chips. */}
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {(editPlan.subFeatures ?? []).length === 0 && (
+                                        <span className="text-xs text-gray-500">None selected yet.</span>
+                                    )}
+                                    {(editPlan.subFeatures ?? []).map(s => (
+                                        <span key={s.key} className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">
+                                            {s.label || s.key}
+                                            <button type="button" className="hover:text-blue-900 dark:hover:text-white" onClick={() => removeSubByKey(s.key)} title="Remove">
+                                                <X size={12} />
+                                            </button>
+                                        </span>
                                     ))}
                                 </div>
                             </div>
