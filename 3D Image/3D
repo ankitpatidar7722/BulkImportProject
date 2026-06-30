@@ -1,0 +1,1058 @@
+'use client'
+
+/**
+ * Testing page — Reverse Tuck-In 3D folding preview.
+ * Pure-geometry panel detection from embedded keyline rows + Three.js viewer.
+ */
+
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
+import { Card, CardContent, CardHeader, CardTitle, Button, Input, Label } from '@/components/ui'
+import { Dropdown } from '@/components/forms/dropdown'
+import { SidePanel } from '@/components/layout/side-panel'
+import { Play, Pause, RotateCcw, Box as BoxIcon, Upload, X, Sparkles } from 'lucide-react'
+import { extractDielineSpecs, type ExtractedSpecs, type VisionProvider } from '@/lib/vision/dieline-extractor'
+import {
+  detectPanels,
+  buildHingeTree,
+  buildFoldSchedule,
+  rowsToSegments,
+  type Dims,
+  type KeylineRow,
+  type Segment,
+  type Panel,
+} from '@/app/(main)/costing/estimation/components/keyline3D'
+import { Box3DViewer } from '@/app/(main)/costing/estimation/components/Box3DViewer'
+import type { CameraPreset } from '@/app/(main)/costing/estimation/components/three-helpers'
+import { PlanWindowAPI, calculateFlapDimensions } from '@/lib/api/estimation/planning'
+
+// Full orientation list from legacy DrawKeylineAllContents
+const CONTENT_TYPE_OPTIONS = [
+  'ReverseTuckIn',
+  'StandardStraightTuckIn',
+  'StandardStraightTuckInNested',
+  'StandardStraightTuckInHang',
+  'StandardStraightTuckInHang2',
+  'ReverseTuckAndTongue',
+  'CrashLockWithPasting',
+  'CrashLockWithPasting2',
+  'CrashLockWithPasting3',
+  'CrashLockWithPasting4',
+  'CrashLockWithoutPasting',
+  'CrashLockBottomTuckEndFoldingCarton',
+  'CrashLockWithPastingNeckHolder',
+  'UniversalCarton',
+  'UniversalEndGlued',
+  'Cake-Box',
+  'DoubleDoorGiftBox',
+  'PizzaBox',
+  'TuckendBoxVariationInnerLock',
+  'FourCornerBox',
+  'StraightTuckInWithHangingSlimTall',
+  'GadgetBox',
+  'CatchCover',
+  'TuckToFrontOpenTop',
+  'EfluteBottomWithHandleBox',
+  'WrappingPaperofTopBox',
+  'WebbedSelfLockingTray',
+  'SleeveFoodBoxTray',
+  'SleeveFoodBoxCover',
+  'RingFlap',
+  'INDUS-100',
+  'INDUS-101',
+  'INDUS-104',
+].map(v => ({ value: v, label: v }))
+
+const GRAIN_OPTIONS = [
+  { value: 'With Grain', label: 'With Grain' },
+  { value: 'Across Grain', label: 'Across Grain' },
+]
+
+const UPS_TYPE_OPTIONS = [
+  { value: 'First Up', label: 'First Up' },
+  { value: 'Odd Up', label: 'Odd Up' },
+  { value: 'Even Up', label: 'Even Up' },
+]
+
+export default function Box3DTestPage() {
+  // ── Content selection ───────────────────────────────────
+  const [contentType, setContentType] = useState<string>('ReverseTuckIn')
+  const [grain, setGrain] = useState<string>('With Grain')
+  const [upsType, setUpsType] = useState<string>('First Up')
+
+  // ── User inputs (mm) ────────────────────────────────────
+  // Stored as strings so empty fields render empty (not "0"). Numeric coercion
+  // happens at the boundary — when passing to the API or the formula evaluator.
+  const [L, setL] = useState('')
+  const [W, setW] = useState('')
+  const [H, setH] = useState('')
+  // Flap dims — auto-populated by calculateFlapDimensions() based on L/W/H +
+  // content type. User can still override; manual edits are tracked so the
+  // next auto-recalc doesn't overwrite them.
+  const [OF, setOF] = useState('')
+  const [PF, setPF] = useState('')
+  const [BF, setBF] = useState('')
+  const [FH, setFH] = useState('')
+  const [TH, setTH] = useState('')
+  const [thickness, setThickness] = useState(0.6)
+  // Helper: parse string → number, falling back to 0 (for dims passed downstream).
+  const num = (s: string) => {
+    const n = parseFloat(s)
+    return Number.isFinite(n) ? n : 0
+  }
+  // Track which flap fields the user has manually edited so auto-calc respects them.
+  const manuallyEditedRef = useRef<Set<'OF' | 'PF' | 'BF' | 'FH' | 'TH'>>(new Set())
+  const markManual = (key: 'OF' | 'PF' | 'BF' | 'FH' | 'TH') => { manuallyEditedRef.current.add(key) }
+
+  // ── Folding state ───────────────────────────────────────
+  const [progress, setProgress] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const directionRef = useRef<1 | -1>(1)
+  const lastTimeRef = useRef<number>(0)
+
+  // ── API-fetched keyline rows ────────────────────────────
+  const { data: session } = useSession()
+  const [rows, setRows] = useState<KeylineRow[]>([])
+  const [apiState, setApiState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [apiError, setApiError] = useState<string | null>(null)
+
+  // ── Image extraction (vision LLM) ───────────────────────
+  // User uploads a dieline image; we send it to Claude/OpenAI to extract
+  // L/W/H + content type, then pre-fill the dimension and content-type fields.
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [extractProvider, setExtractProvider] = useState<VisionProvider>(() => {
+    if (typeof window === 'undefined') return 'backend'
+    return (localStorage.getItem('box3d.visionProvider') as VisionProvider) || 'backend'
+  })
+  const [extractApiKey, setExtractApiKey] = useState<string>(() => {
+    if (typeof window === 'undefined') return ''
+    return localStorage.getItem('box3d.visionKey.claude') || ''
+  })
+  const [extractState, setExtractState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [extractError, setExtractError] = useState<string | null>(null)
+  const [extracted, setExtracted] = useState<ExtractedSpecs | null>(null)
+  // User-selected candidate (overrides the model's pick when clicked).
+  const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null)
+
+  // Persist provider whenever it changes; persist Claude key when set.
+  useEffect(() => { localStorage.setItem('box3d.visionProvider', extractProvider) }, [extractProvider])
+  useEffect(() => {
+    if (extractApiKey) localStorage.setItem('box3d.visionKey.claude', extractApiKey)
+  }, [extractApiKey])
+
+  const onPickImage = useCallback((file: File | null) => {
+    setExtracted(null)
+    setSelectedCandidate(null)
+    setExtractError(null)
+    setExtractState('idle')
+    if (!file) {
+      setImageFile(null)
+      setImagePreview(null)
+      return
+    }
+    setImageFile(file)
+    const url = URL.createObjectURL(file)
+    setImagePreview(url)
+  }, [])
+
+  // Revoke any object URLs we created when they change or component unmounts.
+  useEffect(() => {
+    return () => { if (imagePreview) URL.revokeObjectURL(imagePreview) }
+  }, [imagePreview])
+
+  const runExtract = useCallback(async () => {
+    if (!imageFile) return
+    if (extractProvider === 'claude' && !extractApiKey) return
+    setExtractState('loading')
+    setExtractError(null)
+    try {
+      const result = await extractDielineSpecs({
+        file: imageFile,
+        provider: extractProvider,
+        apiKey: extractProvider === 'claude' ? extractApiKey : undefined,
+        contentTypes: CONTENT_TYPE_OPTIONS.map(o => o.value),
+        session,
+      })
+      setExtracted(result)
+      setSelectedCandidate(result.contentType)
+      // Auto-apply: populate L/W/H inputs and content type immediately.
+      // User can still override via the candidate thumbnail row or by editing the inputs.
+      if (result.L != null) setL(String(result.L))
+      if (result.W != null) setW(String(result.W))
+      if (result.H != null) setH(String(result.H))
+      if (result.contentType) setContentType(result.contentType)
+      manuallyEditedRef.current.clear()
+      setExtractState('ok')
+    } catch (e: any) {
+      setExtractError(String(e?.message || e))
+      setExtractState('error')
+    }
+  }, [imageFile, extractApiKey, extractProvider, session])
+
+  useEffect(() => {
+    if (!session) return
+    // Content/grain/ups changed — clear manual-edit tracking so the new
+    // content type's auto-calc can populate fresh flap values.
+    manuallyEditedRef.current.clear()
+    let cancelled = false
+    setApiState('loading')
+    setApiError(null)
+      ; (async () => {
+        try {
+          const resp = await PlanWindowAPI.getKeylineCoordinates(contentType, grain, session)
+          if (cancelled) return
+          if (resp.success && Array.isArray(resp.data) && resp.data.length > 0) {
+            const filtered = (resp.data as any[]).filter((r: any) =>
+              !r.UpsType || r.UpsType === upsType
+            )
+            setRows(filtered as KeylineRow[])
+            setApiState('ok')
+          } else {
+            setRows([])
+            setApiState('error')
+            setApiError(resp.error || 'API returned no data')
+          }
+        } catch (e: any) {
+          if (cancelled) return
+          setRows([])
+          setApiState('error')
+          setApiError(String(e?.message || e))
+        }
+      })()
+    return () => { cancelled = true }
+  }, [session, contentType, grain, upsType])
+
+  // ── Auto-calculate flap dimensions from L/W/H + content type ─────
+  // Mirrors estimation's planning-modal: debounced 500ms, only updates fields
+  // the user hasn't manually edited, silent on failure.
+  const calcFlapsDebounceRef = useRef<NodeJS.Timeout | null>(null)
+  useEffect(() => {
+    if (!session) return
+    const Ln = num(L), Wn = num(W), Hn = num(H)
+    if (Ln <= 0 || Wn <= 0 || Hn <= 0) return  // need real dims first
+
+    if (calcFlapsDebounceRef.current) clearTimeout(calcFlapsDebounceRef.current)
+    calcFlapsDebounceRef.current = setTimeout(async () => {
+      try {
+        const resp = await calculateFlapDimensions(
+          { length: Ln, width: Wn, height: Hn, contentType, isCorrugated: false },
+          session,
+        )
+        if (!resp.success || !resp.data?.values) return
+        const v = resp.data.values
+        // Skip any field the user has manually overridden in this session.
+        const skip = manuallyEditedRef.current
+        if (v.SizeOpenflap != null && !skip.has('OF')) setOF(String(v.SizeOpenflap))
+        if (v.SizePastingflap != null && !skip.has('PF')) setPF(String(v.SizePastingflap))
+        if (v.SizeBottomflap != null && !skip.has('BF')) setBF(String(v.SizeBottomflap))
+        if (v.JobFlapHeight != null && !skip.has('FH')) setFH(String(v.JobFlapHeight))
+        if (v.JobTongHeight != null && !skip.has('TH')) setTH(String(v.JobTongHeight))
+      } catch {
+        // Silent — flap auto-calc is best-effort, user can still type manually.
+      }
+    }, 500)
+
+    return () => {
+      if (calcFlapsDebounceRef.current) clearTimeout(calcFlapsDebounceRef.current)
+    }
+  }, [session, contentType, L, W, H])
+
+  // ── Animate when playing ────────────────────────────────
+  useEffect(() => {
+    if (!playing) return
+    let frame = 0
+    const tick = (t: number) => {
+      const dt = lastTimeRef.current ? (t - lastTimeRef.current) / 1000 : 0
+      lastTimeRef.current = t
+      const speed = 0.35  // 1/sec; full open↔close cycle ≈ 5.7s
+      setProgress(prev => {
+        let next = prev + directionRef.current * speed * dt
+        if (next >= 1) { next = 1; directionRef.current = -1 }
+        if (next <= 0) { next = 0; directionRef.current = 1 }
+        return next
+      })
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => {
+      cancelAnimationFrame(frame)
+      lastTimeRef.current = 0
+    }
+  }, [playing])
+
+  // ── Geometry pipeline (memoized) ────────────────────────
+  const dims: Dims = {
+    L: num(L), W: num(W), H: num(H),
+    OF: num(OF), PF: num(PF),
+    BF: num(BF), FH: num(FH), TH: num(TH),
+  }
+
+  // Which dimension variables does the current content type actually reference?
+  // We scan the API rows' formula strings — only variables that appear in at
+  // least one formula get an input field shown. Saves the user from filling
+  // BF/FH/TH for content types that don't use them.
+  const usedVars = useMemo(() => {
+    const set = new Set<'L' | 'W' | 'H' | 'OF' | 'PF' | 'BF' | 'FH' | 'TH'>()
+    // Always show the carton-size trio + the two universal flap vars.
+    set.add('L'); set.add('W'); set.add('H'); set.add('OF'); set.add('PF')
+    const text = rows.map(r => `${r.AddInX1}|${r.AddInY1}|${r.AddInX2}|${r.AddInY2}`).join('|')
+    if (/\bBF\b/.test(text)) set.add('BF')
+    if (/\bFH\b/.test(text)) set.add('FH')
+    if (/\bTH\b/.test(text)) set.add('TH')
+    return set
+  }, [rows])
+  const { panels, tree, schedule, error } = useMemo(() => {
+    try {
+      const panels = detectPanels(rows, dims)
+      const tree = buildHingeTree(panels)
+      const schedule = buildFoldSchedule(tree, dims)
+      return { panels, tree, schedule, error: null as string | null }
+    } catch (e: any) {
+      return { panels: [], tree: [], schedule: [], error: String(e?.message || e) }
+    }
+  }, [rows, L, W, H, OF, PF, BF, FH, TH])
+
+  // ── Camera preset handler from viewer ───────────────────
+  const presetHandlerRef = useRef<((p: CameraPreset) => void) | null>(null)
+  const onPresetReady = useCallback((h: (p: CameraPreset) => void) => {
+    presetHandlerRef.current = h
+  }, [])
+  const setView = (preset: CameraPreset) => presetHandlerRef.current?.(preset)
+
+  // ── Reset ───────────────────────────────────────────────
+  const reset = () => {
+    setPlaying(false)
+    setProgress(0)
+    directionRef.current = 1
+  }
+
+  // Sidebar form content — passed to SidePanel via its `children` slot
+  // (SidePanel now supports free-form content alongside its category list mode).
+  const sidebarForm = (
+    <div className="p-1 space-y-3">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5" />
+            Extract from Image
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Dropdown
+            label="Provider"
+            options={[
+              { value: 'backend', label: 'Server (IntegrationConfig)' },
+              { value: 'claude', label: 'Claude (direct, needs key)' },
+            ]}
+            value={extractProvider}
+            onValueChange={v => setExtractProvider(v as VisionProvider)}
+            size="sm"
+          />
+          {extractProvider === 'claude' && (
+            <div className="space-y-1">
+              <Label className="text-xs">Claude API Key</Label>
+              <Input
+                type="password"
+                value={extractApiKey}
+                onChange={e => setExtractApiKey(e.target.value)}
+                placeholder="sk-ant-…"
+              />
+            </div>
+          )}
+
+          <ImageDropzone file={imageFile} preview={imagePreview} onPick={onPickImage} />
+
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={runExtract}
+            disabled={
+              !imageFile
+              || extractState === 'loading'
+              || (extractProvider === 'claude' && !extractApiKey)
+            }
+            className="w-full"
+          >
+            {extractState === 'loading' ? 'Extracting…' : 'Extract'}
+          </Button>
+
+          {extractError && (
+            <div className="text-[10px] text-[rgb(var(--color-error))] px-2 py-1.5 rounded border border-[rgb(var(--color-error))] bg-[rgb(var(--bg-surface))]">
+              {extractError}
+            </div>
+          )}
+          {extracted && (
+            <div className="rounded border border-[rgb(var(--bd-default))] bg-[rgb(var(--bg-subtle))] overflow-hidden">
+              <div className="px-2.5 py-2 border-b border-[rgb(var(--bd-default))] bg-[rgb(var(--bg-surface))]">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-[10px] uppercase tracking-wide text-[rgb(var(--fg-muted))]">Dimensions applied</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // L↔W swap — common fix when the model misidentifies which panel
+                      // is the front face vs the side wall.
+                      const swappedL = W
+                      const swappedW = L
+                      setL(swappedL)
+                      setW(swappedW)
+                    }}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-[rgb(var(--bd-default))] hover:bg-[rgb(var(--bg-subtle))]"
+                    title="Swap L and W values"
+                  >
+                    L ⇄ W
+                  </button>
+                </div>
+                <div className="flex gap-2 text-xs tabular-nums font-medium">
+                  <span><span className="text-[rgb(var(--fg-muted))]">L</span> {L || '—'}</span>
+                  <span><span className="text-[rgb(var(--fg-muted))]">W</span> {W || '—'}</span>
+                  <span><span className="text-[rgb(var(--fg-muted))]">H</span> {H || '—'}</span>
+                  <span className="text-[rgb(var(--fg-muted))]">mm</span>
+                </div>
+              </div>
+              <div className="px-2.5 py-2 space-y-1">
+                <div className="text-[10px] uppercase tracking-wide text-[rgb(var(--fg-muted))]">Type applied</div>
+                <div className="text-xs font-medium">{selectedCandidate ?? '—'}</div>
+              </div>
+              {extracted.notes && (
+                <div className="px-2.5 py-2 border-t border-[rgb(var(--bd-default))] text-[10px] text-[rgb(var(--fg-muted))] italic leading-snug">
+                  {extracted.notes}
+                </div>
+              )}
+            </div>
+          )}
+          {/* Top-N candidate thumbnails — click any to immediately switch the
+              applied type. Selected one is highlighted. */}
+          {extracted?.candidates && extracted.candidates.length > 0 && (
+            <CandidateRow
+              candidates={extracted.candidates}
+              selected={selectedCandidate}
+              onSelect={(c) => {
+                setSelectedCandidate(c)
+                setContentType(c)
+                manuallyEditedRef.current.clear()
+              }}
+              grain={grain}
+            />
+          )}
+          {/* Reference keyline preview — follows whichever candidate is selected
+              (defaults to the model's pick). Visual confirmation before Apply. */}
+          {selectedCandidate && (
+            <KeylineReferencePreview
+              contentType={selectedCandidate}
+              grain={grain}
+              dims={{
+                L: extracted?.L ?? 200,
+                W: extracted?.W ?? 100,
+                H: extracted?.H ?? 150,
+                OF: 30, PF: 10, BF: 0, FH: 0, TH: 0,
+              }}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Content</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Dropdown
+            label="Content Type"
+            options={CONTENT_TYPE_OPTIONS}
+            value={contentType}
+            onValueChange={(v) => setContentType(String(v))}
+            searchable
+            size="sm"
+          />
+          {/* Show Specs toggle removed — specs now auto-show in closed view
+              and auto-hide in open view (progress-driven). */}
+          {/* Hidden for now — defaults are "With Grain" + "First Up".
+              Uncomment if/when the user needs to switch grain or ups type. */}
+          {/* <Dropdown
+            label="Grain"
+            options={GRAIN_OPTIONS}
+            value={grain}
+            onValueChange={(v) => setGrain(String(v))}
+            size="sm"
+          />
+          <Dropdown
+            label="Ups Type"
+            options={UPS_TYPE_OPTIONS}
+            value={upsType}
+            onValueChange={(v) => setUpsType(String(v))}
+            size="sm"
+          /> */}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Dimensions (mm)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Carton size — always together on one row like estimation. */}
+          <div className="grid grid-cols-3 gap-2">
+            {usedVars.has('L') && <NumberField label="L" value={L} onChange={setL} placeholder="Length" />}
+            {usedVars.has('W') && <NumberField label="W" value={W} onChange={setW} placeholder="Width" />}
+            {usedVars.has('H') && <NumberField label="H" value={H} onChange={setH} placeholder="Height" />}
+          </div>
+          {/* Flap dims — auto-filled by calculateFlapDimensions(); manual edits stick.
+              Only variables referenced by the current content type's formulas appear. */}
+          <div className="grid grid-cols-3 gap-2">
+            {usedVars.has('OF') && <NumberField label="OF" value={OF} onChange={v => { markManual('OF'); setOF(v) }} />}
+            {usedVars.has('PF') && <NumberField label="PF" value={PF} onChange={v => { markManual('PF'); setPF(v) }} />}
+            {usedVars.has('BF') && <NumberField label="BF" value={BF} onChange={v => { markManual('BF'); setBF(v) }} />}
+            {usedVars.has('FH') && <NumberField label="FH" value={FH} onChange={v => { markManual('FH'); setFH(v) }} />}
+            {usedVars.has('TH') && <NumberField label="TH" value={TH} onChange={v => { markManual('TH'); setTH(v) }} />}
+          </div>
+          {/* Thickness hidden for now — defaults to 0.6mm. Uncomment to expose. */}
+          {/* <NumberField label="Thickness" value={thickness} onChange={setThickness} step={0.1} min={0.1} /> */}
+        </CardContent>
+      </Card>
+
+      {error && (
+        <div className="text-xs text-[rgb(var(--color-error))] px-3 py-2 rounded border border-[rgb(var(--color-error))] bg-[rgb(var(--bg-surface))]">
+          {error}
+        </div>
+      )}
+      {apiError && !error && (
+        <div className="text-[10px] text-[rgb(var(--color-error))] px-3 py-2 rounded border border-[rgb(var(--bd-default))] bg-[rgb(var(--bg-surface))]">
+          {apiError}
+        </div>
+      )}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm">Camera</CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-2">
+          <Button variant="outline" size="sm" onClick={() => setView('default')}>Default</Button>
+          <Button variant="outline" size="sm" onClick={() => setView('top')}>Top</Button>
+          <Button variant="outline" size="sm" onClick={() => setView('front')}>Front</Button>
+          <Button variant="outline" size="sm" onClick={() => setView('side')}>Side</Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
+
+  return (
+    <div className="flex h-[calc(100vh-4rem)] overflow-hidden bg-[rgb(var(--bg-default))]">
+      <SidePanel
+        title="3D Folding"
+        icon={BoxIcon}
+        categories={[]}
+        activeItemId=""
+        onItemSelect={() => { }}
+        showSearch={false}
+        collapsible
+        showItemIcons={false}
+      >
+        {sidebarForm}
+      </SidePanel>
+      <div className="flex-1 grid grid-cols-1 gap-4 p-4 overflow-hidden">
+
+        {/* ── 3D viewer + slider ── */}
+        <div className="flex flex-col gap-3 min-h-0">
+          {/* 2D debug canvas removed — flip back on by uncommenting the line below if you need it.
+              <KeylineDebugCanvas rows={rows} dims={dims} panels={panels} /> */}
+          <div className="flex-1 min-h-0 rounded-lg border border-[rgb(var(--bd-default))] bg-[rgb(var(--bg-surface))] overflow-hidden relative">
+            {tree.length > 0 ? (
+              <Box3DViewer
+                tree={tree}
+                schedule={schedule}
+                dims={dims}
+                progress={progress}
+                thickness={thickness}
+                onPresetReady={onPresetReady}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-[rgb(var(--fg-muted))] text-sm">
+                {error ?? 'No panels — check dimensions'}
+              </div>
+            )}
+          </div>
+
+          <Card className="shrink-0">
+            <CardContent className="py-3">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPlaying(p => !p)}
+                  icon={playing ? Pause : Play}
+                >
+                  {playing ? 'Pause' : 'Play'}
+                </Button>
+                <Button variant="outline" size="sm" onClick={reset} icon={RotateCcw}>Reset</Button>
+                <span className="text-xs text-[rgb(var(--fg-muted))] shrink-0">Open</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.001}
+                  value={progress}
+                  onChange={e => { setPlaying(false); setProgress(parseFloat(e.target.value)) }}
+                  className="flex-1 accent-[rgb(var(--color-primary))]"
+                />
+                <span className="text-xs text-[rgb(var(--fg-muted))] shrink-0">Close</span>
+                <span className="text-xs tabular-nums w-12 text-right">
+                  {Math.round(progress * 100)}%
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Small UI helpers ───────────────────────────────────────
+
+/**
+ * Horizontal strip of candidate thumbnails. Each is the rendered 2D keyline
+ * for that content type. Click to override the model's auto-pick before Apply.
+ */
+function CandidateRow({
+  candidates, selected, onSelect, grain,
+}: {
+  candidates: string[]
+  selected: string | null
+  onSelect: (c: string) => void
+  grain: string
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-medium text-[rgb(var(--fg-muted))]">
+        Candidates ({candidates.length}) — click to override
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {candidates.map(c => {
+          const active = c === selected
+          return (
+            <button
+              key={c}
+              type="button"
+              onClick={() => onSelect(c)}
+              className={`rounded border overflow-hidden text-left transition-colors ${active
+                  ? 'border-[rgb(var(--color-primary))] ring-1 ring-[rgb(var(--color-primary))] bg-[rgb(var(--bg-subtle))]'
+                  : 'border-[rgb(var(--bd-default))] hover:bg-[rgb(var(--bg-subtle))]'
+                }`}
+            >
+              <CandidateThumb contentType={c} grain={grain} />
+              <div className="px-1 py-0.5 text-[9px] truncate leading-tight" title={c}>
+                {c}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** Tiny rendered keyline of one type for the candidate row. */
+function CandidateThumb({ contentType, grain }: { contentType: string; grain: string }) {
+  const { data: session } = useSession()
+  const refDims: Dims = useMemo(
+    () => ({ L: 200, W: 100, H: 150, OF: 30, PF: 12, BF: 30, FH: 25, TH: 20 }),
+    []
+  )
+  const [rows, setRows] = useState<KeylineRow[]>([])
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+    PlanWindowAPI.getKeylineCoordinates(contentType, grain, session).then(resp => {
+      if (cancelled) return
+      if (resp.success && Array.isArray(resp.data)) setRows(resp.data as KeylineRow[])
+    }).catch(() => { /* leave empty */ })
+    return () => { cancelled = true }
+  }, [session, contentType, grain])
+
+  const segments = useMemo(() => {
+    try { return rowsToSegments(rows, refDims) } catch { return [] as Segment[] }
+  }, [rows, refDims])
+
+  const bbox = useMemo(() => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const s of segments) {
+      minX = Math.min(minX, s.x1, s.x2); minY = Math.min(minY, s.y1, s.y2)
+      maxX = Math.max(maxX, s.x1, s.x2); maxY = Math.max(maxY, s.y1, s.y2)
+    }
+    if (!isFinite(minX)) return null
+    const pad = 8
+    return { minX: minX - pad, minY: minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad }
+  }, [segments])
+
+  if (!bbox) {
+    return <div className="h-14 flex items-center justify-center text-[8px] text-[rgb(var(--fg-muted))]">·</div>
+  }
+  return (
+    <svg viewBox={`${bbox.minX} ${bbox.minY} ${bbox.w} ${bbox.h}`} preserveAspectRatio="xMidYMid meet" className="w-full h-14">
+      {segments.map((s, i) => {
+        const isCurve = s.shape === 'Curve'
+        const isCircle = s.shape === 'Circle'
+        const stroke = isCurve || isCircle ? '#dc2626' : (s.isDashed ? '#2563eb' : '#111')
+        const dash = s.isDashed ? '2,2' : undefined
+        if (isCurve) {
+          return <path key={i} d={`M ${s.x1} ${s.y1} Q ${s.x1} ${s.y2} ${s.x2} ${s.y2}`} stroke={stroke} strokeWidth={1} fill="none" strokeDasharray={dash} />
+        }
+        if (isCircle) {
+          const r = Math.sqrt((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) / 2
+          return <path key={i} d={`M ${s.x1} ${s.y1} A ${r} ${r} 0 1 1 ${s.x2} ${s.y2}`} stroke={stroke} strokeWidth={1} fill="none" strokeDasharray={dash} />
+        }
+        return <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={stroke} strokeWidth={1} strokeDasharray={dash} />
+      })}
+    </svg>
+  )
+}
+
+/**
+ * Renders a compact 2D keyline of a given content type so the user can
+ * visually verify the LLM's content-type pick against their uploaded image.
+ * Fetches keyline rows fresh per type via the same API the main viewer uses.
+ */
+function KeylineReferencePreview({
+  contentType, grain, dims,
+}: {
+  contentType: string
+  grain: string
+  dims: Dims
+}) {
+  const { data: session } = useSession()
+  const [rows, setRows] = useState<KeylineRow[]>([])
+  const [state, setState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+    setState('loading')
+      ; (async () => {
+        try {
+          const resp = await PlanWindowAPI.getKeylineCoordinates(contentType, grain, session)
+          if (cancelled) return
+          if (resp.success && Array.isArray(resp.data) && resp.data.length > 0) {
+            setRows(resp.data as KeylineRow[])
+            setState('ok')
+          } else {
+            setRows([])
+            setState('error')
+          }
+        } catch {
+          if (cancelled) return
+          setRows([])
+          setState('error')
+        }
+      })()
+    return () => { cancelled = true }
+  }, [session, contentType, grain])
+
+  const segments = useMemo(() => {
+    try { return rowsToSegments(rows, dims) } catch { return [] as Segment[] }
+  }, [rows, dims])
+
+  const bbox = useMemo(() => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const s of segments) {
+      minX = Math.min(minX, s.x1, s.x2)
+      minY = Math.min(minY, s.y1, s.y2)
+      maxX = Math.max(maxX, s.x1, s.x2)
+      maxY = Math.max(maxY, s.y1, s.y2)
+    }
+    if (!isFinite(minX)) return null
+    const pad = 10
+    return { minX: minX - pad, minY: minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad }
+  }, [segments])
+
+  return (
+    <div className="rounded border border-[rgb(var(--bd-default))] bg-[rgb(var(--bg-surface))] overflow-hidden">
+      <div className="px-2 py-1 text-[10px] font-medium text-[rgb(var(--fg-muted))] border-b border-[rgb(var(--bd-default))]">
+        Reference keyline · {contentType}
+      </div>
+      <div className="h-32 flex items-center justify-center">
+        {state === 'loading' && (
+          <span className="text-[10px] text-[rgb(var(--fg-muted))]">Loading…</span>
+        )}
+        {state === 'error' && (
+          <span className="text-[10px] text-[rgb(var(--color-error))]">No keyline data for this type</span>
+        )}
+        {state === 'ok' && bbox && (
+          <svg
+            viewBox={`${bbox.minX} ${bbox.minY} ${bbox.w} ${bbox.h}`}
+            preserveAspectRatio="xMidYMid meet"
+            className="w-full h-full"
+          >
+            {segments.map((s, i) => {
+              const isCurve = s.shape === 'Curve'
+              const isCircle = s.shape === 'Circle'
+              const stroke = isCurve || isCircle ? '#dc2626' : (s.isDashed ? '#2563eb' : '#111')
+              const strokeDasharray = s.isDashed ? '1.5,1.5' : undefined
+              if (isCurve) {
+                return <path key={i} d={`M ${s.x1} ${s.y1} Q ${s.x1} ${s.y2} ${s.x2} ${s.y2}`}
+                  stroke={stroke} strokeWidth={0.6} fill="none" strokeDasharray={strokeDasharray} />
+              }
+              if (isCircle) {
+                const r = Math.sqrt((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) / 2
+                return <path key={i} d={`M ${s.x1} ${s.y1} A ${r} ${r} 0 1 1 ${s.x2} ${s.y2}`}
+                  stroke={stroke} strokeWidth={0.6} fill="none" strokeDasharray={strokeDasharray} />
+              }
+              return <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                stroke={stroke} strokeWidth={0.6} strokeDasharray={strokeDasharray} />
+            })}
+          </svg>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ImageDropzone({
+  file, preview, onPick,
+}: {
+  file: File | null
+  preview: string | null
+  onPick: (f: File | null) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragging(false)
+    const f = e.dataTransfer.files?.[0]
+    if (f && f.type.startsWith('image/')) onPick(f)
+  }
+
+  if (preview) {
+    return (
+      <div className="relative rounded border border-[rgb(var(--bd-default))] overflow-hidden bg-[rgb(var(--bg-subtle))]">
+        <img src={preview} alt="dieline" className="w-full h-32 object-contain" />
+        <button
+          type="button"
+          onClick={() => onPick(null)}
+          className="absolute top-1 right-1 p-1 rounded bg-[rgb(var(--bg-surface))] border border-[rgb(var(--bd-default))] hover:bg-[rgb(var(--bg-subtle))]"
+          aria-label="Remove image"
+        >
+          <X className="w-3 h-3" />
+        </button>
+        <div className="px-2 py-1 text-[10px] text-[rgb(var(--fg-muted))] truncate border-t border-[rgb(var(--bd-default))]">
+          {file?.name}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      onClick={() => inputRef.current?.click()}
+      onDragOver={e => { e.preventDefault(); setDragging(true) }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+      className={`flex flex-col items-center justify-center gap-1 px-3 py-4 rounded border-2 border-dashed cursor-pointer transition-colors ${dragging
+          ? 'border-[rgb(var(--color-primary))] bg-[rgb(var(--bg-subtle))]'
+          : 'border-[rgb(var(--bd-default))] hover:bg-[rgb(var(--bg-subtle))]'
+        }`}
+    >
+      <Upload className="w-4 h-4 text-[rgb(var(--fg-muted))]" />
+      <div className="text-[11px] text-[rgb(var(--fg-muted))] text-center">
+        Drop dieline image or click to browse
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => onPick(e.target.files?.[0] ?? null)}
+      />
+    </div>
+  )
+}
+
+function NumberField({
+  label, value, onChange, step = 1, min = 0, placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  step?: number
+  min?: number
+  placeholder?: string
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      <Input
+        type="number"
+        value={value}
+        step={step}
+        min={min}
+        placeholder={placeholder}
+        onChange={e => onChange(e.target.value)}
+      />
+    </div>
+  )
+}
+
+
+// ─── 2D Keyline Debug Canvas ─────────────────────────────────
+// Renders all evaluated line segments + colored panel overlays, so we can
+// SEE which regions are detected vs missed against the actual keyline.
+
+const PANEL_COLORS = [
+  'rgba(239, 68, 68, 0.25)',   // red
+  'rgba(59, 130, 246, 0.25)',  // blue
+  'rgba(34, 197, 94, 0.25)',   // green
+  'rgba(234, 179, 8, 0.25)',   // yellow
+  'rgba(168, 85, 247, 0.25)',  // purple
+  'rgba(236, 72, 153, 0.25)',  // pink
+  'rgba(20, 184, 166, 0.25)',  // teal
+  'rgba(251, 146, 60, 0.25)',  // orange
+  'rgba(99, 102, 241, 0.25)',  // indigo
+  'rgba(132, 204, 22, 0.25)',  // lime
+  'rgba(244, 114, 182, 0.25)', // rose
+  'rgba(14, 165, 233, 0.25)',  // sky
+  'rgba(217, 70, 239, 0.25)',  // fuchsia
+]
+
+function KeylineDebugCanvas({
+  rows, dims, panels,
+}: { rows: KeylineRow[]; dims: Dims; panels: Panel[] }) {
+  const segments = useMemo(() => {
+    try { return rowsToSegments(rows, dims) } catch { return [] as Segment[] }
+  }, [rows, dims])
+
+  // Compute bounding box from all segments + panels
+  const bbox = useMemo(() => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const s of segments) {
+      minX = Math.min(minX, s.x1, s.x2)
+      minY = Math.min(minY, s.y1, s.y2)
+      maxX = Math.max(maxX, s.x1, s.x2)
+      maxY = Math.max(maxY, s.y1, s.y2)
+    }
+    for (const p of panels) {
+      minX = Math.min(minX, p.rect.x)
+      minY = Math.min(minY, p.rect.y)
+      maxX = Math.max(maxX, p.rect.x + p.rect.w)
+      maxY = Math.max(maxY, p.rect.y + p.rect.h)
+    }
+    if (!isFinite(minX)) return { minX: 0, minY: 0, maxX: 100, maxY: 100 }
+    const pad = 20
+    return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }
+  }, [segments, panels])
+
+  if (segments.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-[rgb(var(--fg-muted))] text-sm">
+        No keyline data — waiting for API
+      </div>
+    )
+  }
+
+  const vbW = bbox.maxX - bbox.minX
+  const vbH = bbox.maxY - bbox.minY
+
+  return (
+    <div className="h-full w-full flex flex-col">
+      <div className="px-3 py-1.5 text-[11px] text-[rgb(var(--fg-muted))] border-b border-[rgb(var(--bd-default))] bg-[rgb(var(--bg-subtle))]">
+        2D keyline · solid=cut · dashed=fold · red=curve · color overlays = detected panels
+      </div>
+      <div className="flex-1 min-h-0">
+        <svg
+          viewBox={`${bbox.minX} ${bbox.minY} ${vbW} ${vbH}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ width: '100%', height: '100%' }}
+        >
+          {/* Panel overlays first (under the lines) */}
+          {panels.map((p, i) => {
+            const color = PANEL_COLORS[i % PANEL_COLORS.length]
+            const stroke = color.replace('0.25', '0.9')
+            return (
+              <g key={p.id}>
+                <rect
+                  x={p.rect.x} y={p.rect.y}
+                  width={p.rect.w} height={p.rect.h}
+                  fill={color}
+                  stroke={stroke}
+                  strokeWidth={0.4}
+                />
+                <text
+                  x={p.rect.x + p.rect.w / 2}
+                  y={p.rect.y + p.rect.h / 2}
+                  fontSize={Math.max(4, Math.min(p.rect.w, p.rect.h) / 6)}
+                  fill="#000"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontWeight={600}
+                >
+                  {p.id}
+                </text>
+              </g>
+            )
+          })}
+          {/* Reference grid lines at the named X/Y bands */}
+          {(() => {
+            const xs = [
+              { val: 0, label: '0' },
+              { val: dims.PF, label: 'PF' },
+              { val: dims.PF + dims.L, label: 'PF+L' },
+              { val: dims.PF + dims.L + dims.W, label: 'PF+L+W' },
+              { val: dims.PF + dims.L + dims.W + dims.L, label: 'PF+L+W+L' },
+              { val: 2 * dims.W + 2 * dims.L + dims.PF, label: '2W+2L+PF' },
+            ]
+            const ys = [
+              { val: 0, label: '0' },
+              { val: dims.OF, label: 'OF' },
+              { val: dims.OF + dims.W, label: 'OF+W' },
+              { val: dims.OF + dims.W + dims.H, label: 'OF+W+H' },
+              { val: dims.OF + dims.W + dims.H + dims.W, label: 'OF+W+H+W' },
+              { val: 2 * (dims.OF + dims.W) + dims.H, label: '2(OF+W)+H' },
+            ]
+            return (
+              <g opacity={0.35}>
+                {xs.map(x => (
+                  <g key={`x-${x.label}`}>
+                    <line x1={x.val} y1={bbox.minY} x2={x.val} y2={bbox.maxY} stroke="#9ca3af" strokeWidth={0.2} strokeDasharray="0.5,0.5" />
+                    <text x={x.val} y={bbox.minY + 6} fontSize={3} fill="#6b7280" textAnchor="middle">{x.label}</text>
+                  </g>
+                ))}
+                {ys.map(y => (
+                  <g key={`y-${y.label}`}>
+                    <line x1={bbox.minX} y1={y.val} x2={bbox.maxX} y2={y.val} stroke="#9ca3af" strokeWidth={0.2} strokeDasharray="0.5,0.5" />
+                    <text x={bbox.minX + 4} y={y.val + 1.5} fontSize={3} fill="#6b7280">{y.label}</text>
+                  </g>
+                ))}
+              </g>
+            )
+          })()}
+          {/* Lines on top */}
+          {segments.map((s, i) => {
+            const isCurve = s.shape === 'Curve'
+            const isCircle = s.shape === 'Circle'
+            const stroke = isCurve || isCircle ? '#dc2626' : (s.isDashed ? '#2563eb' : '#111')
+            const strokeDasharray = s.isDashed ? '1,1' : undefined
+            if (isCurve) {
+              // Match the legacy drawCurveNSolid path: M x1 y1 Q x1 y2 x2 y2
+              const d = `M ${s.x1} ${s.y1} Q ${s.x1} ${s.y2} ${s.x2} ${s.y2}`
+              return (
+                <path key={i} d={d} stroke={stroke} strokeWidth={0.5} fill="none" strokeDasharray={strokeDasharray} />
+              )
+            }
+            if (isCircle) {
+              const r = Math.sqrt((s.x2 - s.x1) ** 2 + (s.y2 - s.y1) ** 2) / 2
+              const d = `M ${s.x1} ${s.y1} A ${r} ${r} 0 1 1 ${s.x2} ${s.y2}`
+              return (
+                <path key={i} d={d} stroke={stroke} strokeWidth={0.5} fill="none" strokeDasharray={strokeDasharray} />
+              )
+            }
+            return (
+              <line key={i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={stroke} strokeWidth={0.5} strokeDasharray={strokeDasharray} />
+            )
+          })}
+        </svg>
+      </div>
+    </div>
+  )
+}
+

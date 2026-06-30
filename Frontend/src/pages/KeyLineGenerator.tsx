@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { evaluate } from 'mathjs';
+import { Box3DViewer } from '../components/Box3DViewer';
+import { detectPanels, buildHingeTree, buildFoldSchedule, type KeylineRow as KL3DRow, type Dims as KL3DDims } from '../lib/keyline3D';
+import type { CameraPreset } from '../lib/three-helpers';
 import {
     Save, Trash2, Plus, RefreshCw, Download, ZoomIn, ZoomOut,
     Upload, ChevronDown, RotateCcw, Layers, FileText, Move, Maximize2, X
@@ -311,194 +314,190 @@ const FullscreenSvgPreview: React.FC<SvgPreviewProps> = ({ rows, vars, zoom, hig
     );
 };
 
-// ─── 3D Box Preview ──────────────────────────────────────────────────────────
+// ─── ShapeType-based fold schedule (Excel sequence guide) ────────────────────
+// Sequence from D:\BulkImportProject\3D Sequence Guide.xlsx:
+//   1 = LENGTH + WIDTH  (walls form box shape first)
+//   2 = PASTING FLAP    (glue flap folds inside)
+//   3 = DUST FLAP       (side dust flaps close at 90°)
+//   4 = OPEN FLAP       (top tuck flap tucks inside length)
+//   5 = BOTTOM FLAP     (opposite of open flap)
+//   6 = TUCKIN WIDTH    (final lock — closes last)
+//   HEIGHT = root panel, never folds
 
-const Box3DPreview: React.FC<{ vars: Record<string, number> }> = ({ vars }) => {
-    const [rotX, setRotX] = useState(-22);
-    const [rotY, setRotY] = useState(30);
-    const [autoRotate, setAutoRotate] = useState(true);
-    // 0 = fully open, 1 = fully closed
-    const [openAmount, setOpenAmount] = useState(0);
-    const animRef = useRef<number>(0);
-    const dragRef = useRef<{ sx: number; sy: number; rx: number; ry: number } | null>(null);
+const SHAPE_FOLD_SEQ: Record<string, number> = {
+    'LENGTH':       1,
+    'WIDTH':        1,
+    'PASTING FLAP': 2,
+    'DUST FLAP':    3,
+    'OPEN FLAP':    4,
+    'BOTTOM FLAP':  5,
+    'TUCKIN WIDTH': 6,
+};
+const MAX_SEQ = 6;
 
-    const rawW = Math.max(10, vars.W ?? 100);
-    const rawL = Math.max(10, vars.L ?? 80);
-    const rawH = Math.max(10, vars.H ?? 120);
+function buildShapeTypeFoldSchedule(tree: import('../lib/keyline3D').HingedPanel[]): import('../lib/keyline3D').FoldStage[] {
+    return tree
+        .filter(p => p.depth > 0)
+        .map(p => {
+            const st = (p.shapeType ?? '').toUpperCase().trim();
+            // Find matching sequence — try each key as substring match
+            let seq = 0;
+            for (const [key, val] of Object.entries(SHAPE_FOLD_SEQ)) {
+                if (st.includes(key)) { seq = val; break; }
+            }
+            if (seq === 0) seq = Math.min(p.depth, MAX_SEQ); // fallback: depth
+            return {
+                panelId: p.id,
+                startProgress: (seq - 1) / MAX_SEQ,
+                endProgress:   seq / MAX_SEQ,
+                closedAngleDeg: 90,
+            };
+        });
+}
 
-    // Scale: longest dimension = 300px
-    const s = 300 / Math.max(rawW, rawL, rawH);
-    const bW = rawW * s;
-    const bD = rawL * s;
-    const bH = rawH * s;
-    // Main tuck flaps (front & back) are taller; side dust flaps are shorter
-    const tuckFlapH = Math.max(28, Math.min(bH * 0.25, 75));
-    const dustFlapH = Math.max(18, Math.min(tuckFlapH * 0.58, 44));
+// ─── 3D Box Preview (Three.js) ───────────────────────────────────────────────
 
-    // Flap angles driven by slider: open (0) → -118deg; closed (1) → 0deg
-    const mainFlapAngle = -118 * (1 - openAmount);
-    const dustFlapAngle = -95 * (1 - openAmount);
-    const topBg = `rgba(96,165,250,${(openAmount * 0.30).toFixed(2)})`;
+const Box3DPreview: React.FC<{ rows: GridRow[]; vars: Record<string, number> }> = ({ rows, vars }) => {
+    const [progress, setProgress] = useState(0);
+    const [playing, setPlaying] = useState(false);
+    const directionRef = useRef<1 | -1>(1);
+    const lastTimeRef = useRef<number>(0);
+    const presetHandlerRef = useRef<((p: CameraPreset) => void) | null>(null);
 
-    // Auto-rotate Y axis
+    const dims: KL3DDims = {
+        L: Math.max(1, vars.L ?? 100),
+        W: Math.max(1, vars.W ?? 80),
+        H: Math.max(1, vars.H ?? 120),
+        OF: vars.OF ?? 0,
+        PF: vars.PF ?? 0,
+        BF: vars.BF ?? 0,
+        FH: vars.FH ?? 0,
+        TH: vars.TH ?? 0,
+    };
+
+    // Map GridRow → KL3DRow (field name normalization)
+    const kl3dRows = useMemo<KL3DRow[]>(() =>
+        rows
+            .filter(r => r.addInX1 && r.addInY1 && r.addInX2 && r.addInY2)
+            .filter(r => !r.shapeType?.toUpperCase().startsWith('DIM'))
+            .map(r => ({
+                AddInX1: r.addInX1 ?? '0',
+                AddInY1: r.addInY1 ?? '0',
+                AddInX2: r.addInX2 ?? '0',
+                AddInY2: r.addInY2 ?? '0',
+                Linetype: r.lineType ?? 'Solid',
+                LineStyles: r.lineStyles ?? 'Solid',
+                ShapeType: r.shapeType,
+            })),
+        [rows]
+    );
+
+    const { tree, schedule, error } = useMemo(() => {
+        try {
+            const panels = detectPanels(kl3dRows, dims);
+            const tree = buildHingeTree(panels);
+            const hasShapeTypes = tree.some(p => p.shapeType);
+            const schedule = hasShapeTypes
+                ? buildShapeTypeFoldSchedule(tree)
+                : buildFoldSchedule(tree, dims);
+            return { tree, schedule, error: null as string | null };
+        } catch (e: any) {
+            return { tree: [], schedule: [], error: String(e?.message || e) };
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [kl3dRows, vars.L, vars.W, vars.H, vars.OF, vars.PF, vars.BF, vars.FH, vars.TH]);
+
+    // Play animation
     useEffect(() => {
-        if (!autoRotate) { cancelAnimationFrame(animRef.current); return; }
-        let y = rotY;
-        const step = () => { y += 0.28; setRotY(y); animRef.current = requestAnimationFrame(step); };
-        animRef.current = requestAnimationFrame(step);
-        return () => cancelAnimationFrame(animRef.current);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [autoRotate]);
-
-    // Drag-to-rotate
-    useEffect(() => {
-        const onMove = (e: MouseEvent) => {
-            if (!dragRef.current) return;
-            setRotY(dragRef.current.ry + (e.clientX - dragRef.current.sx) * 0.5);
-            setRotX(dragRef.current.rx - (e.clientY - dragRef.current.sy) * 0.5);
+        if (!playing) return;
+        let frame = 0;
+        const tick = (t: number) => {
+            const dt = lastTimeRef.current ? (t - lastTimeRef.current) / 1000 : 0;
+            lastTimeRef.current = t;
+            const speed = 0.35;
+            setProgress(prev => {
+                let next = prev + directionRef.current * speed * dt;
+                if (next >= 1) { next = 1; directionRef.current = -1; }
+                if (next <= 0) { next = 0; directionRef.current = 1; }
+                return next;
+            });
+            frame = requestAnimationFrame(tick);
         };
-        const onUp = () => { dragRef.current = null; };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-        return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+        frame = requestAnimationFrame(tick);
+        return () => { cancelAnimationFrame(frame); lastTimeRef.current = 0; };
+    }, [playing]);
+
+    const onPresetReady = useCallback((h: (p: CameraPreset) => void) => {
+        presetHandlerRef.current = h;
     }, []);
 
-    const faceStyle = (w: number, h: number, transform: string, bg: string): React.CSSProperties => ({
-        position: 'absolute', width: w, height: h,
-        marginLeft: -w / 2, marginTop: -h / 2,
-        transform, background: bg,
-        border: '1.5px solid rgba(30,58,95,0.5)',
-        backfaceVisibility: 'hidden',
-    });
+    const setView = (preset: CameraPreset) => presetHandlerRef.current?.(preset);
 
-    // Main tuck flap (front & back) — full width, taller
-    const tuckFlapPivot = (faceTransform: string) => (
-        <div style={{
-            position: 'absolute',
-            width: bW, height: 0,
-            marginLeft: -bW / 2,
-            marginTop: -bH / 2,
-            transform: faceTransform,
-            transformStyle: 'preserve-3d',
-        }}>
-            <div style={{
-                position: 'absolute',
-                width: bW, height: tuckFlapH,
-                top: -tuckFlapH, left: 0,
-                background: 'rgba(96,165,250,0.85)',
-                border: '1.5px solid rgba(30,58,95,0.55)',
-                transform: `rotateX(${mainFlapAngle}deg)`,
-                transformOrigin: '50% 100%',
-                transition: 'transform 0.45s ease-out',
-                backfaceVisibility: 'hidden',
-            }} />
-        </div>
-    );
-
-    // Side dust flap (left & right) — full depth, shorter
-    const dustFlapPivot = (faceTransform: string) => (
-        <div style={{
-            position: 'absolute',
-            width: bD, height: 0,
-            marginLeft: -bD / 2,
-            marginTop: -bH / 2,
-            transform: faceTransform,
-            transformStyle: 'preserve-3d',
-        }}>
-            <div style={{
-                position: 'absolute',
-                width: bD, height: dustFlapH,
-                top: -dustFlapH, left: 0,
-                background: 'rgba(147,197,253,0.82)',
-                border: '1.5px solid rgba(30,58,95,0.55)',
-                transform: `rotateX(${dustFlapAngle}deg)`,
-                transformOrigin: '50% 100%',
-                transition: 'transform 0.45s ease-out',
-                backfaceVisibility: 'hidden',
-            }} />
-        </div>
-    );
+    const reset = () => { setPlaying(false); setProgress(0); directionRef.current = 1; };
 
     return (
         <div className="flex flex-col h-full">
-
-            {/* ── 3D Viewport ────────────────────────────────────────────── */}
-            <div
-                className="flex-1 relative"
-                style={{ perspective: 1100, cursor: 'grab', overflow: 'hidden' }}
-                onMouseDown={(e) => { setAutoRotate(false); dragRef.current = { sx: e.clientX, sy: e.clientY, rx: rotX, ry: rotY }; }}
-            >
-                <div style={{
-                    position: 'absolute', top: '50%', left: '50%',
-                    width: 0, height: 0,
-                    transformStyle: 'preserve-3d',
-                    transform: `rotateX(${rotX}deg) rotateY(${rotY}deg)`,
-                }}>
-                    {/* 4 side walls */}
-                    <div style={faceStyle(bW, bH, `translateZ(${bD / 2}px)`,                  'rgba(219,234,254,0.90)')} />
-                    <div style={faceStyle(bW, bH, `rotateY(180deg) translateZ(${bD / 2}px)`,  'rgba(191,219,254,0.88)')} />
-                    <div style={faceStyle(bD, bH, `rotateY(90deg) translateZ(${bW / 2}px)`,   'rgba(147,197,253,0.88)')} />
-                    <div style={faceStyle(bD, bH, `rotateY(-90deg) translateZ(${bW / 2}px)`,  'rgba(147,197,253,0.88)')} />
-
-                    {/* Bottom (always closed) */}
-                    <div style={faceStyle(bW, bD, `rotateX(-90deg) translateZ(${bH / 2}px)`,  'rgba(30,58,95,0.22)')} />
-
-                    {/* Top face: transparent when open, tinted when closed */}
-                    <div style={{ ...faceStyle(bW, bD, `rotateX(90deg) translateZ(${bH / 2}px)`, topBg), transition: 'background 0.3s' }} />
-
-                    {/* Inner floor visible when open */}
-                    {openAmount < 0.85 && (
-                        <div style={faceStyle(bW * 0.9, bD * 0.9, `rotateX(90deg) translateZ(${bH / 2 - 4}px)`, 'rgba(30,58,95,0.07)')} />
-                    )}
-
-                    {/* Front & Back: main tuck flaps (full W, taller) */}
-                    {tuckFlapPivot(`translateZ(${bD / 2}px)`)}
-                    {tuckFlapPivot(`rotateY(180deg) translateZ(${bD / 2}px)`)}
-
-                    {/* Left & Right: dust flaps (full D, shorter) */}
-                    {dustFlapPivot(`rotateY(90deg) translateZ(${bW / 2}px)`)}
-                    {dustFlapPivot(`rotateY(-90deg) translateZ(${bW / 2}px)`)}
-                </div>
+            {/* ── Three.js Viewer ── */}
+            <div className="flex-1 min-h-0 relative">
+                {error ? (
+                    <div className="h-full flex items-center justify-center text-sm text-red-500 px-6 text-center">
+                        {error}
+                    </div>
+                ) : tree.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-sm text-gray-400 dark:text-gray-500">
+                        No panels — check L / W / H values
+                    </div>
+                ) : (
+                    <Box3DViewer
+                        tree={tree}
+                        schedule={schedule}
+                        dims={dims}
+                        progress={progress}
+                        thickness={0.6}
+                        onPresetReady={onPresetReady}
+                        className="w-full h-full"
+                    />
+                )}
             </div>
 
-            {/* ── Controls bar ────────────────────────────────────────────── */}
-            <div className="shrink-0 flex flex-col items-center gap-3 py-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+            {/* ── Controls bar ── */}
+            <div className="shrink-0 flex flex-col items-center gap-2 py-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
                 {/* Dimension pills */}
-                <div className="flex gap-3 text-xs font-medium">
-                    <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">W = {rawW} mm</span>
-                    <span className="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300">L = {rawL} mm</span>
-                    <span className="px-3 py-1 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">H = {rawH} mm</span>
+                <div className="flex gap-2 text-xs font-medium">
+                    <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">L = {Math.round(dims.L)} mm</span>
+                    <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300">W = {Math.round(dims.W)} mm</span>
+                    <span className="px-2.5 py-1 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">H = {Math.round(dims.H)} mm</span>
                 </div>
 
                 {/* Open ←→ Close slider */}
-                <div className="flex items-center gap-3 w-full max-w-xs px-2">
+                <div className="flex items-center gap-3 w-full max-w-sm px-4">
                     <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 w-10 text-right shrink-0">Open</span>
                     <input
-                        type="range"
-                        min={0} max={1} step={0.01}
-                        value={openAmount}
-                        onChange={e => setOpenAmount(Number(e.target.value))}
+                        type="range" min={0} max={1} step={0.001}
+                        value={progress}
+                        onChange={e => { setPlaying(false); setProgress(parseFloat(e.target.value)); }}
                         className="flex-1 h-2 rounded-full accent-blue-600 cursor-pointer"
                     />
                     <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 w-10 shrink-0">Close</span>
+                    <span className="text-xs tabular-nums text-gray-400 w-9 text-right">{Math.round(progress * 100)}%</span>
                 </div>
 
-                {/* Rotate / Reset buttons */}
-                <div className="flex gap-2">
+                {/* Buttons row */}
+                <div className="flex gap-2 flex-wrap justify-center">
                     <button
-                        onClick={() => setAutoRotate(a => !a)}
+                        onClick={() => setPlaying(p => !p)}
                         className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                     >
-                        {autoRotate ? '⏸ Pause' : '▶ Auto Rotate'}
+                        {playing ? '⏸ Pause' : '▶ Play'}
                     </button>
-                    <button
-                        onClick={() => { setRotX(-22); setRotY(30); }}
-                        className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
+                    <button onClick={reset} className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                         ↺ Reset
                     </button>
+                    <button onClick={() => setView('default')} className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Default</button>
+                    <button onClick={() => setView('top')} className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Top</button>
+                    <button onClick={() => setView('front')} className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Front</button>
+                    <button onClick={() => setView('side')} className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">Side</button>
                 </div>
-                <p className="text-xs text-gray-400 dark:text-gray-500">Drag to rotate manually</p>
             </div>
         </div>
     );
@@ -1580,7 +1579,7 @@ const KeyLineGenerator: React.FC = () => {
                         {/* Modal Body */}
                         {view3D ? (
                             <div className="flex-1 bg-gray-50 dark:bg-gray-950 rounded-b-2xl">
-                                <Box3DPreview vars={vars} />
+                                <Box3DPreview rows={coordRows} vars={vars} />
                             </div>
                         ) : (
                             <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950 rounded-b-2xl">
