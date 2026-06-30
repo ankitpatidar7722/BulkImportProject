@@ -2641,3 +2641,135 @@ export const saveCompanyModuleAuthority = async (request: SaveModuleAuthorityReq
     const response = await api.post('/moduleauthority/indus-tools', request);
     return response.data;
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Sahay & Email Feature Subscriptions — TENANT-LOCAL (Option A)
+//  Backend: FeatureSubscriptionController (/api/FeatureSubscription/...)
+//  No plan catalog: the plan (name/price/cycle/dates) is typed at Assign time
+//  and stored in the company's own database.
+// ═══════════════════════════════════════════════════════════════════════════
+export type FeatureCode = 'Sahay' | 'Email';
+export type BillingCycle = 'MONTHLY' | 'ANNUAL';
+
+export interface ClientUserDto {
+    userID: number;
+    userName: string;
+    isSahayActive: boolean;
+}
+
+export interface FeatureSubscriptionDto {
+    subscriptionID: number;
+    featureCode: FeatureCode;
+    planName: string;
+    billingCycle: BillingCycle;
+    unitPrice: number;
+    perUser: boolean;
+    seatCount: number;
+    totalPrice: number;
+    startDate: string;
+    endDate: string;
+    status: string;
+    seats: ClientUserDto[];
+}
+
+export interface AssignFeatureRequest {
+    companyUserID: string;
+    featureCode: FeatureCode;
+    planName: string;
+    billingCycle: BillingCycle;
+    unitPrice: number;       // per cycle; PER SEAT for Sahay
+    startDate: string;       // yyyy-MM-dd
+    endDate: string;
+    seatUserIds: number[];   // Sahay only
+}
+
+export const getCompanyFeatureState = async (companyUserID: string): Promise<{ success: boolean; message: string; sahay?: FeatureSubscriptionDto; email?: FeatureSubscriptionDto }> => {
+    const response = await api.get(`/featuresubscription/company/${encodeURIComponent(companyUserID)}`);
+    return response.data;
+};
+
+export const getCompanyClientUsers = async (companyUserID: string): Promise<{ success: boolean; message: string; data: ClientUserDto[] }> => {
+    const response = await api.get(`/featuresubscription/company/${encodeURIComponent(companyUserID)}/users`);
+    return response.data;
+};
+
+export const assignFeature = async (request: AssignFeatureRequest): Promise<{ success: boolean; message: string; data?: FeatureSubscriptionDto }> => {
+    const response = await api.post('/featuresubscription/assign', request);
+    return response.data;
+};
+
+export const setFeatureStatus = async (companyUserID: string, featureCode: FeatureCode, active: boolean): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(`/featuresubscription/${active ? 'resume' : 'suspend'}`, { companyUserID, featureCode });
+    return response.data;
+};
+
+// ─── Plan Catalog (global plan management) ────────────────────────────────────
+// Feature → Plans. Lives in the Indus DB; managed on the admin side. 2-table model:
+// sub-features + the customer-facing card fields are stored inline on the plan.
+
+export interface CatalogResponse<T> {
+    success: boolean;
+    message: string;
+    data?: T;
+}
+
+export interface FeatureDto {
+    featureID: number;
+    featureCode: string;
+    featureName: string;
+    isActive: boolean;
+}
+
+export interface PlanSubFeature {
+    key: string;
+    label: string;
+    enabled: boolean;
+}
+
+export interface PlanDto {
+    planID: number;
+    featureID: number;
+    featureCode: string;
+    planName: string;               // internal name
+    planDisplayName?: string | null; // customer-facing card name
+    planCode?: string | null;        // stable id used at checkout
+    billingCycle: string;            // 'MONTHLY' | 'ANNUAL'
+    unitPrice: number;               // monthly price
+    annualPrice?: number | null;
+    perUser: boolean;
+    perUserNote?: string | null;
+    blurb?: string | null;
+    highlight: boolean;
+    badge?: string | null;
+    features: string[];              // card bullet list
+    subFeatures: PlanSubFeature[];
+    razorpayPlanId?: string | null;
+    isActive: boolean;
+}
+
+// Features
+export const getCatalogFeatures = async (): Promise<FeatureDto[]> => {
+    const response = await api.get('/plancatalog/features');
+    return response.data;
+};
+
+export const upsertFeature = async (req: Partial<FeatureDto> & { featureCode: string; featureName: string }): Promise<CatalogResponse<FeatureDto>> => {
+    const response = await api.post('/plancatalog/features', req);
+    return response.data;
+};
+
+// Plans
+export const getPlans = async (featureId?: number): Promise<PlanDto[]> => {
+    const response = await api.get('/plancatalog/plans', { params: featureId ? { featureId } : {} });
+    return response.data;
+};
+
+export const upsertPlan = async (req: Partial<PlanDto> & { featureID: number; planName: string }): Promise<CatalogResponse<PlanDto>> => {
+    const response = await api.post('/plancatalog/plans', req);
+    return response.data;
+};
+
+export const deletePlan = async (planId: number): Promise<CatalogResponse<boolean>> => {
+    const response = await api.delete(`/plancatalog/plans/${planId}`);
+    return response.data;
+};

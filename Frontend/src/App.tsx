@@ -19,6 +19,8 @@ import ModuleAuthority from './pages/ModuleAuthority';
 import CreateModule from './pages/CreateModule';
 import DynamicModule from './pages/DynamicModule';
 import CompanySubscription from './pages/CompanySubscription';
+import FeatureSubscription from './pages/FeatureSubscription';
+import ManagePlans from './pages/ManagePlans';
 import ModuleGroupAuthority from './pages/ModuleGroupAuthority';
 import ERPTransactionDelete from './pages/ERPTransactionDelete';
 import ContentAuthority from './pages/ContentAuthority';
@@ -70,6 +72,8 @@ const AuthenticatedLayout = () => {
                         <Route path="/create-module" element={<CreateModule />} />
                         <Route path="/dynamic-module" element={<DynamicModule />} />
                         <Route path="/company-subscription" element={loginType === 'indus' ? <CompanySubscription /> : <Navigate to="/dashboard" replace />} />
+                        <Route path="/feature-subscription" element={loginType === 'indus' ? <FeatureSubscription /> : <Navigate to="/dashboard" replace />} />
+                        <Route path="/manage-plans" element={loginType === 'indus' ? <ManagePlans /> : <Navigate to="/dashboard" replace />} />
                         <Route path="/module-group-authority" element={<ModuleGroupAuthority />} />
                         <Route path="/erp-transaction-delete" element={<ERPTransactionDelete />} />
                         <Route path="/content-authority" element={<ContentAuthority />} />

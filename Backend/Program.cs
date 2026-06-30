@@ -38,6 +38,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(
                   "https://bulkimport.vercel.app",
                   "http://localhost:3000",
+                  "http://localhost:3001",
                   "http://localhost:5173"
               )
               .AllowAnyMethod()
@@ -120,6 +121,8 @@ builder.Services.AddScoped<IModuleAuthorityService, ModuleAuthorityService>();
 builder.Services.AddScoped<ISparePartMasterStockService, SparePartMasterStockService>();
 builder.Services.AddScoped<IToolStockService, ToolStockService>();
 builder.Services.AddScoped<ICompanySubscriptionService, CompanySubscriptionService>();
+builder.Services.AddScoped<IFeatureSubscriptionService, FeatureSubscriptionService>();
+builder.Services.AddScoped<IPlanCatalogService, PlanCatalogService>();
 builder.Services.AddScoped<IMessageFormatService, MessageFormatService>();
 builder.Services.AddScoped<IActivityLogService, ActivityLogService>();
 builder.Services.AddScoped<IDatabaseBackupRestoreService, DatabaseBackupRestoreService>();
@@ -553,6 +556,129 @@ using (var scope = app.Services.CreateScope())
         System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] IndusToolModuleMaster Init Error: {ex.Message}\n");
     }
 
+    // ── Subscription Plan Catalog (global Indus DB) ───────────────────────────
+    // Feature → FeaturePlan (tiers) → sub-features (stored on the plan as JSON,
+    // validated against the feature's FeatureSubFeature master list). Plans defined
+    // once here are applied to companies' tenant DBs (CompanyFeatureSubscription).
+    // Idempotent — safe to run on every startup.
+    try
+    {
+        var catalogConfig = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var indusConnStr = catalogConfig.GetConnectionString("IndusConnection");
+        if (!string.IsNullOrEmpty(indusConnStr))
+        {
+            using var indusConn = new SqlConnection(indusConnStr);
+            indusConn.Open();
+            System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Plan Catalog Init Started\n");
+
+            var createFeatureCmd = @"
+                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[Feature]') AND type in (N'U'))
+                BEGIN
+                    CREATE TABLE [Feature] (
+                        [FeatureID]   INT           PRIMARY KEY IDENTITY(1,1),
+                        [FeatureCode] NVARCHAR(20)  NOT NULL,
+                        [FeatureName] NVARCHAR(100) NOT NULL,
+                        [IsActive]    BIT           NOT NULL DEFAULT 1,
+                        [CreatedAt]   DATETIME      NOT NULL DEFAULT GETUTCDATE(),
+                        [UpdatedAt]   DATETIME      NULL,
+                        CONSTRAINT UQ_Feature_Code UNIQUE ([FeatureCode])
+                    );
+                END";
+            using (var cmd = new SqlCommand(createFeatureCmd, indusConn)) cmd.ExecuteNonQuery();
+
+            // 2-table model: no FeatureSubFeature master table. Sub-features + the
+            // customer-facing card fields live inline on FeaturePlan.
+            var createPlanCmd = @"
+                IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[FeaturePlan]') AND type in (N'U'))
+                BEGIN
+                    CREATE TABLE [FeaturePlan] (
+                        [PlanID]          INT            PRIMARY KEY IDENTITY(1,1),
+                        [FeatureID]       INT            NOT NULL,
+                        [PlanName]        NVARCHAR(100)  NOT NULL,
+                        [PlanDisplayName] NVARCHAR(150)  NULL,
+                        [PlanCode]        NVARCHAR(50)   NULL,
+                        [CompanyUserID]   NVARCHAR(50)   NULL,   -- NULL = global (all companies); value = override for that company only (matches Indus_Company_Authentication_For_Web_Modules.CompanyUserID)
+                        [CompanyName]     NVARCHAR(200)  NULL,   -- display label only (the company's name); never used for matching
+                        [BillingCycle]    NVARCHAR(10)   NOT NULL DEFAULT 'MONTHLY',
+                        [UnitPrice]       DECIMAL(12,2)  NOT NULL DEFAULT 0,
+                        [AnnualPrice]     DECIMAL(12,2)  NULL,
+                        [PerUser]         BIT            NOT NULL DEFAULT 0,
+                        [PerUserNote]     NVARCHAR(150)  NULL,
+                        [Blurb]           NVARCHAR(300)  NULL,
+                        [Highlight]       BIT            NOT NULL DEFAULT 0,
+                        [Badge]           NVARCHAR(50)   NULL,
+                        [FeaturesJson]    NVARCHAR(MAX)  NULL,
+                        [SubFeaturesJson] NVARCHAR(MAX)  NULL,
+                        [RazorpayPlanId]  NVARCHAR(64)   NULL,
+                        [IsActive]        BIT            NOT NULL DEFAULT 1,
+                        [CreatedAt]       DATETIME       NOT NULL DEFAULT GETUTCDATE(),
+                        [UpdatedAt]       DATETIME       NULL,
+                        CONSTRAINT FK_Plan_Feature FOREIGN KEY ([FeatureID]) REFERENCES [Feature]([FeatureID])
+                    );
+                END
+                -- Idempotent column adds for DBs created before the card fields existed.
+                IF COL_LENGTH('FeaturePlan','PlanDisplayName') IS NULL ALTER TABLE [FeaturePlan] ADD [PlanDisplayName] NVARCHAR(150) NULL;
+                IF COL_LENGTH('FeaturePlan','PlanCode')        IS NULL ALTER TABLE [FeaturePlan] ADD [PlanCode]        NVARCHAR(50)  NULL;
+                IF COL_LENGTH('FeaturePlan','AnnualPrice')     IS NULL ALTER TABLE [FeaturePlan] ADD [AnnualPrice]     DECIMAL(12,2) NULL;
+                IF COL_LENGTH('FeaturePlan','PerUserNote')     IS NULL ALTER TABLE [FeaturePlan] ADD [PerUserNote]     NVARCHAR(150) NULL;
+                IF COL_LENGTH('FeaturePlan','Blurb')           IS NULL ALTER TABLE [FeaturePlan] ADD [Blurb]           NVARCHAR(300) NULL;
+                IF COL_LENGTH('FeaturePlan','Highlight')       IS NULL ALTER TABLE [FeaturePlan] ADD [Highlight]       BIT NOT NULL DEFAULT 0;
+                IF COL_LENGTH('FeaturePlan','Badge')           IS NULL ALTER TABLE [FeaturePlan] ADD [Badge]           NVARCHAR(50)  NULL;
+                IF COL_LENGTH('FeaturePlan','FeaturesJson')    IS NULL ALTER TABLE [FeaturePlan] ADD [FeaturesJson]    NVARCHAR(MAX) NULL;
+                -- Per-company override keyed on the GLOBALLY-UNIQUE CompanyUserID (the company
+                -- login id in Indus_Company_Authentication_For_Web_Modules). NULL = global.
+                -- CompanyName is a display label only. NOTE: the earlier CompanyID(int) attempt
+                -- was unsafe (CompanyID is per-tenant-DB, not unique here) — drop it if present.
+                IF COL_LENGTH('FeaturePlan','CompanyUserID')   IS NULL ALTER TABLE [FeaturePlan] ADD [CompanyUserID]   NVARCHAR(50)  NULL;
+                IF COL_LENGTH('FeaturePlan','CompanyName')     IS NULL ALTER TABLE [FeaturePlan] ADD [CompanyName]     NVARCHAR(200) NULL;
+                IF COL_LENGTH('FeaturePlan','CompanyID')       IS NOT NULL ALTER TABLE [FeaturePlan] DROP COLUMN [CompanyID];";
+            using (var cmd = new SqlCommand(createPlanCmd, indusConn)) cmd.ExecuteNonQuery();
+
+            // ── Seed existing reality (idempotent: each guarded by NOT EXISTS) ──
+            // Features: Sahay, Email
+            var seedFeatures = new[]
+            {
+                ("Sahay", "Sahay"),
+                ("Email", "Email"),
+            };
+            foreach (var (code, name) in seedFeatures)
+            {
+                var ins = $@"
+                    IF NOT EXISTS (SELECT 1 FROM Feature WHERE FeatureCode = '{code}')
+                        INSERT INTO Feature (FeatureCode, FeatureName) VALUES ('{code}', '{name}');";
+                using var cmd = new SqlCommand(ins, indusConn); cmd.ExecuteNonQuery();
+            }
+
+
+            // Current plans (matches the existing IndusWebApi ResolvePlan amounts)
+            var seedPlans = new[]
+            {
+                ("Sahay", "Sahay Pro",      "MONTHLY", 8000m, true,  "[{\"key\":\"basic_qa\",\"label\":\"Business-data Q&A\",\"enabled\":true},{\"key\":\"auto_charts\",\"label\":\"Auto-charts & visualisation\",\"enabled\":true},{\"key\":\"dashboards\",\"label\":\"Dashboards\",\"enabled\":true},{\"key\":\"ai_insights\",\"label\":\"AI insights\",\"enabled\":true}]"),
+                ("Email", "Email Standard", "MONTHLY", 1999m, false, "[{\"key\":\"scheduled\",\"label\":\"Scheduled emails\",\"enabled\":true}]"),
+            };
+            foreach (var (featCode, planName, cycle, price, perUser, subsJson) in seedPlans)
+            {
+                var ins = $@"
+                    IF NOT EXISTS (
+                        SELECT 1 FROM FeaturePlan p
+                        JOIN Feature f ON f.FeatureID = p.FeatureID
+                        WHERE f.FeatureCode = '{featCode}' AND p.PlanName = '{planName}' AND p.BillingCycle = '{cycle}')
+                    INSERT INTO FeaturePlan (FeatureID, PlanName, BillingCycle, UnitPrice, PerUser, SubFeaturesJson)
+                        SELECT FeatureID, '{planName}', '{cycle}', {price}, {(perUser ? 1 : 0)}, '{subsJson.Replace("'", "''")}'
+                        FROM Feature WHERE FeatureCode = '{featCode}';";
+                using var cmd = new SqlCommand(ins, indusConn); cmd.ExecuteNonQuery();
+            }
+
+            indusConn.Close();
+            System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Plan Catalog Init Completed\n");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Plan Catalog Init Error: {ex.Message}");
+        System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] Plan Catalog Init Error: {ex.Message}\n");
+    }
+
     // ItemMasterDetails Schema Migration
     try
     {
@@ -616,6 +742,11 @@ using (var scope = app.Services.CreateScope())
         Console.WriteLine($"ItemConsumptionDetail Migration Error: {ex.Message}");
         System.IO.File.AppendAllText("debug_log.txt", $"[{DateTime.Now}] ItemConsumptionDetail Migration Error: {ex.Message}\n");
     }
+
+    // NOTE: Feature subscriptions are now TENANT-LOCAL (Option A) — the
+    // CompanyFeatureSubscription table and UserMaster.PremiumFeatures column live
+    // in each company's OWN database and are created on-demand by
+    // FeatureSubscriptionService.EnsureTenantSchemaAsync. No central (Indus) tables.
 }
 
 // Configure the HTTP request pipeline.
