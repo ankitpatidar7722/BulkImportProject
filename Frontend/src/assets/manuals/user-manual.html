@@ -1020,4 +1020,15 @@ try {
   const saved = localStorage.getItem('ej-lang')
   setLang(saved === 'hi' ? 'hi' : 'en')
 } catch(e) { setLang('en') }
+
+// Fix anchor navigation inside srcDoc iframes — Chrome blocks href="#id" navigation
+// from about:srcdoc; intercept and use scrollIntoView instead.
+document.addEventListener('click', function(e) {
+  var a = e.target.closest('a[href^="#"]')
+  if (!a) return
+  e.preventDefault()
+  var id = a.getAttribute('href').slice(1)
+  var el = document.getElementById(id)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+})
 </script>
