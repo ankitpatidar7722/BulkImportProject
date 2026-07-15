@@ -17,8 +17,21 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     const [showUserMenu, setShowUserMenu] = React.useState(false);
     const [showActivityLog, setShowActivityLog] = React.useState(false);
     const [showManual, setShowManual] = React.useState(false);
+    const [manualHtml, setManualHtml] = React.useState('');
+    const [manualLoading, setManualLoading] = React.useState(false);
 
     const manualUrl = loginType === 'indus' ? '/indus-admin-manual.html' : '/user-manual.html';
+
+    // Fetch HTML content so we can use srcdoc — avoids X-Frame-Options blocks on Vercel/IIS
+    React.useEffect(() => {
+        if (!showManual) return;
+        setManualLoading(true);
+        setManualHtml('');
+        fetch(manualUrl)
+            .then(r => r.text())
+            .then(html => { setManualHtml(html); setManualLoading(false); })
+            .catch(() => { setManualHtml('<body style="font-family:sans-serif;padding:40px"><h2>Could not load manual.</h2><p>Please try again.</p></body>'); setManualLoading(false); });
+    }, [showManual, manualUrl]);
     const userMenuRef = React.useRef<HTMLDivElement>(null);
 
     // Close dropdown when clicking outside
@@ -212,12 +225,25 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                                 Close
                             </button>
                         </div>
-                        {/* iframe fills remaining popup height */}
-                        <iframe
-                            src={manualUrl}
-                            className="flex-1 w-full border-0"
-                            title="User Manual"
-                        />
+                        {/* srcdoc bypasses Vercel/IIS X-Frame-Options blocks */}
+                        {manualLoading ? (
+                            <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900">
+                                <div className="flex flex-col items-center gap-3 text-gray-400">
+                                    <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                                    </svg>
+                                    <span className="text-sm">Loading manual…</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <iframe
+                                srcdoc={manualHtml}
+                                className="flex-1 w-full border-0"
+                                title="User Manual"
+                                sandbox="allow-scripts allow-same-origin"
+                            />
+                        )}
                     </div>
                 </div>,
                 document.body
