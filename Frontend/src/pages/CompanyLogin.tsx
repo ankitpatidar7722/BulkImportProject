@@ -198,6 +198,8 @@ const CompanyLogin: React.FC = () => {
                                     </div>
                                     <input
                                         type="text"
+                                        id="company-id"
+                                        name="company-id"
                                         value={companyUser}
                                         onChange={(e) => {
                                             setCompanyUser(e.target.value);
@@ -209,7 +211,7 @@ const CompanyLogin: React.FC = () => {
                                         placeholder="Ex: COMP001"
                                         required
                                         autoFocus
-                                        autoComplete="off"
+                                        autoComplete="organization"
                                     />
                                     
                                     {/* Custom Suggestions Dropdown */}
