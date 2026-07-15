@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Moon, Sun, User, Menu, Building2, LogOut, Settings, UserCircle, Activity } from 'lucide-react';
+import { Moon, Sun, User, Menu, Building2, LogOut, Settings, UserCircle, Activity, BookOpen, X } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import ActivityLogViewer from './ActivityLogViewer';
@@ -16,6 +16,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
     const [showUserMenu, setShowUserMenu] = React.useState(false);
     const [showActivityLog, setShowActivityLog] = React.useState(false);
+    const [showManual, setShowManual] = React.useState(false);
+
+    const manualUrl = loginType === 'indus' ? '/indus-admin-manual.html' : '/user-manual.html';
     const userMenuRef = React.useRef<HTMLDivElement>(null);
 
     // Close dropdown when clicking outside
@@ -58,6 +61,16 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                 </div>
 
                 <div className="flex items-center gap-4">
+                    {/* User Manual Button */}
+                    <button
+                        onClick={() => setShowManual(true)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white hover:bg-gray-100 transition-colors text-[#0F294D] text-sm font-semibold shadow-md"
+                        title="User Manual"
+                    >
+                        <BookOpen className="w-4 h-4" />
+                        <span className="hidden sm:inline">User Manual</span>
+                    </button>
+
                     {/* Theme Toggle */}
                     <button
                         onClick={toggleTheme}
@@ -171,6 +184,44 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
                     document.body
                 )
             }
+
+            {/* User Manual Modal */}
+            {showManual && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="flex flex-col w-full max-w-6xl h-[90vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
+                        {/* Modal header bar */}
+                        <div className="flex items-center justify-between px-5 py-3 bg-[#0F294D] flex-shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                                    <BookOpen className="w-4 h-4 text-orange-400" />
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-white">
+                                        {loginType === 'indus' ? 'Indus Admin Portal — User Manual' : 'ExcelJet — User Manual'}
+                                    </p>
+                                    <p className="text-xs text-gray-400">
+                                        {loginType === 'indus' ? 'Admin reference guide (EN / हिं)' : 'Application reference guide (EN / हिं)'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowManual(false)}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                                Close
+                            </button>
+                        </div>
+                        {/* iframe fills remaining popup height */}
+                        <iframe
+                            src={manualUrl}
+                            className="flex-1 w-full border-0"
+                            title="User Manual"
+                        />
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {/* Activity Log Modal */}
             {showActivityLog && createPortal(
