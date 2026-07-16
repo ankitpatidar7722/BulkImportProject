@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../components/Login.css';
 import { useAuth } from '../context/AuthContext';
-import { Building2, ArrowRight, Loader2, Lock, User } from 'lucide-react';
+import { Building2, ArrowRight, Loader2, Lock, User, Shield, Zap, Database } from 'lucide-react';
 import { useMessageModal } from '../components/MessageModal';
 
-// ─── Typewriter Animation ─────────────────────────────────────────────────────
+// ─── Typewriter ───────────────────────────────────────────────────────────────
 const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[]; speed?: number; wait?: number }) => {
     const [index, setIndex] = useState(0);
     const [subIndex, setSubIndex] = useState(0);
@@ -19,21 +19,9 @@ const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[]; spee
 
     useEffect(() => {
         if (index === words.length) return;
-
-        if (subIndex === words[index].length + 1 && !reverse) {
-            setReverse(true);
-            return;
-        }
-        if (subIndex === 0 && reverse) {
-            setReverse(false);
-            setIndex((p) => (p + 1) % words.length);
-            return;
-        }
-
-        const t = setTimeout(
-            () => setSubIndex((p) => p + (reverse ? -1 : 1)),
-            reverse ? 75 : subIndex === words[index].length ? wait : speed
-        );
+        if (subIndex === words[index].length + 1 && !reverse) { setReverse(true); return; }
+        if (subIndex === 0 && reverse) { setReverse(false); setIndex((p) => (p + 1) % words.length); return; }
+        const t = setTimeout(() => setSubIndex((p) => p + (reverse ? -1 : 1)), reverse ? 75 : subIndex === words[index].length ? wait : speed);
         return () => clearTimeout(t);
     }, [subIndex, index, reverse, words, speed, wait]);
 
@@ -45,19 +33,25 @@ const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[]; spee
     );
 };
 
+// ─── Feature Badge (right panel) ─────────────────────────────────────────────
+const FeatureBadge = ({ icon: Icon, text, delay }: { icon: any; text: string; delay: string }) => (
+    <div className="flex items-center gap-3 bg-white/10 border border-white/15 rounded-2xl px-4 py-3 backdrop-blur-sm animate-fade-in-up" style={{ animationDelay: delay }}>
+        <div className="w-8 h-8 rounded-xl bg-orange-500/20 border border-orange-400/30 flex items-center justify-center flex-shrink-0">
+            <Icon className="w-4 h-4 text-orange-300" />
+        </div>
+        <span className="text-sm text-white/80 font-medium">{text}</span>
+    </div>
+);
+
 // ─── CompanyLogin Page ────────────────────────────────────────────────────────
 const CompanyLogin: React.FC = () => {
     const { companyLogin, indusLogin, isLoading, loginStep, loginType } = useAuth();
     const navigate = useNavigate();
     const { showMessage, ModalRenderer } = useMessageModal();
-    
+
     useEffect(() => {
-        if (loginStep === 1) {
-            navigate('/UserLogin', { replace: true });
-        } else if (loginStep === 2) {
-            const path = loginType === 'indus' ? '/company-subscription' : '/dashboard';
-            navigate(path, { replace: true });
-        }
+        if (loginStep === 1) navigate('/UserLogin', { replace: true });
+        else if (loginStep === 2) navigate(loginType === 'indus' ? '/company-subscription' : '/dashboard', { replace: true });
     }, [loginStep, loginType, navigate]);
 
     const [loginMode, setLoginMode] = useState<'customer' | 'indus'>('customer');
@@ -66,12 +60,8 @@ const CompanyLogin: React.FC = () => {
     const [indusUser, setIndusUser] = useState('');
     const [indusPass, setIndusPass] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [recentCompanies, setRecentCompanies] = useState<string[]>(() =>
-        JSON.parse(localStorage.getItem('recent_companies') || '[]')
-    );
-    const [recentIndusUsers, setRecentIndusUsers] = useState<string[]>(() =>
-        JSON.parse(localStorage.getItem('recent_indus_users') || '[]')
-    );
+    const [recentCompanies, setRecentCompanies] = useState<string[]>(() => JSON.parse(localStorage.getItem('recent_companies') || '[]'));
+    const [recentIndusUsers, setRecentIndusUsers] = useState<string[]>(() => JSON.parse(localStorage.getItem('recent_indus_users') || '[]'));
     const [showCompSuggestions, setShowCompSuggestions] = useState(false);
     const [showIndusSuggestions, setShowIndusSuggestions] = useState(false);
 
@@ -93,9 +83,7 @@ const CompanyLogin: React.FC = () => {
             await companyLogin({ companyUserID: companyUser, password: companyPass });
         } catch (error: any) {
             showMessage('error', 'Login Failed', error.message || 'Invalid company credentials. Please try again.');
-        } finally {
-            setIsSubmitting(false);
-        }
+        } finally { setIsSubmitting(false); }
     };
 
     const handleIndusSubmit = async (e: React.FormEvent) => {
@@ -106,15 +94,14 @@ const CompanyLogin: React.FC = () => {
             await indusLogin({ webUserName: indusUser, password: indusPass });
         } catch (error: any) {
             showMessage('error', 'Login Failed', error.message || 'Invalid Indus credentials. Please try again.');
-        } finally {
-            setIsSubmitting(false);
-        }
+        } finally { setIsSubmitting(false); }
     };
 
-    // ─── Loading Spinner ──────────────────────────────────────────────────────
+    const isCustomer = loginMode === 'customer';
+
     if (isLoading) {
         return (
-            <div className="flex justify-center items-center h-screen bg-gray-50">
+            <div className="flex justify-center items-center h-screen bg-slate-50">
                 <div className="relative">
                     <div className="w-20 h-20 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
                     <div className="absolute top-2 left-2 w-16 h-16 border-4 border-transparent border-b-indigo-500/50 rounded-full animate-spin-reverse" />
@@ -126,287 +113,219 @@ const CompanyLogin: React.FC = () => {
         );
     }
 
-    // ─── Render ───────────────────────────────────────────────────────────────
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 relative overflow-hidden p-4 font-sans text-gray-900 selection:bg-orange-500/20 selection:text-orange-700">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 relative overflow-hidden p-4 font-sans">
             {ModalRenderer}
 
-            {/* Background Ambient Glows */}
-            <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] bg-orange-200/30 rounded-full blur-[120px] animate-pulse-slow" />
-            <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] bg-indigo-200/30 rounded-full blur-[120px] animate-pulse-slow delay-1000" />
-            <div className="absolute top-[30%] left-[40%] w-[30vw] h-[30vw] bg-blue-200/20 rounded-full blur-[100px] animate-blob" />
+            {/* Subtle ambient blobs */}
+            <div className="absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] bg-orange-300/20 rounded-full blur-[120px] animate-pulse-slow pointer-events-none" />
+            <div className="absolute bottom-[-10%] right-[-5%] w-[40vw] h-[40vw] bg-indigo-300/25 rounded-full blur-[120px] animate-pulse-slow delay-1000 pointer-events-none" />
+            <div className="absolute top-[40%] left-[45%] w-[20vw] h-[20vw] bg-blue-200/20 rounded-full blur-[80px] animate-blob pointer-events-none" />
 
             {/* Main Card */}
-            <div className="relative w-full max-w-5xl bg-white/70 backdrop-blur-2xl border border-white/50 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] flex flex-col lg:flex-row overflow-hidden group hover:shadow-[0_30px_70px_-10px_rgba(0,0,0,0.1)] transition-shadow duration-700">
+            <div className="relative w-full max-w-5xl bg-white rounded-3xl shadow-[0_20px_70px_-15px_rgba(15,41,77,0.18)] flex flex-col lg:flex-row overflow-hidden border border-slate-100">
 
-                {/* ── LEFT PANEL: FORM ──────────────────────────────────────── */}
-                <div className="w-full lg:w-[45%] p-6 sm:p-8 flex flex-col justify-center relative z-20 bg-white/40 border-r border-white/50">
-                    <div className="mb-5">
-                        <h2 className="text-2xl font-extrabold text-gray-900 mb-1.5 tracking-tight">
-                            <span className={`text-transparent bg-clip-text bg-gradient-to-r ${loginMode === 'customer' ? 'from-orange-500 to-red-600' : 'from-indigo-500 to-purple-600'}`}>
-                                Sign In
-                            </span>
+                {/* ── LEFT: FORM ─────────────────────────────────────────────── */}
+                <div className="w-full lg:w-[45%] p-8 sm:p-10 flex flex-col justify-center relative z-20">
+
+                    {/* Logo mark */}
+                    <div className="flex items-center gap-2.5 mb-8">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-md shadow-orange-500/30">
+                            <Database className="w-5 h-5 text-white" />
+                        </div>
+                        <span className="text-[#0F294D] font-bold text-lg tracking-tight">INDAS ESTIMO</span>
+                    </div>
+
+                    <div className="mb-7">
+                        <h2 className="text-[28px] font-extrabold text-[#0F294D] mb-1.5 tracking-tight">
+                            Welcome back
                         </h2>
-                        <p className="text-gray-500 text-sm font-medium">
-                            {loginMode === 'customer'
-                                ? 'Enter your company credentials to access the portal'
-                                : 'Enter your Indus credentials to access the portal'}
+                        <p className="text-slate-400 text-sm">
+                            {isCustomer ? 'Sign in to access your company portal' : 'Sign in to Indus admin portal'}
                         </p>
                     </div>
 
-                    {/* Login Type Radio Buttons */}
-                    <div className="flex items-center gap-5 mb-5">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                                type="radio"
-                                name="loginMode"
-                                value="customer"
-                                checked={loginMode === 'customer'}
-                                onChange={() => setLoginMode('customer')}
-                                className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-orange-500"
-                            />
-                            <span className={`text-[13px] font-semibold ${loginMode === 'customer' ? 'text-orange-600' : 'text-gray-500'}`}>
-                                Customer Login
-                            </span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                                type="radio"
-                                name="loginMode"
-                                value="indus"
-                                checked={loginMode === 'indus'}
-                                onChange={() => setLoginMode('indus')}
-                                className="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                            />
-                            <span className={`text-[13px] font-semibold ${loginMode === 'indus' ? 'text-indigo-600' : 'text-gray-500'}`}>
-                                Indus Login
-                            </span>
-                        </label>
+                    {/* ── Toggle Pill ── */}
+                    <div className="relative flex bg-slate-100 border border-slate-200 rounded-2xl p-1 mb-7">
+                        <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl transition-all duration-300 ease-out shadow-sm ${isCustomer ? 'left-1 bg-gradient-to-r from-orange-500 to-red-500' : 'left-[calc(50%+3px)] bg-gradient-to-r from-[#0F294D] to-indigo-700'}`} />
+                        <button
+                            type="button"
+                            onClick={() => setLoginMode('customer')}
+                            className={`relative z-10 flex-1 text-[13px] font-semibold py-2.5 rounded-xl transition-colors duration-200 ${isCustomer ? 'text-white' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            Customer Login
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setLoginMode('indus')}
+                            className={`relative z-10 flex-1 text-[13px] font-semibold py-2.5 rounded-xl transition-colors duration-200 ${!isCustomer ? 'text-white' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            Indus Login
+                        </button>
                     </div>
 
-                    {loginMode === 'customer' ? (
-                        /* ── Customer Login Form ──────────────────────────────── */
-                        <form onSubmit={handleCompanySubmit} className="space-y-5">
-                            {/* Company ID */}
+                    {/* ── Customer Form ── */}
+                    {isCustomer ? (
+                        <form onSubmit={handleCompanySubmit} className="space-y-4">
                             <div className="space-y-1.5 group">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
+                                <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400 group-focus-within:text-orange-500 transition-colors">
                                     Company ID
                                 </label>
                                 <div className="relative">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
-                                        <Building2 className="w-4 h-4 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
+                                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 group-focus-within:bg-orange-50 flex items-center justify-center transition-colors">
+                                        <Building2 className="w-4 h-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
                                     </div>
                                     <input
                                         type="text"
-                                        id="company-id"
-                                        name="company-id"
                                         value={companyUser}
-                                        onChange={(e) => {
-                                            setCompanyUser(e.target.value);
-                                            setShowCompSuggestions(true);
-                                        }}
+                                        onChange={(e) => { setCompanyUser(e.target.value); setShowCompSuggestions(true); }}
                                         onFocus={() => setShowCompSuggestions(true)}
                                         onBlur={() => setTimeout(() => setShowCompSuggestions(false), 200)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-orange-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(249,115,22,0.12)] transition-all placeholder-slate-300 font-medium"
                                         placeholder="Ex: COMP001"
                                         required
                                         autoFocus
                                         autoComplete="organization"
                                     />
-                                    
-                                    {/* Custom Suggestions Dropdown */}
                                     {showCompSuggestions && recentCompanies.filter(c => c.toLowerCase().includes(companyUser.toLowerCase())).length > 0 && (
-                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto py-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                                            {recentCompanies
-                                                .filter(c => c.toLowerCase().includes(companyUser.toLowerCase()))
-                                                .map((c, index) => (
-                                                    <div
-                                                        key={index}
-                                                        className="px-4 py-2.5 hover:bg-orange-50 cursor-pointer text-[14px] text-gray-700 font-medium flex items-center gap-3 transition-colors"
-                                                        onClick={() => {
-                                                            setCompanyUser(c);
-                                                            setShowCompSuggestions(false);
-                                                        }}
-                                                    >
-                                                        <Building2 className="w-4 h-4 text-orange-400" />
-                                                        {c}
-                                                    </div>
-                                                ))}
+                                        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto py-1">
+                                            {recentCompanies.filter(c => c.toLowerCase().includes(companyUser.toLowerCase())).map((c, i) => (
+                                                <div key={i} className="px-4 py-2.5 hover:bg-orange-50 cursor-pointer text-[14px] text-slate-700 font-medium flex items-center gap-3 transition-colors"
+                                                    onClick={() => { setCompanyUser(c); setShowCompSuggestions(false); }}>
+                                                    <Building2 className="w-4 h-4 text-orange-400" />{c}
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Password */}
                             <div className="space-y-1.5 group">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-orange-600 transition-colors ml-1">
-                                    Password
-                                </label>
+                                <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400 group-focus-within:text-orange-500 transition-colors">Password</label>
                                 <div className="relative">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-orange-100 transition-colors">
-                                        <Lock className="w-4 h-4 text-gray-400 group-focus-within:text-orange-500 transition-colors" />
+                                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 group-focus-within:bg-orange-50 flex items-center justify-center transition-colors">
+                                        <Lock className="w-4 h-4 text-slate-400 group-focus-within:text-orange-500 transition-colors" />
                                     </div>
                                     <input
                                         type="password"
                                         value={companyPass}
                                         onChange={(e) => setCompanyPass(e.target.value)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-orange-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-orange-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(249,115,22,0.12)] transition-all placeholder-slate-300 font-medium"
                                         placeholder="••••••••"
                                         required
                                     />
                                 </div>
                             </div>
 
-                            {/* Submit */}
-                            <button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="w-full mt-6 bg-gradient-to-r from-orange-600 to-red-600 text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_10px_30px_-10px_rgba(234,88,12,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(234,88,12,0.4)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
-                            >
-                                <span className="relative z-10 flex items-center tracking-wide">
-                                    {isSubmitting ? (
-                                        <Loader2 className="animate-spin w-5 h-5" />
-                                    ) : (
-                                        <>
-                                            Continue Securely
-                                            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                                        </>
-                                    )}
+                            <button type="submit" disabled={isSubmitting}
+                                className="w-full mt-2 relative overflow-hidden bg-gradient-to-r from-orange-500 to-red-500 text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_8px_24px_-6px_rgba(249,115,22,0.45)] hover:shadow-[0_12px_30px_-4px_rgba(249,115,22,0.55)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 flex items-center justify-center group">
+                                <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/15 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-in-out" />
+                                <span className="relative flex items-center gap-2">
+                                    {isSubmitting ? <Loader2 className="animate-spin w-5 h-5" /> : <>Continue Securely <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>}
                                 </span>
                             </button>
                         </form>
                     ) : (
-                        /* ── Indus Login Form ─────────────────────────────────── */
-                        <form onSubmit={handleIndusSubmit} className="space-y-5">
-                            {/* Username */}
+                        /* ── Indus Form ── */
+                        <form onSubmit={handleIndusSubmit} className="space-y-4">
                             <div className="space-y-1.5 group">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
-                                    Username
-                                </label>
+                                <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400 group-focus-within:text-indigo-600 transition-colors">Username</label>
                                 <div className="relative">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
-                                        <User className="w-4 h-4 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
+                                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 group-focus-within:bg-indigo-50 flex items-center justify-center transition-colors">
+                                        <User className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
                                     </div>
                                     <input
                                         type="text"
                                         value={indusUser}
-                                        onChange={(e) => {
-                                            setIndusUser(e.target.value);
-                                            setShowIndusSuggestions(true);
-                                        }}
+                                        onChange={(e) => { setIndusUser(e.target.value); setShowIndusSuggestions(true); }}
                                         onFocus={() => setShowIndusSuggestions(true)}
                                         onBlur={() => setTimeout(() => setShowIndusSuggestions(false), 200)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all placeholder-slate-300 font-medium"
                                         placeholder="Enter username"
                                         required
                                         autoComplete="off"
                                     />
-
-                                    {/* Custom Suggestions Dropdown */}
                                     {showIndusSuggestions && recentIndusUsers.filter(u => u.toLowerCase().includes(indusUser.toLowerCase())).length > 0 && (
-                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto py-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                                            {recentIndusUsers
-                                                .filter(u => u.toLowerCase().includes(indusUser.toLowerCase()))
-                                                .map((u, index) => (
-                                                    <div
-                                                        key={index}
-                                                        className="px-4 py-2.5 hover:bg-indigo-50 cursor-pointer text-[14px] text-gray-700 font-medium flex items-center gap-3 transition-colors"
-                                                        onClick={() => {
-                                                            setIndusUser(u);
-                                                            setShowIndusSuggestions(false);
-                                                        }}
-                                                    >
-                                                        <User className="w-4 h-4 text-indigo-400" />
-                                                        {u}
-                                                    </div>
-                                                ))}
+                                        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto py-1">
+                                            {recentIndusUsers.filter(u => u.toLowerCase().includes(indusUser.toLowerCase())).map((u, i) => (
+                                                <div key={i} className="px-4 py-2.5 hover:bg-indigo-50 cursor-pointer text-[14px] text-slate-700 font-medium flex items-center gap-3 transition-colors"
+                                                    onClick={() => { setIndusUser(u); setShowIndusSuggestions(false); }}>
+                                                    <User className="w-4 h-4 text-indigo-500" />{u}
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Password */}
                             <div className="space-y-1.5 group">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
-                                    Password
-                                </label>
+                                <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400 group-focus-within:text-indigo-600 transition-colors">Password</label>
                                 <div className="relative">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
-                                        <Lock className="w-4 h-4 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
+                                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 group-focus-within:bg-indigo-50 flex items-center justify-center transition-colors">
+                                        <Lock className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
                                     </div>
                                     <input
                                         type="password"
                                         value={indusPass}
                                         onChange={(e) => setIndusPass(e.target.value)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all placeholder-slate-300 font-medium"
                                         placeholder="••••••••"
                                         required
                                     />
                                 </div>
                             </div>
 
-                            {/* Submit */}
-                            <button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="w-full mt-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_10px_30px_-10px_rgba(79,70,229,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(79,70,229,0.4)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
-                            >
-                                <span className="relative z-10 flex items-center tracking-wide">
-                                    {isSubmitting ? (
-                                        <Loader2 className="animate-spin w-5 h-5" />
-                                    ) : (
-                                        <>
-                                            Sign In
-                                            <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                                        </>
-                                    )}
+                            <button type="submit" disabled={isSubmitting}
+                                className="w-full mt-2 relative overflow-hidden bg-gradient-to-r from-[#0F294D] to-indigo-700 text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_8px_24px_-6px_rgba(15,41,77,0.45)] hover:shadow-[0_12px_30px_-4px_rgba(15,41,77,0.55)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 flex items-center justify-center group">
+                                <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-in-out" />
+                                <span className="relative flex items-center gap-2">
+                                    {isSubmitting ? <Loader2 className="animate-spin w-5 h-5" /> : <>Sign In <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>}
                                 </span>
                             </button>
                         </form>
                     )}
+
+                    <p className="mt-7 text-center text-xs text-slate-300">&copy; 2026 Printude AI · Secured with JWT &amp; 2FA</p>
                 </div>
 
-                {/* ── RIGHT PANEL: VISUALS ──────────────────────────────────── */}
-                <div className="hidden lg:flex w-[55%] bg-gradient-to-br from-indigo-50 to-slate-100 relative overflow-hidden items-center justify-center">
-                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay" />
+                {/* ── RIGHT: BRAND PANEL (navy) ────────────────────────────────── */}
+                <div className="hidden lg:flex w-[55%] bg-gradient-to-br from-[#0F294D] via-[#1a3a6e] to-[#0e2240] relative overflow-hidden items-center justify-center">
+                    {/* subtle grid pattern */}
+                    <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px]" />
+                    {/* glow blobs */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-orange-500/10 rounded-full blur-[90px]" />
+                    <div className="absolute top-0 right-0 w-[250px] h-[250px] bg-indigo-500/10 rounded-full blur-[80px]" />
 
-                    <div className="relative z-10 flex flex-col items-center justify-center text-center p-6 w-full max-w-xl">
-                        {/* Floating Robot */}
-                        <div className="relative mb-8 animate-float group perspective-1000">
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] bg-white rounded-full blur-[60px] opacity-90" />
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[360px] h-[360px] border border-indigo-200 rounded-full animate-[spin_12s_linear_infinite]" />
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] border border-orange-200 rounded-full animate-[spin_18s_linear_infinite_reverse]" />
+                    <div className="relative z-10 flex flex-col items-center text-center px-8 py-12 w-full">
+                        {/* Logo with rotating rings */}
+                        <div className="relative mb-8 animate-float">
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[260px] h-[260px] border border-white/8 rounded-full animate-[spin_20s_linear_infinite]" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] border border-orange-400/10 rounded-full animate-[spin_28s_linear_infinite_reverse]" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[220px] h-[220px] bg-white/5 rounded-full blur-sm" />
                             <img
                                 src="/printude.ai.png"
-                                alt="AI Assistant"
-                                className="w-[380px] h-auto object-contain relative z-10 drop-shadow-[0_20px_40px_rgba(0,0,0,0.15)] transform group-hover:scale-105 transition-transform duration-500 ease-out"
+                                alt="Indus Analytics"
+                                className="w-[240px] h-auto object-contain relative z-10 drop-shadow-[0_20px_50px_rgba(249,115,22,0.25)]"
                             />
                         </div>
 
-                        {/* Animated Text */}
-                        <div className="min-h-[80px] w-full">
-                            <h2 className="text-2xl md:text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-indigo-800 to-gray-600 tracking-tight leading-tight min-h-[44px]">
-                                <Typewriter
-                                    words={['Welcome Back!', 'Secure Login...', 'Bulk Import Master...', 'AI-Powered Solutions.', 'Efficiency Redefined.']}
-                                    speed={100}
-                                    wait={2000}
-                                />
-                            </h2>
-                            <p className="mt-3 text-gray-500 text-sm font-medium tracking-wide animate-pulse-slow">
-                                Your gateway to seamless data management
-                            </p>
+                        <h2 className="text-2xl font-extrabold text-white tracking-tight min-h-[40px] mb-2">
+                            <Typewriter words={['Welcome Back!', 'Secure Login...', 'Indas Estimo Master', 'AI-Powered ERP', 'Efficiency Redefined.']} speed={100} wait={2200} />
+                        </h2>
+                        <p className="text-white/40 text-sm mb-10">Your gateway to seamless data management</p>
+
+                        {/* Feature badges */}
+                        <div className="w-full max-w-xs space-y-3">
+                            <FeatureBadge icon={Zap} text="Import 10,000+ rows from Excel in seconds" delay="0ms" />
+                            <FeatureBadge icon={Shield} text="Smart duplicate detection & auto-validation" delay="80ms" />
+                            <FeatureBadge icon={Database} text="Multi-company, multi-year data control" delay="160ms" />
                         </div>
                     </div>
 
-                    {/* Floating Particles */}
-                    <div className="absolute top-16 right-16 w-2.5 h-2.5 bg-orange-400 rounded-full blur-[2px] animate-blob delay-100" />
-                    <div className="absolute bottom-24 left-16 w-2 h-2 bg-indigo-400 rounded-full blur-[1px] animate-blob delay-300" />
+                    {/* corner dots */}
+                    <div className="absolute top-12 right-12 w-2 h-2 bg-orange-400/50 rounded-full animate-ping" />
+                    <div className="absolute bottom-16 left-12 w-1.5 h-1.5 bg-blue-300/40 rounded-full animate-ping delay-700" />
                 </div>
-            </div>
-
-            {/* Footer */}
-            <div className="absolute bottom-4 text-center text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                &copy; 2026 Printude AI. Secured with JWT &amp; 2FA.
             </div>
         </div>
     );

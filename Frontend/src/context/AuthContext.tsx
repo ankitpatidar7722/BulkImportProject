@@ -30,6 +30,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const AUTH_KEYS = ['authToken', 'companyToken', 'companyName', 'userName', 'fYear', 'loginType', 'authorizedModules', 'enableAutoLogin'];
+const clearAuthStorage = () => AUTH_KEYS.forEach(k => localStorage.removeItem(k));
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [loginStep, setLoginStep] = useState<0 | 1 | 2>(0);
     const [loginType, setLoginType] = useState<LoginType>('customer');
@@ -42,7 +45,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     useEffect(() => {
         // Register 401 handler FIRST — before any API calls — so it catches session-expired responses
         const handleUnauthorized = () => {
-            localStorage.clear();
+            clearAuthStorage();
             setLoginStep(0);
             setLoginType('customer');
             setCompanyName('');
@@ -159,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const logout = () => {
         logoutApi();
-        localStorage.clear();
+        clearAuthStorage();
         setLoginStep(0);
         setLoginType('customer');
         setCompanyName('');

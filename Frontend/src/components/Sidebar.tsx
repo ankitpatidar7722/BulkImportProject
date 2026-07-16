@@ -75,9 +75,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, isCollapsed, onToggl
                 <div className={`p-6 border-b border-gray-800 flex justify-between items-center`}>
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-green-500 rounded flex items-center justify-center font-bold text-lg text-white">
-                            E
+                            I
                         </div>
-                        {!isCollapsed && <span className="text-xl font-bold text-white tracking-tight">ExcelJet</span>}
+                        {!isCollapsed && <span className="text-xl font-bold text-white tracking-tight">Indas Estimo</span>}
                     </div>
 
                     <div className="flex items-center gap-2">

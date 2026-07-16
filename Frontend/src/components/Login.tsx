@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Login.css';
 import { useAuth } from '../context/AuthContext';
-import { User, Calendar, ArrowRight, Loader2, ArrowLeft, Lock, ChevronRight } from 'lucide-react';
+import { User, Calendar, ArrowRight, Loader2, ArrowLeft, Lock, ChevronDown, CheckCircle2 } from 'lucide-react';
 import { useMessageModal } from './MessageModal';
 
 // ─── Typewriter ───────────────────────────────────────────────────────────────
@@ -19,21 +19,9 @@ const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[]; spee
 
     useEffect(() => {
         if (index === words.length) return;
-
-        if (subIndex === words[index].length + 1 && !reverse) {
-            setReverse(true);
-            return;
-        }
-        if (subIndex === 0 && reverse) {
-            setReverse(false);
-            setIndex((p) => (p + 1) % words.length);
-            return;
-        }
-
-        const t = setTimeout(
-            () => setSubIndex((p) => p + (reverse ? -1 : 1)),
-            reverse ? 75 : subIndex === words[index].length ? wait : speed
-        );
+        if (subIndex === words[index].length + 1 && !reverse) { setReverse(true); return; }
+        if (subIndex === 0 && reverse) { setReverse(false); setIndex((p) => (p + 1) % words.length); return; }
+        const t = setTimeout(() => setSubIndex((p) => p + (reverse ? -1 : 1)), reverse ? 75 : subIndex === words[index].length ? wait : speed);
         return () => clearTimeout(t);
     }, [subIndex, index, reverse, words, speed, wait]);
 
@@ -45,18 +33,15 @@ const Typewriter = ({ words, speed = 150, wait = 3000 }: { words: string[]; spee
     );
 };
 
-// ─── User Login Component (Step 1 → Step 2) ──────────────────────────────────
+// ─── Login (UserLogin) — Step 2 of 2 ─────────────────────────────────────────
 const Login: React.FC = () => {
     const { userLogin, companyName, isLoading, logout, loginStep } = useAuth();
     const navigate = useNavigate();
     const { showMessage, ModalRenderer } = useMessageModal();
-    
+
     useEffect(() => {
-        if (loginStep === 0) {
-            navigate('/CompanyLogin', { replace: true });
-        } else if (loginStep === 2) {
-            navigate('/dashboard', { replace: true });
-        }
+        if (loginStep === 0) navigate('/CompanyLogin', { replace: true });
+        else if (loginStep === 2) navigate('/dashboard', { replace: true });
     }, [loginStep, navigate]);
 
     const [userName, setUserName] = useState('');
@@ -68,8 +53,7 @@ const Login: React.FC = () => {
     const [showSuggestions, setShowSuggestions] = useState(false);
 
     useEffect(() => {
-        const savedUsers = JSON.parse(localStorage.getItem('recent_users') || '[]');
-        setRecentUsers(savedUsers);
+        setRecentUsers(JSON.parse(localStorage.getItem('recent_users') || '[]'));
     }, []);
 
     const saveRecentUser = (val: string) => {
@@ -95,16 +79,13 @@ const Login: React.FC = () => {
 
     const handleBack = () => {
         setAnimating(true);
-        setTimeout(() => {
-            logout();
-            setAnimating(false);
-        }, 300);
+        setTimeout(() => { logout(); setAnimating(false); }, 300);
     };
 
-    // ─── Loading ──────────────────────────────────────────────────────────────
+    // ─── Loading ───────────────────────────────────────────────────────────────
     if (isLoading) {
         return (
-            <div className="flex justify-center items-center h-screen bg-gray-50">
+            <div className="flex justify-center items-center h-screen bg-slate-50">
                 <div className="relative">
                     <div className="w-20 h-20 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
                     <div className="absolute top-2 left-2 w-16 h-16 border-4 border-transparent border-b-indigo-500/50 rounded-full animate-spin-reverse" />
@@ -116,191 +97,205 @@ const Login: React.FC = () => {
         );
     }
 
-    // ─── Render ───────────────────────────────────────────────────────────────
+    // ─── Render ────────────────────────────────────────────────────────────────
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 relative overflow-hidden p-4 font-sans text-gray-900 selection:bg-orange-500/20 selection:text-orange-700">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50 to-indigo-100 relative overflow-hidden p-4 font-sans">
             {ModalRenderer}
 
-            {/* Background Ambient Glows */}
-            <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] bg-orange-200/30 rounded-full blur-[120px] animate-pulse-slow" />
-            <div className="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] bg-indigo-200/30 rounded-full blur-[120px] animate-pulse-slow delay-1000" />
-            <div className="absolute top-[30%] left-[40%] w-[30vw] h-[30vw] bg-blue-200/20 rounded-full blur-[100px] animate-blob" />
+            {/* Ambient blobs */}
+            <div className="absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] bg-indigo-300/20 rounded-full blur-[120px] animate-pulse-slow pointer-events-none" />
+            <div className="absolute bottom-[-10%] right-[-5%] w-[40vw] h-[40vw] bg-orange-300/20 rounded-full blur-[120px] animate-pulse-slow delay-1000 pointer-events-none" />
+            <div className="absolute top-[35%] left-[42%] w-[20vw] h-[20vw] bg-emerald-200/15 rounded-full blur-[80px] animate-blob pointer-events-none" />
 
             {/* Main Card */}
-            <div className="relative w-full max-w-5xl bg-white/70 backdrop-blur-2xl border border-white/50 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] flex flex-col lg:flex-row overflow-hidden group hover:shadow-[0_30px_70px_-10px_rgba(0,0,0,0.1)] transition-shadow duration-700">
+            <div className={`relative w-full max-w-5xl bg-white rounded-3xl shadow-[0_20px_70px_-15px_rgba(15,41,77,0.18)] flex flex-col lg:flex-row overflow-hidden border border-slate-100 transition-all duration-300 ${animating ? 'opacity-0 translate-x-8 scale-[0.98]' : 'opacity-100 translate-x-0 scale-100'}`}>
 
-                {/* ── LEFT PANEL: FORM ──────────────────────────────────────── */}
-                <div className="w-full lg:w-[45%] p-6 sm:p-8 flex flex-col justify-center relative z-20 bg-white/40 border-r border-white/50">
-                    <div className="mb-5">
-                        <h2 className="text-2xl font-extrabold text-gray-900 mb-1.5 tracking-tight">
-                            <span className="text-indigo-600">Welcome Back</span>
+                {/* ── LEFT: FORM ─────────────────────────────────────────────── */}
+                <div className="w-full lg:w-[45%] p-8 sm:p-10 flex flex-col justify-center relative z-20">
+
+                    {/* Step progress */}
+                    <div className="flex items-center gap-2 mb-8">
+                        {/* Step 1 done */}
+                        <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm shadow-emerald-500/30">
+                                <CheckCircle2 className="w-4 h-4 text-white" />
+                            </div>
+                            <span className="text-[11px] font-bold uppercase tracking-widest text-emerald-600">Company</span>
+                        </div>
+                        <div className="flex-1 h-0.5 bg-gradient-to-r from-emerald-300 to-indigo-200 rounded-full mx-1" />
+                        {/* Step 2 active */}
+                        <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-600 to-[#0F294D] flex items-center justify-center shadow-sm shadow-indigo-500/30">
+                                <span className="text-xs font-bold text-white">2</span>
+                            </div>
+                            <span className="text-[11px] font-bold uppercase tracking-widest text-indigo-600">User Login</span>
+                        </div>
+                        <div className="flex-1 h-0.5 bg-slate-200 rounded-full mx-1" />
+                        {/* Step 3 pending */}
+                        <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full border-2 border-slate-200 flex items-center justify-center">
+                                <span className="text-xs font-bold text-slate-300">3</span>
+                            </div>
+                            <span className="text-[11px] font-bold uppercase tracking-widest text-slate-300">Dashboard</span>
+                        </div>
+                    </div>
+
+                    {/* Company badge */}
+                    <div className="inline-flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-full px-3 py-1.5 mb-5 w-fit">
+                        <div className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
+                        <span className="text-orange-600 text-xs font-bold tracking-wide uppercase">{companyName}</span>
+                    </div>
+
+                    <div className="mb-6">
+                        <h2 className="text-[28px] font-extrabold text-[#0F294D] mb-1.5 tracking-tight">
+                            Verify Identity
                         </h2>
-                        <p className="text-gray-500 text-sm font-medium">
-                            Please verify your identity for <span className="font-semibold text-gray-700">{companyName}</span>
-                        </p>
+                        <p className="text-slate-400 text-sm">Enter your credentials to access the dashboard</p>
                     </div>
 
-                    <div className={`transition-all duration-500 ${animating ? 'opacity-0 translate-x-10' : 'opacity-100 translate-x-0'}`}>
-                        <form onSubmit={handleUserLogin} className="space-y-5 animate-slide-in">
-                            {/* Financial Year */}
-                            <div className="space-y-1.5 group">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
-                                    Financial Year
-                                </label>
-                                <div className="relative">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
-                                        <Calendar className="w-4 h-4 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
-                                    </div>
-                                    <select
-                                        value={fYear}
-                                        onChange={(e) => setFYear(e.target.value)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all appearance-none cursor-pointer font-medium shadow-sm focus:shadow-md"
-                                    >
-                                        <option value="2025-2026">2025-2026</option>
-                                        <option value="2024-2025">2024-2025</option>
-                                        <option value="2023-2024">2023-2024</option>
-                                    </select>
-                                    <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 rotate-90 pointer-events-none" />
-                                </div>
-                            </div>
+                    {/* Form */}
+                    <form onSubmit={handleUserLogin} className="space-y-4">
 
-                            {/* Username */}
-                            <div className="space-y-1.5 group">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
-                                    Username
-                                </label>
-                                <div className="relative">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
-                                        <User className="w-4 h-4 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={userName}
-                                        onChange={(e) => {
-                                            setUserName(e.target.value);
-                                            setShowSuggestions(true);
-                                        }}
-                                        onFocus={() => setShowSuggestions(true)}
-                                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
-                                        placeholder="Enter your username"
-                                        required
-                                        autoFocus
-                                        autoComplete="off"
-                                    />
-                                    
-                                    {/* Custom Suggestions Dropdown */}
-                                    {showSuggestions && recentUsers.filter(u => u.toLowerCase().includes(userName.toLowerCase())).length > 0 && (
-                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto py-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                                            {recentUsers
-                                                .filter(u => u.toLowerCase().includes(userName.toLowerCase()))
-                                                .map((u, index) => (
-                                                    <div
-                                                        key={index}
-                                                        className="px-4 py-2.5 hover:bg-indigo-50 cursor-pointer text-[14px] text-gray-700 font-medium flex items-center gap-3 transition-colors"
-                                                        onClick={() => {
-                                                            setUserName(u);
-                                                            setShowSuggestions(false);
-                                                        }}
-                                                    >
-                                                        <User className="w-4 h-4 text-indigo-400" />
-                                                        {u}
-                                                    </div>
-                                                ))}
-                                        </div>
-                                    )}
+                        {/* Financial Year */}
+                        <div className="space-y-1.5 group">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400 group-focus-within:text-indigo-600 transition-colors">
+                                Financial Year
+                            </label>
+                            <div className="relative">
+                                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 group-focus-within:bg-indigo-50 flex items-center justify-center transition-colors">
+                                    <Calendar className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
                                 </div>
-                            </div>
-
-                            {/* Password */}
-                            <div className="space-y-1.5 group">
-                                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-widest group-focus-within:text-indigo-600 transition-colors ml-1">
-                                    Password
-                                </label>
-                                <div className="relative">
-                                    <div className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center group-focus-within:bg-indigo-100 transition-colors">
-                                        <Lock className="w-4 h-4 text-gray-400 group-focus-within:text-indigo-600 transition-colors" />
-                                    </div>
-                                    <input
-                                        type="password"
-                                        value={userPass}
-                                        onChange={(e) => setUserPass(e.target.value)}
-                                        className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 pl-14 text-gray-900 text-[15px] focus:outline-none focus:border-indigo-500/50 focus:bg-white transition-all placeholder-gray-400 font-medium tracking-wide shadow-sm focus:shadow-md"
-                                        placeholder="••••••••"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Buttons */}
-                            <div className="pt-6 space-y-4">
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting}
-                                    className="w-full mt-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_10px_30px_-10px_rgba(79,70,229,0.3)] hover:shadow-[0_20px_40px_-5px_rgba(79,70,229,0.4)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-300 flex items-center justify-center group relative overflow-hidden"
+                                <select
+                                    value={fYear}
+                                    onChange={(e) => setFYear(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-10 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all appearance-none cursor-pointer font-medium"
                                 >
-                                    <span className="relative z-10 flex items-center tracking-wide">
-                                        {isSubmitting ? (
-                                            <Loader2 className="animate-spin w-5 h-5" />
-                                        ) : (
-                                            <>
-                                                Access Dashboard
-                                                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                                            </>
-                                        )}
-                                    </span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={handleBack}
-                                    className="w-full py-3 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-500 text-[15px] font-semibold transition-all duration-300 flex items-center justify-center group"
-                                >
-                                    <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform text-indigo-500" />
-                                    Back to Company Login
-                                </button>
+                                    <option value="2025-2026">2025-2026</option>
+                                    <option value="2024-2025">2024-2025</option>
+                                    <option value="2023-2024">2023-2024</option>
+                                </select>
+                                <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                             </div>
-                        </form>
-                    </div>
+                        </div>
+
+                        {/* Username */}
+                        <div className="space-y-1.5 group">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400 group-focus-within:text-indigo-600 transition-colors">
+                                Username
+                            </label>
+                            <div className="relative">
+                                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 group-focus-within:bg-indigo-50 flex items-center justify-center transition-colors">
+                                    <User className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+                                </div>
+                                <input
+                                    type="text"
+                                    value={userName}
+                                    onChange={(e) => { setUserName(e.target.value); setShowSuggestions(true); }}
+                                    onFocus={() => setShowSuggestions(true)}
+                                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all placeholder-slate-300 font-medium"
+                                    placeholder="Enter your username"
+                                    required
+                                    autoFocus
+                                    autoComplete="off"
+                                />
+                                {showSuggestions && recentUsers.filter(u => u.toLowerCase().includes(userName.toLowerCase())).length > 0 && (
+                                    <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg z-50 max-h-48 overflow-y-auto py-1">
+                                        {recentUsers.filter(u => u.toLowerCase().includes(userName.toLowerCase())).map((u, i) => (
+                                            <div key={i} className="px-4 py-2.5 hover:bg-indigo-50 cursor-pointer text-[14px] text-slate-700 font-medium flex items-center gap-3 transition-colors"
+                                                onClick={() => { setUserName(u); setShowSuggestions(false); }}>
+                                                <User className="w-4 h-4 text-indigo-400" />{u}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Password */}
+                        <div className="space-y-1.5 group">
+                            <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400 group-focus-within:text-indigo-600 transition-colors">
+                                Password
+                            </label>
+                            <div className="relative">
+                                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 group-focus-within:bg-indigo-50 flex items-center justify-center transition-colors">
+                                    <Lock className="w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+                                </div>
+                                <input
+                                    type="password"
+                                    value={userPass}
+                                    onChange={(e) => setUserPass(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all placeholder-slate-300 font-medium"
+                                    placeholder="••••••••"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Buttons */}
+                        <div className="pt-2 space-y-3">
+                            <button type="submit" disabled={isSubmitting}
+                                className="w-full relative overflow-hidden bg-gradient-to-r from-indigo-600 to-[#0F294D] text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_8px_24px_-6px_rgba(99,102,241,0.45)] hover:shadow-[0_12px_30px_-4px_rgba(99,102,241,0.55)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 flex items-center justify-center group">
+                                <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/15 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-in-out" />
+                                <span className="relative flex items-center gap-2">
+                                    {isSubmitting ? <Loader2 className="animate-spin w-5 h-5" /> : <>Access Dashboard <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>}
+                                </span>
+                            </button>
+
+                            <button type="button" onClick={handleBack}
+                                className="w-full py-3 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-400 hover:text-slate-600 text-[14px] font-semibold transition-all duration-200 flex items-center justify-center gap-2 group">
+                                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                                Back to Company Login
+                            </button>
+                        </div>
+                    </form>
+
+                    <p className="mt-6 text-center text-xs text-slate-300">&copy; 2026 Printude AI · Secured with JWT &amp; 2FA</p>
                 </div>
 
-                {/* ── RIGHT PANEL: VISUALS ──────────────────────────────────── */}
-                <div className="hidden lg:flex w-[55%] bg-gradient-to-br from-indigo-50 to-slate-100 relative overflow-hidden items-center justify-center">
-                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay" />
+                {/* ── RIGHT: BRAND PANEL (navy) ────────────────────────────────── */}
+                <div className="hidden lg:flex w-[55%] bg-gradient-to-br from-[#0F294D] via-[#1a3a6e] to-[#0e2240] relative overflow-hidden items-center justify-center">
+                    <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px]" />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[90px]" />
+                    <div className="absolute top-0 right-0 w-[250px] h-[250px] bg-orange-500/8 rounded-full blur-[80px]" />
 
-                    <div className="relative z-10 flex flex-col items-center justify-center text-center p-6 w-full max-w-xl">
-                        <div className="relative mb-8 animate-float group perspective-1000">
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] bg-white rounded-full blur-[60px] opacity-90" />
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[360px] h-[360px] border border-indigo-200 rounded-full animate-[spin_12s_linear_infinite]" />
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] border border-orange-200 rounded-full animate-[spin_18s_linear_infinite_reverse]" />
+                    <div className="relative z-10 flex flex-col items-center text-center px-8 py-12 w-full">
+                        {/* Logo */}
+                        <div className="relative mb-8 animate-float">
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[260px] h-[260px] border border-white/8 rounded-full animate-[spin_20s_linear_infinite]" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] border border-orange-400/10 rounded-full animate-[spin_28s_linear_infinite_reverse]" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[220px] h-[220px] bg-white/5 rounded-full blur-sm" />
                             <img
                                 src="/printude.ai.png"
-                                alt="AI Assistant"
-                                className="w-[380px] h-auto object-contain relative z-10 drop-shadow-[0_20px_40px_rgba(0,0,0,0.15)] transform group-hover:scale-105 transition-transform duration-500 ease-out"
+                                alt="Indus Analytics"
+                                className="w-[240px] h-auto object-contain relative z-10 drop-shadow-[0_20px_50px_rgba(99,102,241,0.3)]"
                             />
                         </div>
 
-                        <div className="min-h-[80px] w-full">
-                            <h2 className="text-2xl md:text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-indigo-800 to-gray-600 tracking-tight leading-tight min-h-[44px]">
-                                <Typewriter
-                                    words={['Welcome Back!', 'Secure Login...', 'Bulk Import Master...', 'AI-Powered Solutions.', 'Efficiency Redefined.']}
-                                    speed={100}
-                                    wait={2000}
-                                />
-                            </h2>
-                            <p className="mt-3 text-gray-500 text-sm font-medium tracking-wide animate-pulse-slow">
-                                Your gateway to seamless data management
-                            </p>
+                        <h2 className="text-2xl font-extrabold text-white tracking-tight min-h-[40px] mb-2">
+                            <Typewriter words={['Almost There!', 'Step 2 of 2...', 'Verify Identity', 'Secure Access', 'Let\'s Go!']} speed={100} wait={2200} />
+                        </h2>
+                        <p className="text-white/40 text-sm mb-10">Complete your login to access the full portal</p>
+
+                        {/* Status cards */}
+                        <div className="w-full max-w-xs space-y-3">
+                            <div className="flex items-center gap-3 bg-emerald-500/15 border border-emerald-400/25 rounded-2xl px-4 py-3">
+                                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center flex-shrink-0">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                                </div>
+                                <span className="text-sm text-emerald-200/80 font-medium">Company verified ✓</span>
+                            </div>
+                            <div className="flex items-center gap-3 bg-white/8 border border-white/12 rounded-2xl px-4 py-3">
+                                <div className="w-8 h-8 rounded-xl bg-indigo-400/20 border border-indigo-400/25 flex items-center justify-center flex-shrink-0">
+                                    <User className="w-4 h-4 text-indigo-200" />
+                                </div>
+                                <span className="text-sm text-white/60 font-medium">User authentication…</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="absolute top-16 right-16 w-2.5 h-2.5 bg-orange-400 rounded-full blur-[2px] animate-blob delay-100" />
-                    <div className="absolute bottom-24 left-16 w-2 h-2 bg-indigo-400 rounded-full blur-[1px] animate-blob delay-300" />
+                    <div className="absolute top-12 right-12 w-2 h-2 bg-indigo-300/50 rounded-full animate-ping" />
+                    <div className="absolute bottom-16 left-12 w-1.5 h-1.5 bg-orange-400/40 rounded-full animate-ping delay-700" />
                 </div>
-            </div>
-
-            {/* Footer */}
-            <div className="absolute bottom-4 text-center text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                &copy; 2026 Printude AI. Secured with JWT &amp; 2FA.
             </div>
         </div>
     );
