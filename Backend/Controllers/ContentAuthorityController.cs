@@ -36,9 +36,15 @@ public class ContentAuthorityController : ControllerBase
     {
         if (contentNames == null || contentNames.Count == 0)
             return BadRequest("No contents selected for update.");
-
-        var result = await _service.UpdateContentDetailsAsync(contentNames);
-        return Ok(result);
+        try
+        {
+            var result = await _service.UpdateContentDetailsAsync(contentNames);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to update content technical details.", detail = ex.Message });
+        }
     }
 
     [HttpPost("update-keyline-details")]
@@ -46,8 +52,14 @@ public class ContentAuthorityController : ControllerBase
     {
         if (contentNames == null || contentNames.Count == 0)
             return BadRequest("No contents selected for keyline update.");
-
-        var result = await _service.UpdateKeylineDetailsAsync(contentNames);
-        return Ok(result);
+        try
+        {
+            var result = await _service.UpdateKeylineDetailsAsync(contentNames);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to update keyline details.", detail = ex.Message });
+        }
     }
 }

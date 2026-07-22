@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { evaluate } from 'mathjs';
 import { Box3DViewer } from '../components/Box3DViewer';
 import { detectPanels, buildHingeTree, buildFoldSchedule, type KeylineRow as KL3DRow, type Dims as KL3DDims } from '../lib/keyline3D';
+import { buildShapeTypeFoldSchedule } from '../lib/foldSchedule';
 import type { CameraPreset } from '../lib/three-helpers';
 import {
     Save, Trash2, Plus, RefreshCw, Download, ZoomIn, ZoomOut,
@@ -315,56 +316,23 @@ const FullscreenSvgPreview: React.FC<SvgPreviewProps> = ({ rows, vars, zoom, hig
 };
 
 // ─── ShapeType-based fold schedule (Excel sequence guide) ────────────────────
-// Sequence from D:\BulkImportProject\3D Sequence Guide.xlsx:
-//   1 = LENGTH + WIDTH  (walls form box shape first)
-//   2 = PASTING FLAP    (glue flap folds inside)
-//   3 = DUST FLAP       (side dust flaps close at 90°)
-//   4 = OPEN FLAP       (top tuck flap tucks inside length)
-//   5 = BOTTOM FLAP     (opposite of open flap)
-//   6 = TUCKIN WIDTH    (final lock — closes last)
-//   HEIGHT = root panel, never folds
-
-const SHAPE_FOLD_SEQ: Record<string, number> = {
-    'LENGTH':       1,
-    'WIDTH':        1,
-    'PASTING FLAP': 2,
-    'DUST FLAP':    3,
-    'OPEN FLAP':    4,
-    'BOTTOM FLAP':  5,
-    'TUCKIN WIDTH': 6,
-};
-const MAX_SEQ = 6;
-
-function buildShapeTypeFoldSchedule(tree: import('../lib/keyline3D').HingedPanel[]): import('../lib/keyline3D').FoldStage[] {
-    return tree
-        .filter(p => p.depth > 0)
-        .map(p => {
-            const st = (p.shapeType ?? '').toUpperCase().trim();
-            // Find matching sequence — try each key as substring match
-            let seq = 0;
-            for (const [key, val] of Object.entries(SHAPE_FOLD_SEQ)) {
-                if (st.includes(key)) { seq = val; break; }
-            }
-            if (seq === 0) seq = Math.min(p.depth, MAX_SEQ); // fallback: depth
-            return {
-                panelId: p.id,
-                startProgress: (seq - 1) / MAX_SEQ,
-                endProgress:   seq / MAX_SEQ,
-                closedAngleDeg: 90,
-            };
-        });
-}
+// The sequence tables and buildShapeTypeFoldSchedule now live in
+// ../lib/foldSchedule so the embedded 3D viewer (pages/Embed3D.tsx) uses the
+// exact same fold logic instead of a second copy. Behaviour is unchanged.
 
 // ─── 3D Box Preview (Three.js) ───────────────────────────────────────────────
 
-const Box3DPreview: React.FC<{ rows: GridRow[]; vars: Record<string, number> }> = ({ rows, vars }) => {
+const Box3DPreview: React.FC<{ rows: GridRow[]; vars: Record<string, number>; contentType?: string }> = ({ rows, vars, contentType }) => {
     const [progress, setProgress] = useState(0);
     const [playing, setPlaying] = useState(false);
     const directionRef = useRef<1 | -1>(1);
     const lastTimeRef = useRef<number>(0);
     const presetHandlerRef = useRef<((p: CameraPreset) => void) | null>(null);
 
-    const dims: KL3DDims = {
+    // Memoize so the object reference is stable across slider/progress renders.
+    // Without this, every setProgress re-render creates a new dims object →
+    // Box3DViewer's useEffect([tree, dims]) fires → camera resets to default.
+    const dims = useMemo<KL3DDims>(() => ({
         L: Math.max(1, vars.L ?? 100),
         W: Math.max(1, vars.W ?? 80),
         H: Math.max(1, vars.H ?? 120),
@@ -373,7 +341,7 @@ const Box3DPreview: React.FC<{ rows: GridRow[]; vars: Record<string, number> }> 
         BF: vars.BF ?? 0,
         FH: vars.FH ?? 0,
         TH: vars.TH ?? 0,
-    };
+    }), [vars.L, vars.W, vars.H, vars.OF, vars.PF, vars.BF, vars.FH, vars.TH]);
 
     // Map GridRow → KL3DRow (field name normalization)
     const kl3dRows = useMemo<KL3DRow[]>(() =>
@@ -398,14 +366,14 @@ const Box3DPreview: React.FC<{ rows: GridRow[]; vars: Record<string, number> }> 
             const tree = buildHingeTree(panels);
             const hasShapeTypes = tree.some(p => p.shapeType);
             const schedule = hasShapeTypes
-                ? buildShapeTypeFoldSchedule(tree)
+                ? buildShapeTypeFoldSchedule(tree, contentType)
                 : buildFoldSchedule(tree, dims);
             return { tree, schedule, error: null as string | null };
         } catch (e: any) {
             return { tree: [], schedule: [], error: String(e?.message || e) };
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [kl3dRows, vars.L, vars.W, vars.H, vars.OF, vars.PF, vars.BF, vars.FH, vars.TH]);
+    }, [kl3dRows, contentType, vars.L, vars.W, vars.H, vars.OF, vars.PF, vars.BF, vars.FH, vars.TH]);
 
     // Play animation
     useEffect(() => {
@@ -1579,7 +1547,7 @@ const KeyLineGenerator: React.FC = () => {
                         {/* Modal Body */}
                         {view3D ? (
                             <div className="flex-1 bg-gray-50 dark:bg-gray-950 rounded-b-2xl">
-                                <Box3DPreview rows={coordRows} vars={vars} />
+                                <Box3DPreview rows={coordRows} vars={vars} contentType={contentType} />
                             </div>
                         ) : (
                             <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950 rounded-b-2xl">

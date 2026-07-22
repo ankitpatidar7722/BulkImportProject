@@ -1450,6 +1450,10 @@ export interface CompanySubscriptionDto {
     isMessageActive?: boolean;
     messageDurationValue?: number;
     messageDurationType?: string;
+    cloudFromDate?: string;
+    cloudToDate?: string;
+    cloudPaymentDueDate?: string;
+    cloudSubscriptionStatus?: string;
 }
 
 export interface CompanySubscriptionSaveRequest extends CompanySubscriptionDto {

@@ -10,6 +10,7 @@ import Header from './components/Header';
 import PrivateRoute from './components/PrivateRoute';
 import CompanyLogin from './pages/CompanyLogin';
 import Login from './components/Login';
+import Embed3D from './pages/Embed3D';
 
 import Dashboard from './pages/Dashboard';
 import ImportMaster from './pages/ImportMaster';
@@ -103,6 +104,13 @@ function App() {
 
                             {/* Root Route: Orchestrate based on auth state */}
                             <Route path="/" element={<LoginRedirect />} />
+
+                            {/* Embeddable 3D box viewer, loaded in an <iframe> by the
+                                EstimoPrime ERP. Intentionally outside PrivateRoute: it
+                                reads no data of its own — the host page posts the keyline
+                                rows and dimensions in, and it only draws what it is given.
+                                Must stay above the catch-all "/*" route below. */}
+                            <Route path="/embed/box3d" element={<Embed3D />} />
 
                             {/* Protected Routes: Require Authentication */}
                             <Route path="/*" element={

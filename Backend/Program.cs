@@ -634,6 +634,14 @@ using (var scope = app.Services.CreateScope())
                 IF COL_LENGTH('FeaturePlan','CompanyID')       IS NOT NULL ALTER TABLE [FeaturePlan] DROP COLUMN [CompanyID];";
             using (var cmd = new SqlCommand(createPlanCmd, indusConn)) cmd.ExecuteNonQuery();
 
+            // ── Cloud Subscription columns on Indus_Company_Authentication_For_Web_Modules ──
+            var cloudColsCmd = @"
+                IF COL_LENGTH('Indus_Company_Authentication_For_Web_Modules','CloudFromDate')           IS NULL ALTER TABLE [Indus_Company_Authentication_For_Web_Modules] ADD [CloudFromDate]           DATE NULL;
+                IF COL_LENGTH('Indus_Company_Authentication_For_Web_Modules','CloudToDate')             IS NULL ALTER TABLE [Indus_Company_Authentication_For_Web_Modules] ADD [CloudToDate]             DATE NULL;
+                IF COL_LENGTH('Indus_Company_Authentication_For_Web_Modules','CloudPaymentDueDate')     IS NULL ALTER TABLE [Indus_Company_Authentication_For_Web_Modules] ADD [CloudPaymentDueDate]     DATE NULL;
+                IF COL_LENGTH('Indus_Company_Authentication_For_Web_Modules','CloudSubscriptionStatus') IS NULL ALTER TABLE [Indus_Company_Authentication_For_Web_Modules] ADD [CloudSubscriptionStatus] NVARCHAR(50) NULL;";
+            using (var cmd = new SqlCommand(cloudColsCmd, indusConn)) cmd.ExecuteNonQuery();
+
             // ── Seed existing reality (idempotent: each guarded by NOT EXISTS) ──
             // Features: Sahay, Email
             var seedFeatures = new[]

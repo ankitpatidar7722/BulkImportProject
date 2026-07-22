@@ -506,9 +506,11 @@ export function detectPanels(rows: KeylineRow[], dims: Dims): Panel[] {
   const straight = rawToStraightSegments(rawSegs)
   if (straight.length === 0) return []
   const { verts, edges } = buildArrangement(straight)
+  console.log('[KL3D] arrangement: verts=', verts.length, 'edges=', edges.length)
   if (verts.length < 3 || edges.length < 3) return []
   const he = buildHalfEdges(verts, edges)
   const faces = walkFaces(verts, he)
+  console.log('[KL3D] faces walked:', faces.length)
   if (faces.length === 0) return []
 
   // The outer "face" is the unbounded region surrounding everything — it has
@@ -517,12 +519,19 @@ export function detectPanels(rows: KeylineRow[], dims: Dims): Panel[] {
   // (CW visually means math-CCW because Y is flipped) — but to be safe we just
   // drop the single largest face.
   faces.sort((a, b) => b.area - a.area)
+  console.log('[KL3D] faces by area (top 15):',
+    faces.slice(0, 15).map((f, i) => `[${i}] area=${f.area.toFixed(1)} verts=${f.vertIds.length}`)
+  )
   const inner = faces.slice(1)
 
-  // Filter degenerate slivers (e.g. OF cut tongue slits forming tiny faces)
+  // Filter degenerate slivers (e.g. OF cut tongue slits forming tiny faces).
+  // Use 0.1% (not 0.5%) so crash-lock tongue tabs aren't dropped — losing them
+  // breaks adjacency for the bottom flap panels that attach through them.
   const totalArea = inner.reduce((s, f) => s + f.area, 0)
-  const minArea = totalArea * 0.005  // 0.5% of total panel area
+  const minArea = totalArea * 0.001  // 0.1% of total panel area
   const kept = inner.filter(f => f.area >= minArea)
+  console.log('[KL3D] inner faces:', inner.length, '→ kept after area filter:', kept.length,
+    '(minArea=', minArea.toFixed(1), 'totalArea=', totalArea.toFixed(1), ')')
 
   // Sort by area desc for stable panel_N naming
   kept.sort((a, b) => b.area - a.area)
@@ -683,6 +692,64 @@ export function buildHingeTree(panels: Panel[]): HingedPanel[] {
       queue.push({ id: p.id, depth: depth + 1 })
     }
   }
+  const bfsReached = [...result.keys()]
+  const allPanelIds = panels.map(p => p.id)
+  const orphanIds = allPanelIds.filter(id => !result.has(id))
+  console.log('[KL3D] buildHingeTree — panels:', allPanelIds.length,
+    '| BFS reached:', bfsReached.length,
+    '| orphans:', orphanIds.length, orphanIds,
+    '| panels detail:', panels.map(p => `${p.id}(${p.shapeType ?? '?'} area=${p.area.toFixed(0)} rect=${JSON.stringify(p.rect)})`)
+  )
+  // ── Orphan rescue ──────────────────────────────────────────────────────────
+  // Panels not reached by BFS (crash-lock flaps whose shared boundary has
+  // intermediate vertices from lock-mechanism cuts, so sharedEdge/sharedOutlineEdge
+  // both miss them). Attach each orphan to the already-placed panel whose
+  // bounding box is nearest, then derive the best hinge we can.
+  const rectMinDist = (a: Rect, b: Rect): number => {
+    const dx = Math.max(0, Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w))
+    const dy = Math.max(0, Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h))
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+  const sharedEdgeFuzzy = (a: Panel, b: Panel, tol: number) => {
+    // Looser version of sharedEdge that accepts overlap > tol instead of > EPS
+    const ra = a.rect, rb = b.rect
+    if (Math.abs(ra.x + ra.w - rb.x) < tol) {
+      const lo = Math.max(ra.y, rb.y), hi = Math.min(ra.y + ra.h, rb.y + rb.h)
+      if (hi - lo > tol) return { x1: ra.x + ra.w, y1: lo, x2: ra.x + ra.w, y2: hi, aEdge: 'right' as const }
+    }
+    if (Math.abs(ra.x - (rb.x + rb.w)) < tol) {
+      const lo = Math.max(ra.y, rb.y), hi = Math.min(ra.y + ra.h, rb.y + rb.h)
+      if (hi - lo > tol) return { x1: ra.x, y1: lo, x2: ra.x, y2: hi, aEdge: 'left' as const }
+    }
+    if (Math.abs(ra.y + ra.h - rb.y) < tol) {
+      const lo = Math.max(ra.x, rb.x), hi = Math.min(ra.x + ra.w, rb.x + rb.w)
+      if (hi - lo > tol) return { x1: lo, y1: ra.y + ra.h, x2: hi, y2: ra.y + ra.h, aEdge: 'bottom' as const }
+    }
+    if (Math.abs(ra.y - (rb.y + rb.h)) < tol) {
+      const lo = Math.max(ra.x, rb.x), hi = Math.min(ra.x + ra.w, rb.x + rb.w)
+      if (hi - lo > tol) return { x1: lo, y1: ra.y, x2: hi, y2: ra.y, aEdge: 'top' as const }
+    }
+    return null
+  }
+  for (const p of panels) {
+    if (result.has(p.id)) continue
+    // Find nearest placed panel
+    let bestParentId = root.id
+    let bestDist = Infinity
+    for (const hp of result.values()) {
+      const d = rectMinDist(p.rect, hp.rect)
+      if (d < bestDist) { bestDist = d; bestParentId = hp.id }
+    }
+    const parent = result.get(bestParentId)!
+    const e = sharedEdgeFuzzy(p, parent, 8) ?? sharedEdge(p.rect, parent.rect) ?? sharedOutlineEdge(p, parent)
+    result.set(p.id, {
+      ...p,
+      parentId: bestParentId,
+      hinge: e ? { edge: e.aEdge, line: { x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2 } } : null,
+      depth: parent.depth + 1,
+    })
+  }
+
   // Return in stable order (root first, then by depth)
   return [...result.values()].sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id))
 }

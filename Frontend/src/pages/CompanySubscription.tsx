@@ -70,6 +70,7 @@ const EMPTY_FORM: CompanySubscriptionDto = {
     state: '', city: '', gstin: '', email: '', mobile: '', loginAllowed: 1,
     fromDate: '', toDate: '', paymentDueDate: '', fYear: '',
     isMessageActive: false, messageDurationValue: 0, messageDurationType: 'Seconds',
+    cloudFromDate: '', cloudToDate: '', cloudPaymentDueDate: '', cloudSubscriptionStatus: '',
 };
 
 const APPLICATION_OPTIONS = ['estimoprime', 'multiunit', 'PrintudeERP'];
@@ -479,6 +480,10 @@ const CompanySubscription: React.FC = () => {
                 isMessageActive: formData.isMessageActive || false,
                 messageDurationValue: formData.messageDurationValue || 0,
                 messageDurationType: formData.messageDurationType || null,
+                cloudFromDate: formData.cloudFromDate || null,
+                cloudToDate: formData.cloudToDate || null,
+                cloudPaymentDueDate: formData.cloudPaymentDueDate || null,
+                cloudSubscriptionStatus: formData.cloudSubscriptionStatus || null,
             };
             let response;
             if (isStep2Saved && step2SavedUserId) {
@@ -1207,6 +1212,10 @@ const CompanySubscription: React.FC = () => {
                 isMessageActive: formData.isMessageActive || false,
                 messageDurationValue: formData.messageDurationValue || 0,
                 messageDurationType: formData.messageDurationType || null,
+                cloudFromDate: formData.cloudFromDate || null,
+                cloudToDate: formData.cloudToDate || null,
+                cloudPaymentDueDate: formData.cloudPaymentDueDate || null,
+                cloudSubscriptionStatus: formData.cloudSubscriptionStatus || null,
             };
             payload.originalCompanyUserID = originalCompanyUserID;
             const response = await updateCompanySubscription(payload);
@@ -1620,18 +1629,18 @@ const CompanySubscription: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* ── Row 3: Subscription (4 cols) ── */}
+                                    {/* ── Row 3: ERP Subscription (4 cols) ── */}
                                     <div>
                                         <div className="flex items-center gap-1.5 mb-1.5">
                                             <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                                            <h3 className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">Subscription</h3>
+                                            <h3 className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">ERP Subscription</h3>
                                         </div>
                                         <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
                                             <FormSelect label="Status *" name="subscriptionStatus" value={formData.subscriptionStatus || ''} onChange={handleFormChange} options={SUBSCRIPTION_STATUS_OPTIONS} />
                                             <FormField label="From Date" name="fromDate" value={formatDateForInput(formData.fromDate)} onChange={handleFormChange} type="date" />
                                             <FormField label="To Date" name="toDate" value={formatDateForInput(formData.toDate)} onChange={handleFormChange} type="date" />
                                             <FormField label="Payment Due Date" name="paymentDueDate" value={formatDateForInput(formData.paymentDueDate)} onChange={handleFormChange} type="date" />
-                                            
+
                                             <FormToggle label="Message Active" name="isMessageActive" checked={!!formData.isMessageActive} onChange={handleFormChange} />
                                             {formData.isMessageActive && (
                                                 <>
@@ -1653,6 +1662,20 @@ const CompanySubscription: React.FC = () => {
                                                     Format Message
                                                 </button>
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ── Row 3b: Cloud Subscription (4 cols) ── */}
+                                    <div>
+                                        <div className="flex items-center gap-1.5 mb-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                                            <h3 className="text-[10px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">Cloud Subscription</h3>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-x-3 gap-y-1.5">
+                                            <FormSelect label="Cloud Status" name="cloudSubscriptionStatus" value={formData.cloudSubscriptionStatus || ''} onChange={handleFormChange} options={SUBSCRIPTION_STATUS_OPTIONS} />
+                                            <FormField label="From Date" name="cloudFromDate" value={formatDateForInput(formData.cloudFromDate)} onChange={handleFormChange} type="date" />
+                                            <FormField label="To Date" name="cloudToDate" value={formatDateForInput(formData.cloudToDate)} onChange={handleFormChange} type="date" />
+                                            <FormField label="Payment Due Date" name="cloudPaymentDueDate" value={formatDateForInput(formData.cloudPaymentDueDate)} onChange={handleFormChange} type="date" />
                                         </div>
                                     </div>
 
@@ -1921,18 +1944,18 @@ const CompanySubscription: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {/* Row 3: Subscription */}
+                                        {/* Row 3: ERP Subscription */}
                                         <div className="rounded-lg border border-purple-100 dark:border-purple-800/30 bg-white dark:bg-gray-900/30 px-3 py-2.5">
                                             <div className="flex items-center gap-1.5 mb-2">
                                                 <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                                                <h3 className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">Subscription</h3>
+                                                <h3 className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">ERP Subscription</h3>
                                             </div>
                                             <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
                                                 <FormSelect label="Status" name="subscriptionStatus" value={formData.subscriptionStatus || ''} onChange={handleFormChange} options={SUBSCRIPTION_STATUS_OPTIONS} />
                                                 <FormField label="From Date" name="fromDate" value={formatDateForInput(formData.fromDate)} onChange={handleFormChange} type="date" />
                                                 <FormField label="To Date" name="toDate" value={formatDateForInput(formData.toDate)} onChange={handleFormChange} type="date" />
                                                 <FormField label="Payment Due" name="paymentDueDate" value={formatDateForInput(formData.paymentDueDate)} onChange={handleFormChange} type="date" />
-                                                
+
                                                 <FormToggle label="Message Active" name="isMessageActive" checked={!!formData.isMessageActive} onChange={handleFormChange} />
                                                 {formData.isMessageActive && (
                                                     <>
@@ -1958,6 +1981,20 @@ const CompanySubscription: React.FC = () => {
                                                         </button>
                                                     </div>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Row 3b: Cloud Subscription */}
+                                        <div className="rounded-lg border border-sky-100 dark:border-sky-800/30 bg-white dark:bg-gray-900/30 px-3 py-2.5">
+                                            <div className="flex items-center gap-1.5 mb-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                                                <h3 className="text-[10px] font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider">Cloud Subscription</h3>
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-3 gap-y-2">
+                                                <FormSelect label="Cloud Status" name="cloudSubscriptionStatus" value={formData.cloudSubscriptionStatus || ''} onChange={handleFormChange} options={SUBSCRIPTION_STATUS_OPTIONS} />
+                                                <FormField label="From Date" name="cloudFromDate" value={formatDateForInput(formData.cloudFromDate)} onChange={handleFormChange} type="date" />
+                                                <FormField label="To Date" name="cloudToDate" value={formatDateForInput(formData.cloudToDate)} onChange={handleFormChange} type="date" />
+                                                <FormField label="Payment Due Date" name="cloudPaymentDueDate" value={formatDateForInput(formData.cloudPaymentDueDate)} onChange={handleFormChange} type="date" />
                                             </div>
                                         </div>
                                     </div>

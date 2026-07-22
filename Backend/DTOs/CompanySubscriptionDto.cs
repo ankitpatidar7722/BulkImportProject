@@ -38,6 +38,11 @@ public class CompanySubscriptionDto
     public bool? IsMessageActive { get; set; }
     public int? MessageDurationValue { get; set; }
     public string? MessageDurationType { get; set; }
+    // Cloud Subscription
+    public DateTime? CloudFromDate { get; set; }
+    public DateTime? CloudToDate { get; set; }
+    public DateTime? CloudPaymentDueDate { get; set; }
+    public string? CloudSubscriptionStatus { get; set; }
 }
 
 public class CompanySubscriptionListResponse
@@ -84,6 +89,11 @@ public class CompanySubscriptionSaveRequest
     public bool? IsMessageActive { get; set; }
     public int? MessageDurationValue { get; set; }
     public string? MessageDurationType { get; set; }
+    // Cloud Subscription
+    public DateTime? CloudFromDate { get; set; }
+    public DateTime? CloudToDate { get; set; }
+    public DateTime? CloudPaymentDueDate { get; set; }
+    public string? CloudSubscriptionStatus { get; set; }
 }
 
 public class NextClientCodeResponse

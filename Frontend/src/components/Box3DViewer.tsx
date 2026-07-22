@@ -71,7 +71,7 @@ export function Box3DViewer({
     const container = containerRef.current
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xffffff)
+    scene.background = new THREE.Color(0xf5f5f5)
     sceneRef.current = scene
 
     const w = container.clientWidth || 1
@@ -96,8 +96,10 @@ export function Box3DViewer({
     container.appendChild(labelRenderer.domElement)
     labelRendererRef.current = labelRenderer
 
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x666666, 0.85))
-    const key = new THREE.DirectionalLight(0xffffff, 0.7)
+    // Bright ambient so every face stays cardboard-colored regardless of view angle
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6))
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xddccbb, 0.5))
+    const key = new THREE.DirectionalLight(0xffffff, 0.55)
     key.position.set(-200, 400, 250)
     key.castShadow = true
     key.shadow.camera.top = 500
@@ -110,9 +112,13 @@ export function Box3DViewer({
     key.shadow.mapSize.height = 2048
     key.shadow.bias = -0.0005
     scene.add(key)
-    const fill = new THREE.DirectionalLight(0xffffff, 0.25)
+    const fill = new THREE.DirectionalLight(0xffffff, 0.3)
     fill.position.set(200, 200, -200)
     scene.add(fill)
+    // Bottom fill — prevents black underside when viewed from below
+    const bottom = new THREE.DirectionalLight(0xffffff, 0.25)
+    bottom.position.set(0, -300, 0)
+    scene.add(bottom)
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
@@ -162,7 +168,7 @@ export function Box3DViewer({
     const controls = controlsRef.current
     if (!scene || !camera || !controls) return
 
-    clearSceneKeeping(scene, 3, labelRendererRef.current?.domElement)
+    clearSceneKeeping(scene, 5, labelRendererRef.current?.domElement)
     panelGroupsRef.current.clear()
     floorGroupRef.current = null
     dimGroupRef.current = null
@@ -251,30 +257,12 @@ export function Box3DViewer({
     dimGroupRef.current = dimGroup
 
     const flatSheetSpan = Math.max(maxX - minX, maxY - minY)
-    const floorGroup = new THREE.Group()
-    floorGroup.name = 'floor'
-    const gridSize = Math.max(flatSheetSpan * 1.8, boxMaxDim * 4)
-    const floorY = -2
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(gridSize, gridSize),
-      new THREE.MeshBasicMaterial({
-        color: 0xf0f0f0,
-        side: THREE.FrontSide,
-        transparent: true,
-        opacity: 0.5,
-      })
-    )
-    floor.rotation.x = -Math.PI / 2
-    floor.position.y = floorY
-    floor.receiveShadow = true
-    floorGroup.add(floor)
-    const grid = new THREE.GridHelper(gridSize, 24, 0xcccccc, 0xe0e0e0)
-    grid.position.y = floorY + 0.1
-    floorGroup.add(grid)
-    scene.add(floorGroup)
-    floorGroupRef.current = floorGroup
+    // No floor plane or grid — white scene.background is static and doesn't
+    // appear to rotate when the camera orbits past horizontal.
+    floorGroupRef.current = null
 
-    controls.maxPolarAngle = Math.PI * 0.49
+    controls.minPolarAngle = 0
+    controls.maxPolarAngle = Math.PI
 
     const rootFx = (rootGroup as any).userData.rootFlatX ?? cx
     const rootFz = (rootGroup as any).userData.rootFlatZ ?? cy
@@ -288,10 +276,11 @@ export function Box3DViewer({
     const framingDim = Math.max(boxMaxDim, flatSheetSpan * 0.7)
     fitDimRef.current = framingDim
     sceneCenterRef.current.copy(orbitCenter)
+
     camera.position.set(
-      orbitCenter.x + framingDim * 1.0,
-      orbitCenter.y + framingDim * 0.75,
-      orbitCenter.z + framingDim * 1.0,
+      orbitCenter.x + framingDim * 1.2,
+      orbitCenter.y + framingDim * 0.9,
+      orbitCenter.z + framingDim * 1.2,
     )
     controls.target.copy(orbitCenter)
     controls.update()

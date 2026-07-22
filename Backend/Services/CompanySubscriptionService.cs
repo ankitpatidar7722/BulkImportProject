@@ -230,7 +230,11 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                     FYear = @FYear,
                     IsMessageActive = @IsMessageActive,
                     MessageDurationValue = @MessageDurationValue,
-                    MessageDurationType = @MessageDurationType
+                    MessageDurationType = @MessageDurationType,
+                    CloudFromDate = @CloudFromDate,
+                    CloudToDate = @CloudToDate,
+                    CloudPaymentDueDate = @CloudPaymentDueDate,
+                    CloudSubscriptionStatus = @CloudSubscriptionStatus
                 WHERE CompanyUserID = @OriginalKey";
 
             Console.WriteLine($"[CompanySubscription] Update Request for {request.CompanyUserID}: MessageActive={request.IsMessageActive}, Duration={request.MessageDurationValue}, Type={request.MessageDurationType}");
@@ -263,6 +267,10 @@ public class CompanySubscriptionService : ICompanySubscriptionService
                 request.IsMessageActive,
                 request.MessageDurationValue,
                 request.MessageDurationType,
+                request.CloudFromDate,
+                request.CloudToDate,
+                request.CloudPaymentDueDate,
+                request.CloudSubscriptionStatus,
                 OriginalKey = keyToUpdate
             });
 
