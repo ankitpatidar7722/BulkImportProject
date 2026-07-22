@@ -37,8 +37,8 @@ interface Box3DViewerProps {
 }
 
 // Cardboard-like palette
-const PANEL_COLOR = 0xc4956a
-const PANEL_EDGE = 0x6e4a26
+const PANEL_COLOR = 0xC5A682
+const PANEL_EDGE = 0x4A3520
 
 export function Box3DViewer({
   tree,
@@ -364,7 +364,7 @@ function makePanelMesh(panel: HingedPanel, thickness: number): THREE.Mesh {
   mesh.castShadow = true
   mesh.receiveShadow = true
   const edges = new THREE.EdgesGeometry(geom)
-  const lineMat = new THREE.LineBasicMaterial({ color: PANEL_EDGE, transparent: true, opacity: 0.5 })
+  const lineMat = new THREE.LineBasicMaterial({ color: PANEL_EDGE, transparent: true, opacity: 0.85 })
   mesh.add(new THREE.LineSegments(edges, lineMat))
   return mesh
 }
