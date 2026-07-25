@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { evaluate } from 'mathjs';
 import { Box3DViewer } from '../components/Box3DViewer';
 import { detectPanels, buildHingeTree, buildFoldSchedule, type KeylineRow as KL3DRow, type Dims as KL3DDims } from '../lib/keyline3D';
-import { buildShapeTypeFoldSchedule } from '../lib/foldSchedule';
+import { buildShapeTypeFoldSchedule, rootFirst } from '../lib/foldSchedule';
 import type { CameraPreset } from '../lib/three-helpers';
 import {
     Save, Trash2, Plus, RefreshCw, Download, ZoomIn, ZoomOut,
@@ -362,7 +362,7 @@ const Box3DPreview: React.FC<{ rows: GridRow[]; vars: Record<string, number>; co
 
     const { tree, schedule, error } = useMemo(() => {
         try {
-            const panels = detectPanels(kl3dRows, dims);
+            const panels = rootFirst(detectPanels(kl3dRows, dims), contentType);
             const tree = buildHingeTree(panels);
             const hasShapeTypes = tree.some(p => p.shapeType);
             const schedule = hasShapeTypes

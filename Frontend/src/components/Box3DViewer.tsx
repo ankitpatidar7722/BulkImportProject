@@ -40,6 +40,43 @@ interface Box3DViewerProps {
 const PANEL_COLOR = 0xC5A682
 const PANEL_EDGE = 0x4A3520
 
+// ── Inner-liner occlusion ───────────────────────────────────────────────────
+//
+// In a shut carton the body walls and lids form the OUTER shell; dust flaps,
+// pasting/glue flaps and tuck flaps fold flat against the inside of those walls.
+// Because our fold model is zero-thickness, an inner flap ends up in the exact
+// same plane as the wall it lies against, so the two opaque faces z-fight and
+// the inner flap (and its dark edge lines) bleeds through the closed box.
+//
+// We can't trust ShapeType names to tell shell from liner (many boxes are only
+// half-tagged), and fold order lies (walls fold first yet are outermost, tuck
+// flaps fold last yet are innermost). Geometry is reliable: in the CLOSED box a
+// wall and everything folded against it share one plane, and the wall is always
+// the LARGEST panel in that plane while the flaps tucked against it are smaller.
+// So within each shared plane we keep the biggest panel at the front and push
+// the smaller ones back in the depth buffer (faces AND edges). See
+// computeOcclusionOffsets — this needs no ShapeType data at all.
+const OCCLUSION_OFFSET_STEP = 4
+// How far (mm) each inner-liner rank is physically pushed into the box interior.
+// Must exceed the panel thickness so an inner flap sits clearly behind the outer
+// wall and real depth testing hides its faces AND its crease lines.
+const INNER_INSET_MM = 1.5
+
+/** Push a panel mesh (its face material and its edge-line material) back in the
+ *  depth buffer by `off` polygon-offset units, so shallower panels occlude it. */
+function setMeshDepthOffset(mesh: THREE.Mesh, off: number): void {
+  const apply = (m: any) => {
+    if (!m) return
+    m.polygonOffset = true
+    m.polygonOffsetFactor = off
+    m.polygonOffsetUnits = off
+  }
+  const mm = mesh.material as THREE.Material | THREE.Material[]
+  if (Array.isArray(mm)) mm.forEach(apply)
+  else apply(mm)
+  mesh.children.forEach((c: any) => apply(c.material))
+}
+
 export function Box3DViewer({
   tree,
   schedule,
@@ -64,6 +101,21 @@ export function Box3DViewer({
   const panelGroupsRef = useRef<Map<string, { hingeGroup: THREE.Group; panelMesh: THREE.Mesh }>>(new Map())
   const scheduleRef = useRef<FoldStage[]>(schedule)
   scheduleRef.current = schedule
+  // Current fold progress, readable inside the build effect without making it a
+  // dependency (which would rebuild the whole scene on every animation frame).
+  const progressRef = useRef(progress)
+  progressRef.current = progress
+  // Per-panel occlusion rank within its closed-state plane (0 = outer shell,
+  // >0 = inner liner). Populated by the build effect, read by the fold effect to
+  // fade inner-flap outlines as the box shuts. WebGL polygonOffset can't push
+  // LINES back (it only offsets filled triangles), so an inner flap's dark edge
+  // lines would still bleed through the outer wall — fading them is the fix.
+  const occlusionRankRef = useRef<Map<string, number>>(new Map())
+  // Per-panel inner-flap inset (signed mm along the panel's own normal), computed
+  // once from the closed pose. Applied by the fold effect scaled by progress, so
+  // panels are flush at flat/open (no gaps at fold lines) and only recede as the
+  // box actually shuts and the inner flaps need hiding.
+  const insetRef = useRef<Map<string, number>>(new Map())
 
   // ── Scene init (once) ─────────────────────────────────────
   useEffect(() => {
@@ -190,13 +242,63 @@ export function Box3DViewer({
     groupsById.set('__root__', rootGroup)
 
     const sorted = [...tree].sort((a, b) => a.depth - b.depth)
+
+    console.log('[Box3D] building panels:', sorted.map(p =>
+      `${p.id}(st=${p.shapeType ?? '?'} depth=${p.depth} parent=${p.parentId ?? 'ROOT'} hinge=${p.hinge ? p.hinge.edge : 'NULL'})`
+    ))
     for (const p of sorted) {
       const hingeGroup = new THREE.Group()
       hingeGroup.name = `hinge_${p.id}`
+      ;(hingeGroup as any).userData.shapeType = p.shapeType
 
       const parentGroup = p.parentId ? groupsById.get(p.parentId)! : rootGroup
 
       if (p.parentId === null || !p.hinge) {
+        // ── Orphan-rescued panel: has a parent but hinge wasn't detected ──────
+        // Falling through to the root path would corrupt rootFlatX/Z and freeze
+        // the panel at (0,0,0) with no hingeAxis. Derive a synthetic hinge from
+        // geometry so the panel moves with its parent and can still fold.
+        if (p.parentId !== null) {
+          const rootFlatX = (rootGroup as any).userData.rootFlatX ?? cx
+          const rootFlatZ = (rootGroup as any).userData.rootFlatZ ?? cy
+          const parentPanel = sorted.find(pp => pp.id === p.parentId)
+          const pCX = p.rect.x + p.rect.w / 2
+          const pCZ = p.rect.y + p.rect.h / 2
+          const parCX = parentPanel ? parentPanel.rect.x + parentPanel.rect.w / 2 : cx
+          const parCZ = parentPanel ? parentPanel.rect.y + parentPanel.rect.h / 2 : cy
+          const dxP = parCX - pCX
+          const dzP = parCZ - pCZ
+          // Decide hinge side: side-by-side → vertical hinge; stacked → horizontal hinge
+          let hx: number, hz: number, hingeIsV: boolean
+          if (Math.abs(dxP) >= Math.abs(dzP)) {
+            // Vertical hinge (left or right edge of this panel)
+            hx = (dxP > 0 ? p.rect.x + p.rect.w : p.rect.x) - rootFlatX
+            hz = pCZ - rootFlatZ
+            hingeIsV = true
+          } else {
+            // Horizontal hinge (top or bottom edge of this panel)
+            hx = pCX - rootFlatX
+            hz = (dzP > 0 ? p.rect.y + p.rect.h : p.rect.y) - rootFlatZ
+            hingeIsV = false
+          }
+          hingeGroup.position.set(hx, 0, hz)
+          scene.add(hingeGroup)
+          ;(groupsById.get(p.parentId) ?? rootGroup).attach(hingeGroup)
+          const meshCX = pCX - rootFlatX
+          const meshCZ = pCZ - rootFlatZ
+          const mesh = makePanelMesh(p, thickness)
+          mesh.position.set(meshCX, 0, meshCZ)
+          scene.add(mesh)
+          hingeGroup.attach(mesh)
+          panelGroupsRef.current.set(p.id, { hingeGroup, panelMesh: mesh })
+          groupsById.set(p.id, hingeGroup)
+          ;(hingeGroup as any).userData.hingeAxis = hingeIsV ? 'z' : 'x'
+          ;(hingeGroup as any).userData.offsetX = meshCX - hx
+          ;(hingeGroup as any).userData.offsetZ = meshCZ - hz
+          continue
+        }
+
+        // ── True root panel (parentId === null) ───────────────────────────────
         const rootFlatX = p.rect.x + p.rect.w / 2
         const rootFlatZ = p.rect.y + p.rect.h / 2
         ;(rootGroup as any).userData.rootFlatX = rootFlatX
@@ -236,6 +338,128 @@ export function Box3DViewer({
       ;(hingeGroup as any).userData.hingeAxis = hingeIsVertical ? 'z' : 'x'
       ;(hingeGroup as any).userData.offsetX = offsetX
       ;(hingeGroup as any).userData.offsetZ = offsetZ
+    }
+
+    // ── Occlusion: hide inner flaps behind the outer shell in the closed box ────
+    //
+    // Fold every panel to its fully-closed pose and read the world plane each one
+    // lands in. Within every shared plane the LARGEST panel is the outer wall/lid;
+    // the dust/pasting/tuck flaps tucked against it are smaller. Each smaller flap
+    // is then physically pushed INTO the box along its inward normal (plus a depth
+    // bias and an outline fade as backup), so the opaque wall genuinely occludes
+    // its faces AND crease lines — exactly like real board, where a packed box
+    // shows nothing of the flaps folded inside it. Purely geometric: needs no
+    // ShapeType tagging, and the console 'occlusion' log shows the classification.
+    const setClosedPose = () => {
+      for (const stage of scheduleRef.current) {
+        const entry = panelGroupsRef.current.get(stage.panelId)
+        if (!entry) continue
+        const ud = (entry.hingeGroup as any).userData
+        const angleRad = (stage.closedAngleDeg * Math.PI) / 180
+        const offX = (ud.offsetX as number) || 0
+        const offZ = (ud.offsetZ as number) || 0
+        if (ud.hingeAxis === 'z') {
+          entry.hingeGroup.rotation.set(0, 0, (offX >= 0 ? 1 : -1) * angleRad)
+        } else if (ud.hingeAxis === 'x') {
+          entry.hingeGroup.rotation.set((offZ >= 0 ? -1 : 1) * angleRad, 0, 0)
+        }
+      }
+    }
+
+    setClosedPose()
+    rootGroup.updateWorldMatrix(false, true)
+
+    const _n = new THREE.Vector3()
+    const _pos = new THREE.Vector3()
+    const _q = new THREE.Quaternion()
+    const _tmp = new THREE.Vector3()
+
+    type PanelPlane = { id: string; area: number; key: string; rawNormal: THREE.Vector3; pos: THREE.Vector3; shapeType?: string }
+    const panelPlanes: PanelPlane[] = []
+    const interiorCenter = new THREE.Vector3()
+    for (const p of sorted) {
+      const entry = panelGroupsRef.current.get(p.id)
+      if (!entry) continue
+      entry.panelMesh.getWorldQuaternion(_q)
+      entry.panelMesh.getWorldPosition(_pos)
+      // World direction of the panel's face (local +Y after the extrude rotate).
+      const rawNormal = _n.set(0, 1, 0).applyQuaternion(_q).normalize().clone()
+      // Group by which of the 6 box faces this panel lands on: snap the normal to
+      // its dominant axis and bucket the position along that axis. This tolerates
+      // imperfect (non-90°) folds far better than comparing exact normals — a flap
+      // folded a few degrees off still lands in its wall's group instead of a
+      // singleton group that would (wrongly) rank 0 and never recede.
+      const ax = Math.abs(rawNormal.x), ay = Math.abs(rawNormal.y), az = Math.abs(rawNormal.z)
+      const axis = ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z'
+      const along = axis === 'x' ? _pos.x : axis === 'y' ? _pos.y : _pos.z
+      const key = `${axis}|${Math.round(along / 8) * 8}`
+      const pos = _pos.clone()
+      panelPlanes.push({ id: p.id, area: p.rect.w * p.rect.h, key, rawNormal, pos, shapeType: p.shapeType })
+      interiorCenter.add(pos)
+    }
+    if (panelPlanes.length) interiorCenter.multiplyScalar(1 / panelPlanes.length)
+
+    const planeGroups = new Map<string, PanelPlane[]>()
+    for (const pp of panelPlanes) {
+      const list = planeGroups.get(pp.key) ?? []
+      list.push(pp)
+      planeGroups.set(pp.key, list)
+    }
+
+    occlusionRankRef.current.clear()
+    insetRef.current.clear()
+    for (const list of planeGroups.values()) {
+      // Largest panel in a shared plane = outer shell (rank 0, stays put); the
+      // smaller flaps tucked against it = inner liners (rank > 0) that recede.
+      list.sort((a, b) => b.area - a.area)
+      list.forEach((pp, rank) => {
+        // Flush surface elements are NOT inner flaps and must never be inset,
+        // depth-biased or faded — otherwise they sink 1.5mm behind their wall and
+        // read as a cut/gap instead of a crease line. Two kinds qualify:
+        //   • panels that never fold (closed angle ≈ 0), and
+        //   • CREASE panels (design fold-lines) at any angle — a folding crease is
+        //     still a division of the wall's OUTER surface, coplanar with it.
+        const stage = scheduleRef.current.find(s => s.panelId === pp.id)
+        const neverFolds = stage != null && Math.abs(stage.closedAngleDeg) < 0.5
+        const isCrease = (pp.shapeType ?? '').toUpperCase().includes('CREASE')
+        const rankEff = (neverFolds || isCrease) ? 0 : rank
+        occlusionRankRef.current.set(pp.id, rankEff)
+        const entry = panelGroupsRef.current.get(pp.id)
+        if (!entry) return
+        setMeshDepthOffset(entry.panelMesh, rankEff * OCCLUSION_OFFSET_STEP)
+        if (rankEff > 0) {
+          // Record how far to push this inner flap INTO the box, along its inward
+          // normal, so the opaque outer wall occludes its faces AND crease lines
+          // (coplanar panels share exact depth; no depth-bias can order them). The
+          // fold effect applies this scaled by progress — 0 at flat so fold lines
+          // stay seamless, ramping to full only as the box shuts.
+          const outwardness = pp.rawNormal.dot(_tmp.copy(pp.pos).sub(interiorCenter))
+          const inwardSign = outwardness > 0 ? -1 : 1
+          insetRef.current.set(pp.id, inwardSign * rankEff * INNER_INSET_MM)
+        }
+      })
+    }
+    // Readable, fully-expanded classification (one line per box face) so the fix
+    // can be verified from the console without drilling into collapsed objects.
+    console.log('[Box3D] occlusion by face:\n' + [...planeGroups.values()]
+      .map(list => '  ' + list.map((pp, r) => `${pp.id}[a${Math.round(pp.area)} r${r}]`).join('  +  '))
+      .join('\n'))
+
+    // Restore the panels to the current fold progress — setClosedPose above left
+    // them shut only so the closed-state planes could be measured. The progress
+    // effect also re-applies this, but doing it here avoids a one-frame flash.
+    for (const stage of scheduleRef.current) {
+      const entry = panelGroupsRef.current.get(stage.panelId)
+      if (!entry) continue
+      const ud = (entry.hingeGroup as any).userData
+      const angleRad = (angleAt(stage, progressRef.current) * Math.PI) / 180
+      const offX = (ud.offsetX as number) || 0
+      const offZ = (ud.offsetZ as number) || 0
+      if (ud.hingeAxis === 'z') {
+        entry.hingeGroup.rotation.set(0, 0, (offX >= 0 ? 1 : -1) * angleRad)
+      } else if (ud.hingeAxis === 'x') {
+        entry.hingeGroup.rotation.set((offZ >= 0 ? -1 : 1) * angleRad, 0, 0)
+      }
     }
 
     const boxL = dims.L
@@ -290,13 +514,19 @@ export function Box3DViewer({
   useEffect(() => {
     for (const stage of scheduleRef.current) {
       const entry = panelGroupsRef.current.get(stage.panelId)
-      if (!entry) continue
+      if (!entry) {
+        console.warn('[Box3D] schedule has panelId not in panelGroupsRef:', stage.panelId)
+        continue
+      }
       const angleDeg = angleAt(stage, progress)
       const angleRad = (angleDeg * Math.PI) / 180
       const ud = (entry.hingeGroup as any).userData
       const axis = ud.hingeAxis as 'x' | 'z' | undefined
       const offsetX = (ud.offsetX as number) || 0
       const offsetZ = (ud.offsetZ as number) || 0
+      if (!axis) {
+        console.warn('[Box3D] panelId has no hingeAxis (will not rotate):', stage.panelId, 'shapeType:', ud.shapeType)
+      }
       if (axis === 'z') {
         const sign = offsetX >= 0 ? 1 : -1
         entry.hingeGroup.rotation.set(0, 0, sign * angleRad)
@@ -307,6 +537,33 @@ export function Box3DViewer({
     }
 
     const smooth = (t: number) => t * t * (3 - 2 * t)
+
+    // Fade out inner-liner flap outlines as the box shuts. Their dark edge lines
+    // sit in the same plane as the outer wall/lid and would otherwise bleed
+    // through the closed box (polygonOffset can't push lines back). Outer-shell
+    // panels (rank 0) keep full outlines; inner liners (rank > 0) fade to nothing
+    // over the last stretch of the close, so a packed box looks solid from
+    // outside — just like real board where the tucked flaps are hidden inside.
+    const linerFade = smooth(Math.max(0, Math.min(1, (progress - 0.7) / 0.3)))
+    for (const [panelId, rank] of occlusionRankRef.current) {
+      if (rank <= 0) continue
+      const entry = panelGroupsRef.current.get(panelId)
+      if (!entry) continue
+      const line = entry.panelMesh.children.find((c: any) => c.isLineSegments) as any
+      if (!line?.material) continue
+      line.material.transparent = true
+      line.material.opacity = 0.85 * (1 - linerFade)
+      line.material.visible = line.material.opacity > 0.02
+    }
+
+    // Push inner flaps into the box on the SAME close ramp, so every panel is
+    // flush at flat/open (fold lines stay seamless — no cut/gap) and the inset
+    // only grows as the box actually shuts and those flaps need hiding.
+    for (const [panelId, insetY] of insetRef.current) {
+      const entry = panelGroupsRef.current.get(panelId)
+      if (entry) entry.panelMesh.position.y = insetY * linerFade
+    }
+
     const dimGroup = dimGroupRef.current
     if (dimGroup) {
       const op = showDims ? smooth(Math.max(0, Math.min(1, (progress - 0.5) / 0.4))) : 0
@@ -354,17 +611,30 @@ function makePanelMesh(panel: HingedPanel, thickness: number): THREE.Mesh {
   geom.rotateX(-Math.PI / 2)
   geom.translate(0, thickness / 2, 0)
 
+  // polygonOffset is enabled here but left at 0; computeOcclusionOffsets sets the
+  // real per-panel value once the closed-state geometry is known, so inner-liner
+  // flaps get pushed behind the outer wall/lid they lie against (faces AND edges).
   const mat = new THREE.MeshStandardMaterial({
     color: PANEL_COLOR,
     roughness: 0.92,
     metalness: 0.0,
     side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 0,
+    polygonOffsetUnits: 0,
   })
   const mesh = new THREE.Mesh(geom, mat)
   mesh.castShadow = true
   mesh.receiveShadow = true
   const edges = new THREE.EdgesGeometry(geom)
-  const lineMat = new THREE.LineBasicMaterial({ color: PANEL_EDGE, transparent: true, opacity: 0.85 })
+  // Inner-liner outlines can't be hidden with polygonOffset (WebGL only offsets
+  // filled triangles, not lines), so the fold effect fades this material's
+  // opacity to 0 for inner flaps as the box shuts. See occlusionRankRef.
+  const lineMat = new THREE.LineBasicMaterial({
+    color: PANEL_EDGE,
+    transparent: true,
+    opacity: 0.85,
+  })
   mesh.add(new THREE.LineSegments(edges, lineMat))
   return mesh
 }

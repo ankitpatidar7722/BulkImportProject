@@ -222,6 +222,7 @@ export function boundsOf(segs: Segment[]): Rect {
 // in ContentWiseKeylineCoordinates.
 
 const EPS = 0.5  // mm — tolerant equality
+const MIN_HINGE_LEN = 5.0  // mm — minimum shared-edge length to count as a real hinge (filters 1mm corner-touches)
 const CURVE_CHORDS = 8  // sample resolution for Curve / Circle segments
 
 function near(a: number, b: number) { return Math.abs(a - b) < EPS }
@@ -660,6 +661,10 @@ export function buildHingeTree(panels: Panel[]): HingedPanel[] {
         if (oe) e = oe
       }
       if (e) {
+        // Discard corner-touch near-zero edges (e.g. 1mm) — they create wrong BFS parents.
+        // Real creases are always ≥ MIN_HINGE_LEN mm; tiny overlaps are just bbox rounding artifacts.
+        const edgeLen = Math.abs(e.x2 - e.x1) + Math.abs(e.y2 - e.y1)
+        if (edgeLen < MIN_HINGE_LEN) continue
         adj.get(panels[i].id)!.push({ otherId: panels[j].id, edge: e.aEdge, line: { x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2 } })
         // Flip edge for the other side
         const flip: Record<string, 'left'|'right'|'top'|'bottom'> = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' }

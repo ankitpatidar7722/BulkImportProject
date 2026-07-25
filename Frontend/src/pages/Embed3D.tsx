@@ -4,7 +4,7 @@ import {
     detectPanels, buildHingeTree, buildFoldSchedule,
     type KeylineRow as KL3DRow, type Dims as KL3DDims,
 } from '../lib/keyline3D'
-import { buildShapeTypeFoldSchedule, shapeTypeCoverage } from '../lib/foldSchedule'
+import { buildShapeTypeFoldSchedule, shapeTypeCoverage, rootFirst } from '../lib/foldSchedule'
 import type { CameraPreset } from '../lib/three-helpers'
 
 /**
@@ -188,7 +188,7 @@ export default function Embed3D() {
             return { tree: [], schedule: [], coverage: 0, foldSource: 'none' as const, error: null as string | null }
         }
         try {
-            const panels = detectPanels(kl3dRows, dims)
+            const panels = rootFirst(detectPanels(kl3dRows, dims), contentType)
             const builtTree = buildHingeTree(panels)
             const cov = shapeTypeCoverage(builtTree, contentType)
             // ShapeType drives the fold order once the content is properly
