@@ -113,6 +113,14 @@ const NewModuleAdditionTab: React.FC<NewModuleAdditionTabProps> = ({ connectionS
     const [displayDropdownOpen, setDisplayDropdownOpen] = useState(false);
     const [dataLoading, setDataLoading] = useState(false);
     const [autoFillLoading, setAutoFillLoading] = useState(false);
+
+    // Custom mode: add a brand-new module (not in the Indus catalog) by hand.
+    // Head Name becomes a combobox of THIS company's existing heads (auto-fills
+    // their group/order) while Module Name is free text. Save still uses
+    // createModuleForClient → only this company's DB.
+    const [customMode, setCustomMode] = useState(false);
+    const [customHeadDropdownOpen, setCustomHeadDropdownOpen] = useState(false);
+    const customHeadDropdownRef = useRef<HTMLDivElement>(null);
     
     // State to ensure portal exists
     const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
@@ -143,6 +151,7 @@ const NewModuleAdditionTab: React.FC<NewModuleAdditionTabProps> = ({ connectionS
             if (headDropdownRef.current && !headDropdownRef.current.contains(target)) setHeadDropdownOpen(false);
             if (nameDropdownRef.current && !nameDropdownRef.current.contains(target)) setNameDropdownOpen(false);
             if (displayDropdownRef.current && !displayDropdownRef.current.contains(target)) setDisplayDropdownOpen(false);
+            if (customHeadDropdownRef.current && !customHeadDropdownRef.current.contains(target)) setCustomHeadDropdownOpen(false);
         };
         document.addEventListener('mousedown', handleClick);
         return () => document.removeEventListener('mousedown', handleClick);
@@ -288,6 +297,31 @@ const NewModuleAdditionTab: React.FC<NewModuleAdditionTabProps> = ({ connectionS
         const match = allIndusModules.find(m => m.moduleDisplayName === display);
         if (match) handleModuleNameSelect(match.moduleName || '');
         else setForm(prev => ({ ...prev, moduleDisplayName: display }));
+    };
+
+    // Custom mode: user picked an EXISTING head → auto-fill its display name,
+    // group index and next display order from THIS company's data.
+    const handleCustomHeadSelect = (head: string) => {
+        setHeadSearch(head);
+        setCustomHeadDropdownOpen(false);
+        const group = clientModules.filter(m => m.moduleHeadName === head);
+        const first = group[0];
+        if (!first) { handleChange('moduleHeadName', head); setIsSetGroupLocked(false); return; }
+        const sgi = first.setGroupIndex;
+        const maxOrder = clientModules
+            .filter(m => m.setGroupIndex === sgi)
+            .reduce((mx, m) => Math.max(mx, m.moduleHeadDisplayOrder ?? 0), 0);
+        const nextOrder = maxOrder + 1;
+        setForm(prev => ({
+            ...prev,
+            moduleHeadName: head,
+            moduleHeadDisplayName: first.moduleHeadDisplayName || head,
+            setGroupIndex: sgi != null ? String(sgi) : prev.setGroupIndex,
+            moduleHeadDisplayOrder: String(nextOrder),
+            moduleDisplayOrder: String(nextOrder),
+        }));
+        setIsSetGroupLocked(sgi != null);
+        setErrors(prev => ({ ...prev, setGroupIndex: undefined, moduleHeadDisplayOrder: undefined }));
     };
 
     const triggerModuleExistsCheck = useCallback((name: string) => {
@@ -447,6 +481,8 @@ const NewModuleAdditionTab: React.FC<NewModuleAdditionTabProps> = ({ connectionS
     };
 
     const filteredHeads = moduleHeads.filter(h => h.toLowerCase().includes(headSearch.toLowerCase())).slice(0, 50);
+    const clientHeads = Array.from(new Set(clientModules.map(m => m.moduleHeadName).filter(Boolean))).sort() as string[];
+    const filteredClientHeads = clientHeads.filter(h => h.toLowerCase().includes(headSearch.toLowerCase())).slice(0, 50);
     const filteredNames = allIndusModules.filter(m => (!form.moduleHeadName || m.moduleHeadName === form.moduleHeadName) && m.moduleName.toLowerCase().includes(nameSearch.toLowerCase())).map(m => m.moduleName).filter((v, i, a) => a.indexOf(v) === i).slice(0, 50);
     const uniqueFilteredDisplays = Array.from(new Set(allIndusModules.filter(m => (!form.moduleHeadName || m.moduleHeadName === form.moduleHeadName) && (!form.moduleName || m.moduleName === form.moduleName) && (m.moduleDisplayName || '').toLowerCase().includes(displaySearch.toLowerCase())).map(m => m.moduleDisplayName).filter(Boolean))) as string[];    return (
         <div className="flex flex-col gap-4 animate-in fade-in duration-300">
@@ -576,7 +612,65 @@ const NewModuleAdditionTab: React.FC<NewModuleAdditionTabProps> = ({ connectionS
                                     <h3 className="text-[14px] font-bold text-gray-800 dark:text-gray-100">Module Identity</h3>
                                 </div>
 
+                                {/* Source mode toggle — catalog pick vs brand-new custom module */}
+                                {!isEditMode && (
+                                    <div className="inline-flex p-1 gap-1 mb-3 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
+                                        <button type="button" onClick={() => setCustomMode(false)}
+                                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${!customMode ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                                            <Layout className="w-3.5 h-3.5" /> From Catalog
+                                        </button>
+                                        <button type="button" onClick={() => { setCustomMode(true); setIsSetGroupLocked(false); }}
+                                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${customMode ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                                            <Plus className="w-3.5 h-3.5" /> New / Custom
+                                        </button>
+                                    </div>
+                                )}
+                                {customMode && (
+                                    <div className="flex items-center gap-2 mb-3 px-3 py-2 text-[11px] text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-lg">
+                                        <Info className="w-3.5 h-3.5 flex-shrink-0" /> New module added to <strong>{companyName}</strong> only. Pick an existing head to auto-fill its group, or type a new one.
+                                    </div>
+                                )}
+
                                 <div className="space-y-4">
+                                    {customMode ? (
+                                    <>
+                                        {/* Custom: existing-head combobox (client) + free-text name/display */}
+                                        <div className="relative" ref={customHeadDropdownRef}>
+                                            <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Module Head Name</label>
+                                            <div className="relative group">
+                                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-indigo-500 transition-colors"><Search className="w-3.5 h-3.5" /></div>
+                                                <input type="text" value={headSearch} placeholder="Pick existing or type new..."
+                                                    className="w-full h-10 pl-9 pr-10 text-[13px] border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                                                    onChange={e => { setCustomHeadDropdownOpen(true); handleChange('moduleHeadName', e.target.value); }}
+                                                    onFocus={() => setCustomHeadDropdownOpen(true)} />
+                                                <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform duration-200 ${customHeadDropdownOpen ? 'rotate-180 text-indigo-500' : ''}`} />
+                                            </div>
+                                            {customHeadDropdownOpen && (
+                                                <div className="absolute z-10 w-full mt-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                                                    {filteredClientHeads.length === 0 ? (
+                                                        <div className="p-3 text-center text-gray-400">{headSearch ? 'New head — will be created' : 'No existing heads'}</div>
+                                                    ) : filteredClientHeads.map(head => (
+                                                        <button key={head} onClick={() => handleCustomHeadSelect(head)} className="w-full text-left px-4 py-2.5 text-[13px] hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 transition-colors">{head}</button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Module Display Name</label>
+                                            <input type="text" value={displaySearch} placeholder="How it appears in menus..."
+                                                className="w-full h-10 px-4 text-[13px] border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                                                onChange={e => handleChange('moduleDisplayName', e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Module Name (Filename) <span className="text-red-500">*</span></label>
+                                            <input type="text" value={nameSearch} placeholder="e.g. SalesReport.aspx"
+                                                className={`w-full h-10 px-4 text-[13px] border ${errors.moduleName ? 'border-red-500 ring-2 ring-red-500/10' : 'border-gray-200 dark:border-gray-700'} rounded-xl bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all`}
+                                                onChange={e => handleChange('moduleName', e.target.value)} />
+                                            {errors.moduleName && <p className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-red-500 bg-red-50 dark:bg-red-900/10 p-1.5 rounded-lg border border-red-100 dark:border-red-900/30"><AlertTriangle className="w-3 h-3" /> {errors.moduleName}</p>}
+                                        </div>
+                                    </>
+                                    ) : (
+                                    <>
                                     <div className="relative" ref={headDropdownRef}>
                                         <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Module Head Name</label>
                                         <div className="relative group">
@@ -656,6 +750,8 @@ const NewModuleAdditionTab: React.FC<NewModuleAdditionTabProps> = ({ connectionS
                                             </div>
                                         )}
                                     </div>
+                                    </>
+                                    )}
                                 </div>
                             </div>
 
@@ -669,7 +765,9 @@ const NewModuleAdditionTab: React.FC<NewModuleAdditionTabProps> = ({ connectionS
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Head Display Name</label>
-                                        <input type="text" value={form.moduleHeadDisplayName} readOnly className="w-full h-10 px-4 text-[13px] border border-gray-100 dark:border-gray-800 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-500 outline-none cursor-not-allowed" />
+                                        <input type="text" value={form.moduleHeadDisplayName} readOnly={!customMode}
+                                            onChange={e => handleChange('moduleHeadDisplayName', e.target.value)}
+                                            className={`w-full h-10 px-4 text-[13px] border rounded-xl outline-none transition-all ${customMode ? 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500' : 'border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 text-gray-500 cursor-not-allowed'}`} />
                                     </div>
                                     <div>
                                         <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Set Group Index <span className="text-red-500">*</span></label>

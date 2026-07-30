@@ -9,6 +9,7 @@ import {
     checkGroupIndexInUse,
     createModule,
     updateModule,
+    getAllModules,
     ModuleDto,
 } from '../services/api';
 import { useMessageModal } from '../components/MessageModal';
@@ -148,9 +149,20 @@ const CreateModule: React.FC = () => {
     const [errors, setErrors] = useState<FieldErrors>({});
     const [isSetGroupLocked, setIsSetGroupLocked] = useState(isEditMode && form.setGroupIndex !== '');
 
+    // Custom mode: enter a brand-new module by hand (not in the Indus catalog).
+    // Fields become free-text inputs; save still writes ONLY to the client DB via
+    // createModule, exactly like a catalog pick — the source catalog is untouched.
+    const [customMode, setCustomMode] = useState(false);
+
     // Indus Modules Data
     const [allIndusModules, setAllIndusModules] = useState<ModuleDto[]>([]);
     const [moduleHeads, setModuleHeads] = useState<string[]>([]);
+
+    // Client (this company) modules — used in custom mode to offer existing head
+    // names and auto-fill their group index / display name / next order.
+    const [clientModules, setClientModules] = useState<ModuleDto[]>([]);
+    const [customHeadDropdownOpen, setCustomHeadDropdownOpen] = useState(false);
+    const customHeadDropdownRef = useRef<HTMLDivElement>(null);
     
     // Search & Visibility states
     const [headSearch, setHeadSearch] = useState(form.moduleHeadName || '');
@@ -180,6 +192,7 @@ const CreateModule: React.FC = () => {
     // ── On mount: load Indus modules + system defaults ───────────
     useEffect(() => {
         loadIndusData();
+        loadClientModules();
         if (!isEditMode) {
             loadSystemDefaults();
         }
@@ -192,6 +205,7 @@ const CreateModule: React.FC = () => {
             if (headDropdownRef.current && !headDropdownRef.current.contains(target)) setHeadDropdownOpen(false);
             if (nameDropdownRef.current && !nameDropdownRef.current.contains(target)) setNameDropdownOpen(false);
             if (displayDropdownRef.current && !displayDropdownRef.current.contains(target)) setDisplayDropdownOpen(false);
+            if (customHeadDropdownRef.current && !customHeadDropdownRef.current.contains(target)) setCustomHeadDropdownOpen(false);
         };
         document.addEventListener('mousedown', handleClick);
         return () => document.removeEventListener('mousedown', handleClick);
@@ -212,6 +226,58 @@ const CreateModule: React.FC = () => {
         } finally {
             setDataLoading(false);
         }
+    };
+
+    const loadClientModules = async () => {
+        try {
+            const modules = await getAllModules();
+            setClientModules(modules);
+        } catch {
+            // silent — custom head auto-fill just won't be available
+        }
+    };
+
+    // Existing head names in THIS company (for the custom-mode combobox).
+    const clientHeads = Array.from(
+        new Set(clientModules.map(m => m.moduleHeadName).filter(Boolean))
+    ).sort() as string[];
+
+    const filteredClientHeads = clientHeads
+        .filter(h => h.toLowerCase().includes(headSearch.toLowerCase()))
+        .slice(0, 50);
+
+    // Custom mode: user picked an EXISTING head → auto-fill its display name,
+    // group index and the next display order from this company's data.
+    const handleCustomHeadSelect = (head: string) => {
+        setHeadSearch(head);
+        setCustomHeadDropdownOpen(false);
+
+        const group = clientModules.filter(m => m.moduleHeadName === head);
+        const first = group[0];
+        if (!first) {
+            // Not an existing head (shouldn't happen from the list) — treat as new.
+            handleChange('moduleHeadName', head);
+            setIsSetGroupLocked(false);
+            return;
+        }
+
+        const sgi = first.setGroupIndex;
+        // Next order = max head-display-order within this group + 1.
+        const maxOrder = clientModules
+            .filter(m => m.setGroupIndex === sgi)
+            .reduce((mx, m) => Math.max(mx, m.moduleHeadDisplayOrder ?? 0), 0);
+        const nextOrder = maxOrder + 1;
+
+        setForm(prev => ({
+            ...prev,
+            moduleHeadName: head,
+            moduleHeadDisplayName: first.moduleHeadDisplayName || head,
+            setGroupIndex: sgi != null ? String(sgi) : prev.setGroupIndex,
+            moduleHeadDisplayOrder: String(nextOrder),
+            moduleDisplayOrder: String(nextOrder),
+        }));
+        setIsSetGroupLocked(sgi != null);
+        setErrors(prev => ({ ...prev, setGroupIndex: undefined, moduleHeadDisplayOrder: undefined }));
     };
 
     const loadSystemDefaults = async () => {
@@ -566,9 +632,11 @@ const CreateModule: React.FC = () => {
                         <div className="cm-breadcrumb">Module Authority &rsaquo; {isEditMode ? 'Edit Module' : 'Create Module'}</div>
                         <h1 className="cm-page-title">{isEditMode ? 'Edit Module' : 'Create New Module'}</h1>
                         <p className="cm-page-desc">
-                            {isEditMode 
+                            {isEditMode
                                 ? 'Modify existing module properties for the system.'
-                                : 'Add a new module to the system by selecting from the Indus Enterprise database.'
+                                : customMode
+                                    ? 'Add a brand-new custom module by entering its details manually. Saved only to this company’s database.'
+                                    : 'Add a new module to the system by selecting from the Indus Enterprise database.'
                             }
                         </p>
                     </div>
@@ -589,8 +657,115 @@ const CreateModule: React.FC = () => {
                     <SectionCard
                         icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M9 9h6M9 12h6M9 15h4" /></svg>}
                         title="Module Information"
-                        subtitle="Core identity fields — select a module to auto-fill related details"
+                        subtitle={customMode
+                            ? 'Type the details of a new module that is not in the Indus catalog'
+                            : 'Core identity fields — select a module to auto-fill related details'}
                     >
+                        {/* Source mode toggle — only when creating (not editing) */}
+                        {!isEditMode && (
+                            <div className="cm-mode-toggle" role="tablist" aria-label="Module source">
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={!customMode}
+                                    className={`cm-mode-btn ${!customMode ? 'cm-mode-btn--active' : ''}`}
+                                    onClick={() => setCustomMode(false)}
+                                >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l9 4.5-9 4.5-9-4.5L12 2zM3 12l9 4.5 9-4.5M3 17l9 4.5 9-4.5" /></svg>
+                                    From Indus Catalog
+                                </button>
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={customMode}
+                                    className={`cm-mode-btn ${customMode ? 'cm-mode-btn--active' : ''}`}
+                                    onClick={() => {
+                                        setCustomMode(true);
+                                        // A brand-new module has no catalog group — let the user set it.
+                                        setIsSetGroupLocked(false);
+                                    }}
+                                >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>
+                                    New / Custom Module
+                                </button>
+                            </div>
+                        )}
+
+                        {customMode && (
+                            <div className="cm-custom-note">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" /></svg>
+                                Enter the new module manually. It is added to <strong>this company only</strong> — the shared Indus catalog is not changed.
+                            </div>
+                        )}
+
+                        {/* ── Custom (manual) entry — brand-new module ────── */}
+                        {customMode && (
+                            <>
+                                <FieldGroup>
+                                    <FormField id="moduleHeadName" label="Module Head Name" hint="Pick an existing head to auto-fill, or type a new one">
+                                        <div className="cm-search-dropdown" ref={customHeadDropdownRef}>
+                                            <div className="cm-search-input-wrap">
+                                                <svg className="cm-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                                                </svg>
+                                                <input
+                                                    id="moduleHeadName"
+                                                    type="text"
+                                                    className="cm-input cm-search-input"
+                                                    placeholder="e.g. Reports (or select existing)"
+                                                    value={headSearch}
+                                                    onChange={e => {
+                                                        const v = e.target.value;
+                                                        setCustomHeadDropdownOpen(true);
+                                                        handleChange('moduleHeadName', v);
+                                                        // Typing a value that isn't an existing head ⇒ new head → unlock group index
+                                                        if (!clientHeads.includes(v)) setIsSetGroupLocked(false);
+                                                    }}
+                                                    onFocus={() => setCustomHeadDropdownOpen(true)}
+                                                    autoComplete="off"
+                                                />
+                                                <svg className={`cm-chevron ${customHeadDropdownOpen ? 'cm-chevron--open' : ''}`}
+                                                    width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                                                    onClick={() => setCustomHeadDropdownOpen(v => !v)}>
+                                                    <path d="M6 9l6 6 6-6" />
+                                                </svg>
+                                            </div>
+                                            {customHeadDropdownOpen && (
+                                                <div className="cm-dropdown-list" role="listbox">
+                                                    {filteredClientHeads.length === 0 ? (
+                                                        <div className="cm-dropdown-status">{headSearch ? 'New head — will be created' : 'No existing heads'}</div>
+                                                    ) : (
+                                                        filteredClientHeads.map(head => (
+                                                            <button key={head} type="button" className={`cm-dropdown-item ${form.moduleHeadName === head ? 'cm-dropdown-item--active' : ''}`}
+                                                                onMouseDown={e => { e.preventDefault(); handleCustomHeadSelect(head); }}>
+                                                                {head}
+                                                            </button>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </FormField>
+                                    <FormField id="moduleDisplayName" label="Module Display Name" hint="How this module appears in menus">
+                                        <input id="moduleDisplayName" type="text" className="cm-input" placeholder="e.g. Sales Report"
+                                            value={displaySearch} onChange={e => handleChange('moduleDisplayName', e.target.value)} autoComplete="off" />
+                                    </FormField>
+                                </FieldGroup>
+                                <FieldGroup>
+                                    <FormField id="moduleNameCustom" label="Module Name" required error={errors.moduleName} hint="Unique key / page name (e.g. SalesReport.aspx)">
+                                        <input id="moduleNameCustom" type="text" className={`cm-input ${errors.moduleName ? 'cm-input--error' : ''}`} placeholder="e.g. SalesReport.aspx"
+                                            value={nameSearch} onChange={e => handleChange('moduleName', e.target.value)} autoComplete="off" />
+                                    </FormField>
+                                    <FormField id="moduleHeadDisplayNameCustom" label="Module Head Display Name" hint="Category label shown in menus">
+                                        <input id="moduleHeadDisplayNameCustom" type="text" className="cm-input" placeholder="e.g. Reports"
+                                            value={form.moduleHeadDisplayName} onChange={e => handleChange('moduleHeadDisplayName', e.target.value)} autoComplete="off" />
+                                    </FormField>
+                                </FieldGroup>
+                            </>
+                        )}
+
+                        {/* ── Catalog (dropdown) entry — pick from Indus ──── */}
+                        {!customMode && (<>
                         <FieldGroup>
                             {/* Module Head Name Dropdown */}
                             <FormField id="moduleHeadName" label="Module Head Name" hint="Select the primary category">
@@ -747,6 +922,7 @@ const CreateModule: React.FC = () => {
                                 />
                             </FormField>
                         </FieldGroup>
+                        </>)}
                     </SectionCard>
 
                     {/* ── Section 2: Display Settings ──────────────────── */}
@@ -1335,6 +1511,59 @@ const cssStyles = `
     box-shadow: 0 6px 20px rgba(102, 126, 234, 0.45);
 }
 .cm-btn--primary:active:not(:disabled) { transform: translateY(0); }
+
+/* ── Source Mode Toggle ────────────────────────────────── */
+.cm-mode-toggle {
+    display: inline-flex;
+    padding: 0.25rem;
+    gap: 0.25rem;
+    background: #f1f5f9;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    margin-bottom: 0.25rem;
+}
+.dark .cm-mode-toggle { background: #0f172a; border-color: #334155; }
+
+.cm-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: #64748b;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s ease;
+}
+.cm-mode-btn:hover { color: #334155; }
+.dark .cm-mode-btn { color: #94a3b8; }
+.dark .cm-mode-btn:hover { color: #e2e8f0; }
+
+.cm-mode-btn--active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(102, 126, 234, 0.3);
+}
+.cm-mode-btn--active:hover { color: #fff; }
+
+.cm-custom-note {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.85rem;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-left: 3px solid #3b82f6;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    color: #1e40af;
+}
+.cm-custom-note svg { flex-shrink: 0; }
+.dark .cm-custom-note { background: rgba(59,130,246,0.1); border-color: #1e3a8a; color: #93c5fd; }
 `;
 
 export default CreateModule;
