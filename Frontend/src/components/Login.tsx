@@ -111,10 +111,10 @@ const Login: React.FC = () => {
             <div className={`relative w-full max-w-5xl bg-white rounded-3xl shadow-[0_20px_70px_-15px_rgba(15,41,77,0.18)] flex flex-col lg:flex-row overflow-hidden border border-slate-100 transition-all duration-300 ${animating ? 'opacity-0 translate-x-8 scale-[0.98]' : 'opacity-100 translate-x-0 scale-100'}`}>
 
                 {/* ── LEFT: FORM ─────────────────────────────────────────────── */}
-                <div className="w-full lg:w-[45%] p-8 sm:p-10 flex flex-col justify-center relative z-20">
+                <div className="w-full lg:w-[45%] px-8 py-6 sm:px-10 sm:py-7 flex flex-col justify-center relative z-20">
 
                     {/* Step progress */}
-                    <div className="flex items-center gap-2 mb-8">
+                    <div className="flex items-center gap-2 mb-5">
                         {/* Step 1 done */}
                         <div className="flex items-center gap-2">
                             <div className="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm shadow-emerald-500/30">
@@ -141,20 +141,20 @@ const Login: React.FC = () => {
                     </div>
 
                     {/* Company badge */}
-                    <div className="inline-flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-full px-3 py-1.5 mb-5 w-fit">
+                    <div className="inline-flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-full px-3 py-1.5 mb-3 w-fit">
                         <div className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
                         <span className="text-orange-600 text-xs font-bold tracking-wide uppercase">{companyName}</span>
                     </div>
 
-                    <div className="mb-6">
-                        <h2 className="text-[28px] font-extrabold text-[#0F294D] mb-1.5 tracking-tight">
+                    <div className="mb-4">
+                        <h2 className="text-[26px] font-extrabold text-[#0F294D] mb-1 tracking-tight">
                             Verify Identity
                         </h2>
                         <p className="text-slate-400 text-sm">Enter your credentials to access the dashboard</p>
                     </div>
 
                     {/* Form */}
-                    <form onSubmit={handleUserLogin} className="space-y-4">
+                    <form onSubmit={handleUserLogin} className="space-y-3">
 
                         {/* Financial Year */}
                         <div className="space-y-1.5 group">
@@ -168,7 +168,7 @@ const Login: React.FC = () => {
                                 <select
                                     value={fYear}
                                     onChange={(e) => setFYear(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-10 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all appearance-none cursor-pointer font-medium"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-14 pr-10 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all appearance-none cursor-pointer font-medium"
                                 >
                                     <option value="2025-2026">2025-2026</option>
                                     <option value="2024-2025">2024-2025</option>
@@ -193,7 +193,7 @@ const Login: React.FC = () => {
                                     onChange={(e) => { setUserName(e.target.value); setShowSuggestions(true); }}
                                     onFocus={() => setShowSuggestions(true)}
                                     onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all placeholder-slate-300 font-medium"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all placeholder-slate-300 font-medium"
                                     placeholder="Enter your username"
                                     required
                                     autoFocus
@@ -225,16 +225,16 @@ const Login: React.FC = () => {
                                     type="password"
                                     value={userPass}
                                     onChange={(e) => setUserPass(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3.5 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all placeholder-slate-300 font-medium"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-14 pr-4 text-[#0F294D] text-[15px] focus:outline-none focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_3px_rgba(99,102,241,0.12)] transition-all placeholder-slate-300 font-medium"
                                     placeholder="••••••••"
                                 />
                             </div>
                         </div>
 
                         {/* Buttons */}
-                        <div className="pt-2 space-y-3">
+                        <div className="pt-1 space-y-2.5">
                             <button type="submit" disabled={isSubmitting}
-                                className="w-full relative overflow-hidden bg-gradient-to-r from-indigo-600 to-[#0F294D] text-white text-[15px] font-bold py-3.5 rounded-xl shadow-[0_8px_24px_-6px_rgba(99,102,241,0.45)] hover:shadow-[0_12px_30px_-4px_rgba(99,102,241,0.55)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 flex items-center justify-center group">
+                                className="w-full relative overflow-hidden bg-gradient-to-r from-indigo-600 to-[#0F294D] text-white text-[15px] font-bold py-3 rounded-xl shadow-[0_8px_24px_-6px_rgba(99,102,241,0.45)] hover:shadow-[0_12px_30px_-4px_rgba(99,102,241,0.55)] hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 flex items-center justify-center group">
                                 <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/15 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 ease-in-out" />
                                 <span className="relative flex items-center gap-2">
                                     {isSubmitting ? <Loader2 className="animate-spin w-5 h-5" /> : <>Access Dashboard <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" /></>}
@@ -242,14 +242,14 @@ const Login: React.FC = () => {
                             </button>
 
                             <button type="button" onClick={handleBack}
-                                className="w-full py-3 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-400 hover:text-slate-600 text-[14px] font-semibold transition-all duration-200 flex items-center justify-center gap-2 group">
+                                className="w-full py-2.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-400 hover:text-slate-600 text-[14px] font-semibold transition-all duration-200 flex items-center justify-center gap-2 group">
                                 <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
                                 Back to Company Login
                             </button>
                         </div>
                     </form>
 
-                    <p className="mt-6 text-center text-xs text-slate-300">&copy; 2026 Printude AI · Secured with JWT &amp; 2FA</p>
+                    <p className="mt-4 text-center text-xs text-slate-300">&copy; 2026 Printude AI · Secured with JWT &amp; 2FA</p>
                 </div>
 
                 {/* ── RIGHT: BRAND PANEL (navy) ────────────────────────────────── */}
@@ -258,9 +258,9 @@ const Login: React.FC = () => {
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[90px]" />
                     <div className="absolute top-0 right-0 w-[250px] h-[250px] bg-orange-500/8 rounded-full blur-[80px]" />
 
-                    <div className="relative z-10 flex flex-col items-center text-center px-8 py-12 w-full">
+                    <div className="relative z-10 flex flex-col items-center text-center px-8 py-8 w-full">
                         {/* Logo */}
-                        <div className="relative mb-8 animate-float">
+                        <div className="relative mb-6 animate-float">
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[260px] h-[260px] border border-white/8 rounded-full animate-[spin_20s_linear_infinite]" />
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] border border-orange-400/10 rounded-full animate-[spin_28s_linear_infinite_reverse]" />
                             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[220px] h-[220px] bg-white/5 rounded-full blur-sm" />
@@ -274,7 +274,7 @@ const Login: React.FC = () => {
                         <h2 className="text-2xl font-extrabold text-white tracking-tight min-h-[40px] mb-2">
                             <Typewriter words={['Almost There!', 'Step 2 of 2...', 'Verify Identity', 'Secure Access', 'Let\'s Go!']} speed={100} wait={2200} />
                         </h2>
-                        <p className="text-white/40 text-sm mb-10">Complete your login to access the full portal</p>
+                        <p className="text-white/40 text-sm mb-6">Complete your login to access the full portal</p>
 
                         {/* Status cards */}
                         <div className="w-full max-w-xs space-y-3">
