@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Database, Upload, Download, Trash2, AlertCircle, CheckCircle2, RotateCcw, Lock, ShieldAlert, RefreshCw, X } from 'lucide-react';
+import { Database, Upload, Download, Trash2, AlertCircle, CheckCircle2, RotateCcw, Lock, ShieldAlert, RefreshCw, X, Calendar } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { AgGridReact } from 'ag-grid-react';
 import { AllCommunityModule, ModuleRegistry, ColDef, GridApi, RowClassRules, IRowNode } from 'ag-grid-community';
@@ -51,6 +51,10 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
     const [resetFlowStep, setResetFlowStep] = useState<0 | 1 | 2 | 3 | 4>(0);
     const [resetFlowType, setResetFlowType] = useState<'item' | 'floor'>('item');
     const [resetCredentials, setResetCredentials] = useState({ username: '', password: '', reason: '' });
+    // Optional date-range filter for Reset (blank = reset ALL). Asked as the FIRST step.
+    const [resetDateRange, setResetDateRange] = useState({ fromDate: '', toDate: '' });
+    const [showDateModal, setShowDateModal] = useState(false);
+    const [dateModalError, setDateModalError] = useState<string | null>(null);
     const [captchaQuestion, setCaptchaQuestion] = useState({ num1: 0, num2: 0, answer: 0 });
     const [captchaInput, setCaptchaInput] = useState('');
     const [captchaError, setCaptchaError] = useState(false);
@@ -631,7 +635,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         setCaptchaError(false);
     };
 
-    // ─── Reset Flow: Trigger (opens Step 1) ─────────────────────────────────
+    // ─── Reset Flow: Trigger (opens Date-Range step FIRST) ──────────────────
     const handleResetTrigger = (type: 'item' | 'floor') => {
         const label = type === 'item' ? 'Reset Item Stock' : 'Reset Floor Stock';
 
@@ -644,9 +648,32 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
             return;
         }
 
-        setResetFlowType(type);
+        openDateModal(type);
+    };
 
-        if (type === 'item') {
+    // ─── Date-Range Modal: the FIRST step (asked before CAPTCHA/credentials) ─
+    const openDateModal = (type: 'item' | 'floor') => {
+        setResetFlowType(type);
+        setResetDateRange({ fromDate: '', toDate: '' });
+        setDateModalError(null);
+        setShowDateModal(true);
+    };
+
+    const handleDateModalNext = () => {
+        const { fromDate, toDate } = resetDateRange;
+        if ((fromDate && !toDate) || (!fromDate && toDate)) {
+            setDateModalError('Please select BOTH From Date and To Date, or leave both blank to reset ALL stock.');
+            return;
+        }
+        if (fromDate && toDate && fromDate > toDate) {
+            setDateModalError('From Date cannot be later than To Date.');
+            return;
+        }
+        setShowDateModal(false);
+        setDateModalError(null);
+
+        // Continue with the existing flow: item → item-select, floor → CAPTCHA
+        if (resetFlowType === 'item') {
             openItemSelectModal();
         } else {
             setResetFlowStep(1);
@@ -725,6 +752,9 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
     const handleResetCancel = () => {
         setResetFlowStep(0);
         setResetCredentials({ username: '', password: '', reason: '' });
+        setResetDateRange({ fromDate: '', toDate: '' });
+        setShowDateModal(false);
+        setDateModalError(null);
         setCaptchaInput('');
         setCaptchaError(false);
         setShowItemSelect(false);
@@ -757,12 +787,9 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
         } else if (action === 'load-master') {
             await processLoadMasterData();
         } else if (action === 'reset-item') {
-            setResetFlowType('item');
-            openItemSelectModal();
+            openDateModal('item');
         } else if (action === 'reset-floor') {
-            setResetFlowType('floor');
-            setResetFlowStep(1);
-            generateCaptcha();
+            openDateModal('floor');
         }
     };
 
@@ -775,6 +802,7 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
     // ─── Reset Flow: Final Submit (Step 4 credentials) ──────────────────────
     const handleResetCredentialSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        // Date range was already chosen & validated in the first (Date-Range) step.
         setIsLoading(true);
 
         try {
@@ -784,9 +812,13 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                     itemGroupId, username, password, reason,
                     selectedItemIds.size > 0 && selectedItemIds.size < itemSelectList.length
                         ? [...selectedItemIds]
-                        : undefined
+                        : undefined,
+                    resetDateRange.fromDate || undefined, resetDateRange.toDate || undefined
                 )
-                : await resetFloorStock(itemGroupId, username, password, reason);
+                : await resetFloorStock(
+                    itemGroupId, username, password, reason,
+                    resetDateRange.fromDate || undefined, resetDateRange.toDate || undefined
+                );
 
             const label = resetFlowType === 'item' ? 'Item Stock' : 'Floor Stock';
 
@@ -1528,6 +1560,83 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                 </div>
             )}
 
+            {/* ─── Date-Range Modal (FIRST step for both Item & Floor Reset) ────── */}
+            {showDateModal && (() => {
+                const isFloor = resetFlowType === 'floor';
+                const title = isFloor ? 'Reset Floor Stock' : 'Reset Item Stock';
+                const smallLabel = isFloor ? '(issue date)' : '(voucher date)';
+                const stockWord = isFloor ? 'floor stock' : 'item stock';
+                return (
+                    <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
+                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-gray-700 p-6">
+                            <div className="flex items-center gap-3 mb-1 text-gray-900 dark:text-white">
+                                <Calendar className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                                <h3 className="text-xl font-bold">{title} — Date Range</h3>
+                            </div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+                                Choose a date range to reset, or leave blank to reset <span className="font-semibold">ALL</span> {stockWord}.
+                            </p>
+
+                            {dateModalError && (
+                                <div className="flex items-start gap-3 p-3 mb-4 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
+                                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+                                    <p className="text-sm font-medium text-red-700 dark:text-red-300">{dateModalError}</p>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">From Date <span className="text-[10px] font-normal text-gray-400">{smallLabel}</span></label>
+                                    <input
+                                        type="date"
+                                        className="w-full p-2 border rounded-lg text-sm dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                                        value={resetDateRange.fromDate}
+                                        max={resetDateRange.toDate || undefined}
+                                        onChange={e => { setResetDateRange({ ...resetDateRange, fromDate: e.target.value }); setDateModalError(null); }}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">To Date <span className="text-[10px] font-normal text-gray-400">{smallLabel}</span></label>
+                                    <input
+                                        type="date"
+                                        className="w-full p-2 border rounded-lg text-sm dark:bg-gray-900 dark:border-gray-600 dark:text-white"
+                                        value={resetDateRange.toDate}
+                                        min={resetDateRange.fromDate || undefined}
+                                        onChange={e => { setResetDateRange({ ...resetDateRange, toDate: e.target.value }); setDateModalError(null); }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-between items-center mt-6">
+                                <button
+                                    type="button"
+                                    onClick={() => { setResetDateRange({ fromDate: '', toDate: '' }); setDateModalError(null); }}
+                                    className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 underline"
+                                >
+                                    Clear dates (reset all)
+                                </button>
+                                <div className="flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={handleResetCancel}
+                                        className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 rounded-lg"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleDateModalNext}
+                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                                    >
+                                        Continue
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
             {/* ─── Item Selection Modal (Step 0 for Item Reset) ─────────────────── */}
             {showItemSelect && (
                 <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
@@ -1805,6 +1914,20 @@ const ItemStockUpload: React.FC<ItemStockUploadProps> = ({ itemGroupId, itemGrou
                                     <p className="text-sm font-medium text-red-700 dark:text-red-300">{resetAuthError}</p>
                                 </div>
                             )}
+
+                            {/* ─── Read-only summary of the date scope chosen in step 1 ─── */}
+                            <div className="flex items-center gap-2 p-2.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
+                                <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                                <span className="text-xs text-gray-700 dark:text-gray-300">
+                                    Scope:&nbsp;
+                                    <span className="font-semibold">
+                                        {resetDateRange.fromDate && resetDateRange.toDate
+                                            ? `${resetDateRange.fromDate} to ${resetDateRange.toDate}`
+                                            : `ALL ${resetFlowType === 'floor' ? 'floor' : 'item'} stock`}
+                                    </span>
+                                </span>
+                            </div>
+
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
                                 <input

@@ -108,6 +108,11 @@ public class ResetStockRequest
     public string Password { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public List<int> ItemIds { get; set; } = new(); // empty = reset all items
+
+    // Optional date range for Floor Stock Reset — filters on the floor-issue VoucherDate.
+    // Both null = reset ALL floor stock (legacy behaviour).
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; }
 }
 
 public class ItemStockValidationRequest

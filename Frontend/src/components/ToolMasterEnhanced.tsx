@@ -443,6 +443,52 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             { field: 'toolRefCode', headerName: 'ToolRefCode', minWidth: 120 },
         ];
 
+        // SIM columns (ToolGroupId == 13)
+        const simColumns = [
+            { field: 'clientName', headerName: 'LedgerName', minWidth: 150 },
+            { field: 'jobName', headerName: 'JobName', minWidth: 150 },
+            { field: 'sizeL', headerName: 'SizeL', minWidth: 80 },
+            { field: 'positive', headerName: 'Positive', minWidth: 90 },
+            { field: 'negative', headerName: 'Negative', minWidth: 90 },
+            { field: 'sizeW', headerName: 'SizeW', minWidth: 80 },
+            { field: 'upsAround', headerName: 'UpsAround', minWidth: 90 },
+            { field: 'upsAcross', headerName: 'UpsAcross', minWidth: 90 },
+            { field: 'totalUps', headerName: 'TotalUps', minWidth: 90 },
+            {
+                field: 'productHSNName', headerName: 'ProductHSNName', minWidth: 160,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: getDropdownParams(hsnGroups.map(h => h.displayName)),
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'toolName', headerName: 'ToolName', minWidth: 180 },
+            { field: 'toolType', headerName: 'ToolType', minWidth: 120 },
+            { field: 'master', headerName: 'Master', minWidth: 90 },
+            { field: 'sim', headerName: 'Sim', minWidth: 80 },
+            {
+                field: 'unitSymbol', headerName: 'UnitSymbol', minWidth: 100,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
+                cellRenderer: DropdownCellRenderer
+            },
+            {
+                field: 'purchaseUnit', headerName: 'PurchaseUnit', minWidth: 120,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'purchaseRate', headerName: 'PurchaseRate', minWidth: 110 },
+            { field: 'referenceToolNo', headerName: 'ReferenceToolNo', minWidth: 140 },
+            { field: 'estimateRate', headerName: 'EstimateRate', minWidth: 120 },
+            {
+                field: 'stockUnit', headerName: 'StockUnit', minWidth: 100,
+                cellEditor: 'agSelectCellEditor',
+                cellEditorParams: getDropdownParams(units.map(u => u.unitSymbol)),
+                cellRenderer: DropdownCellRenderer
+            },
+            { field: 'toolRefCode', headerName: 'ToolRefCode', minWidth: 120 },
+            { field: 'location', headerName: 'Location', minWidth: 120 },
+        ];
+
         // Select columns based on toolGroupId
         let dataColumns;
         if (toolGroupId === 3) {
@@ -455,6 +501,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
             dataColumns = embossingCylinderColumns;
         } else if (toolGroupId === 8) {
             dataColumns = flexoDieColumns;
+        } else if (toolGroupId === 13) {
+            dataColumns = simColumns;
         } else {
             dataColumns = platesColumns; // Default for PLATES and other tool groups
         }
@@ -900,6 +948,32 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             stockUnit: toStr(row.StockUnit),
                             toolRefCode: toStr(row.ToolRefCode),
                         };
+                    } else if (toolGroupId === 13) { // SIM
+                        return {
+                            toolGroupID: toolGroupId,
+                            clientName: toStr(row.LedgerName),
+                            jobName: toStr(row.JobName),
+                            sizeL: row.SizeL !== undefined && row.SizeL !== '' && !isNaN(parseFloat(row.SizeL)) ? parseFloat(row.SizeL) : undefined,
+                            positive: toStr(row.Positive),
+                            negative: toStr(row.Negative),
+                            sizeW: row.SizeW !== undefined && row.SizeW !== '' && !isNaN(parseFloat(row.SizeW)) ? parseFloat(row.SizeW) : undefined,
+                            upsAround: upsAround !== undefined && upsAround !== '' && !isNaN(parseInt(upsAround)) ? parseInt(upsAround) : undefined,
+                            upsAcross: upsAcross !== undefined && upsAcross !== '' && !isNaN(parseInt(upsAcross)) ? parseInt(upsAcross) : undefined,
+                            totalUps: totalUps !== undefined && totalUps !== '' && !isNaN(parseInt(totalUps)) ? parseInt(totalUps) : undefined,
+                            productHSNName: toStr(row.ProductHSNName),
+                            toolName: toStr(row.ToolName),
+                            toolType: toStr(row.ToolType),
+                            master: toStr(row.Master),
+                            sim: toStr(row.Sim),
+                            unitSymbol: toStr(row.UnitSymbol),
+                            purchaseUnit: toStr(row.PurchaseUnit),
+                            purchaseRate: row.PurchaseRate !== undefined && row.PurchaseRate !== '' && !isNaN(parseFloat(row.PurchaseRate)) ? parseFloat(row.PurchaseRate) : undefined,
+                            referenceToolNo: toStr(row.ReferenceToolNo),
+                            estimateRate: row.EstimateRate !== undefined && row.EstimateRate !== '' && !isNaN(parseFloat(row.EstimateRate)) ? parseFloat(row.EstimateRate) : undefined,
+                            stockUnit: toStr(row.StockUnit),
+                            toolRefCode: toStr(row.ToolRefCode),
+                            location: toStr(row.Location),
+                        };
                     } else { // PLATES (default)
                         return {
                             toolGroupID: toolGroupId,
@@ -948,6 +1022,14 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                             item.toolName || item.toolType || item.aroundGap || item.acrossGap ||
                             item.unitSymbol || item.purchaseUnit || item.purchaseRate ||
                             item.referenceToolNo || item.estimateRate || item.stockUnit
+                        );
+                    } else if (toolGroupId === 13) { // SIM
+                        return !!(
+                            item.clientName || item.jobName || item.sizeL || item.positive || item.negative ||
+                            item.sizeW || item.upsAround || item.upsAcross || item.totalUps || item.productHSNName ||
+                            item.toolName || item.toolType || item.master || item.sim || item.unitSymbol ||
+                            item.purchaseUnit || item.purchaseRate || item.referenceToolNo || item.estimateRate ||
+                            item.stockUnit || item.toolRefCode || item.location
                         );
                     } else { // PLATES
                         return !!(
@@ -1047,7 +1129,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
 
                 result.rows.forEach((row: ToolRowValidation) => {
                     if (row.rowStatus === ValidationStatus.Duplicate) {
-                        const col = 'SizeL/SizeW';
+                        const col = toolGroupId === 13 ? 'Duplicate SIM (JobName+Positive+Negative+SizeL+SizeW+Ups+TotalUps+Master+Sim+ReferenceToolNo+Location)' : 'SizeL/SizeW';
                         if (!columnFailures.has(col)) columnFailures.set(col, new Set());
                         columnFailures.get(col)!.add('Duplicate data found');
                     }
@@ -1104,7 +1186,7 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 const columnFailures = new Map<string, Set<string>>();
                 result.rows.forEach((row: ToolRowValidation) => {
                     if (row.rowStatus === ValidationStatus.Duplicate) {
-                        const col = 'SizeL/SizeW';
+                        const col = toolGroupId === 13 ? 'Duplicate SIM (JobName+Positive+Negative+SizeL+SizeW+Ups+TotalUps+Master+Sim+ReferenceToolNo+Location)' : 'SizeL/SizeW';
                         if (!columnFailures.has(col)) columnFailures.set(col, new Set());
                         columnFailures.get(col)!.add('Duplicate data found');
                     }
@@ -1192,6 +1274,13 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 'ProductHSNName', 'ToolName', 'ToolType', 'AroundGap', 'AcrossGap',
                 'UnitSymbol', 'PurchaseUnit', 'PurchaseRate', 'ReferenceToolNo', 'EstimateRate', 'StockUnit', 'ToolRefCode'
             ];
+        } else if (toolGroupId === 13) { // SIM
+            exportColumns = [
+                'LedgerName', 'JobName', 'SizeL', 'Positive', 'Negative', 'SizeW',
+                'UpsAround', 'UpsAcross', 'TotalUps', 'ProductHSNName', 'ToolName', 'ToolType',
+                'Master', 'Sim', 'UnitSymbol', 'PurchaseUnit', 'PurchaseRate',
+                'ReferenceToolNo', 'EstimateRate', 'StockUnit', 'ToolRefCode', 'Location'
+            ];
         } else { // PLATES (default)
             exportColumns = [
                 'ToolType', 'JobName', 'SizeL', 'SizeW', 'TotalUps',
@@ -1238,6 +1327,8 @@ const ToolMasterEnhanced: React.FC<ToolMasterEnhancedProps> = ({ toolGroupId, to
                 rowVals = { SizeW: tool.sizeW, Manufacturer: tool.manufacturer, NoOfTeeth: tool.noOfTeeth, CircumferenceMM: tool.circumferenceMM, CircumferenceInch: tool.circumferenceInch, ProductHSNName: tool.productHSNName, PurchaseUnit: tool.purchaseUnit, PurchaseRate: tool.purchaseRate, StockUnit: tool.stockUnit, ToolName: tool.toolName, ToolRefCode: tool.toolRefCode };
             } else if (toolGroupId === 8) { // FLEXO DIE
                 rowVals = { LedgerName: tool.clientName, JobName: tool.jobName, SizeL: tool.sizeL, SizeH: tool.sizeH, UpsAround: tool.upsAround, UpsAcross: tool.upsAcross, TotalUps: tool.totalUps, ProductHSNName: tool.productHSNName, ToolName: tool.toolName, ToolType: tool.toolType, AroundGap: tool.aroundGap, AcrossGap: tool.acrossGap, UnitSymbol: tool.unitSymbol, PurchaseUnit: tool.purchaseUnit, PurchaseRate: tool.purchaseRate, ReferenceToolNo: tool.referenceToolNo, EstimateRate: tool.estimateRate, StockUnit: tool.stockUnit, ToolRefCode: tool.toolRefCode };
+            } else if (toolGroupId === 13) { // SIM
+                rowVals = { LedgerName: tool.clientName, JobName: tool.jobName, SizeL: tool.sizeL, Positive: tool.positive, Negative: tool.negative, SizeW: tool.sizeW, UpsAround: tool.upsAround, UpsAcross: tool.upsAcross, TotalUps: tool.totalUps, ProductHSNName: tool.productHSNName, ToolName: tool.toolName, ToolType: tool.toolType, Master: tool.master, Sim: tool.sim, UnitSymbol: tool.unitSymbol, PurchaseUnit: tool.purchaseUnit, PurchaseRate: tool.purchaseRate, ReferenceToolNo: tool.referenceToolNo, EstimateRate: tool.estimateRate, StockUnit: tool.stockUnit, ToolRefCode: tool.toolRefCode, Location: tool.location };
             } else { // PLATES (default)
                 rowVals = { ToolType: tool.toolType, JobName: tool.jobName, SizeL: tool.sizeL, SizeW: tool.sizeW, TotalUps: tool.totalUps, PurchaseRate: tool.purchaseRate, PurchaseUnit: tool.purchaseUnit, StockUnit: tool.stockUnit, ToolName: tool.toolName, ProductHSNName: tool.productHSNName, ToolRefCode: tool.toolRefCode };
             }

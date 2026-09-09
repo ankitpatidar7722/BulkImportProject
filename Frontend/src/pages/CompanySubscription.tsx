@@ -899,20 +899,14 @@ const CompanySubscription: React.FC = () => {
         }
     };
 
-    // @ts-ignore - Reserved for future use
-    const handleOpenCreateGroupModal = async () => {
-        setShowCreateGroupModal(true);
+    const handleOpenCreateGroupModal = () => {
+        // Pre-scope the new group to the application already picked in Tab 3,
+        // reset the form and open the modal. Available modules are loaded by the
+        // effect that watches [newGroupApp, showCreateGroupModal].
+        setNewGroupApp(groupAppName);
         setNewGroupName('');
         setSelectedModulesForGroup(new Set());
-        // Load available modules
-        try {
-            const res = await getAvailableModulesForGroup(newGroupApp);
-            if (res.success) {
-                setAvailableModules(res.data);
-            }
-        } catch {
-            showMessage('error', 'Error', 'Failed to load available modules.');
-        }
+        setShowCreateGroupModal(true);
     };
 
     const handleCreateGroup = async () => {
@@ -2108,6 +2102,17 @@ const CompanySubscription: React.FC = () => {
                                                     className="h-9 px-4 text-[13px] font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all duration-150 disabled:opacity-50 shadow-sm hover:shadow-md shadow-indigo-600/20"
                                                 >
                                                     {isLoadingGroupModules ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : 'Load Module'}
+                                                </button>
+                                            </div>
+
+                                            {/* Create New Module Group Button */}
+                                            <div className="pt-5">
+                                                <button
+                                                    onClick={handleOpenCreateGroupModal}
+                                                    title="Create a new module group"
+                                                    className="h-9 px-4 text-[13px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all duration-150 inline-flex items-center gap-1.5"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" /> Create Group
                                                 </button>
                                             </div>
                                         </div>

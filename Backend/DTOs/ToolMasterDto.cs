@@ -45,6 +45,13 @@ public class ToolMasterDto
     public bool? IsStandardItem { get; set; }
     public bool? IsRegularItem { get; set; }
 
+    // SIM / SHIM-specific fields (ToolGroupID 13). Stored as text in ToolMasterDetails.
+    public string? Positive { get; set; }
+    public string? Negative { get; set; }
+    public string? Master { get; set; }
+    public string? Sim { get; set; }
+    public string? Location { get; set; }
+
     public bool? IsDeletedTransaction { get; set; }
 
     // Raw string values for fields that failed client-side type parsing

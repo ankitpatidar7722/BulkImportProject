@@ -113,6 +113,12 @@ const TOOL_MASTER_COLUMNS: Record<number, string[]> = {
         'ProductHSNName', 'ToolName', 'ToolType', 'AroundGap', 'AcrossGap',
         'UnitSymbol', 'PurchaseUnit', 'PurchaseRate', 'ReferenceToolNo', 'EstimateRate', 'StockUnit', 'ToolRefCode'
     ],
+    13: [ // SIM
+        'LedgerName', 'JobName', 'SizeL', 'Positive', 'Negative', 'SizeW',
+        'UpsAround', 'UpsAcross', 'TotalUps', 'ProductHSNName', 'ToolName', 'ToolType',
+        'Master', 'Sim', 'UnitSymbol', 'PurchaseUnit', 'PurchaseRate',
+        'ReferenceToolNo', 'EstimateRate', 'StockUnit', 'ToolRefCode', 'Location'
+    ],
     0: [ // PLATES (default)
         'ToolType', 'JobName', 'SizeL', 'SizeW', 'TotalUps',
         'PurchaseRate', 'PurchaseUnit', 'StockUnit', 'ToolName', 'ProductHSNName', 'ToolRefCode'

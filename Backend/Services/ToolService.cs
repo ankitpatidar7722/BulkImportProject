@@ -26,6 +26,7 @@ public class ToolService : IToolService
                 t.JobName,
                 t.LedgerName as ClientName,
                 t.ToolRefCode,
+                t.ToolLocation as Location,
                 t.ProductHSNID,
                 hsn.DisplayName as ProductHSNName,
                 hsn.HSNCode,
@@ -161,6 +162,22 @@ public class ToolService : IToolService
                         case "ManufecturerItemCode":
                             tool.ManufecturerItemCode = fieldValue;
                             break;
+                        // SIM / SHIM-specific detail fields (ToolGroupID 13)
+                        case "Positive":
+                            tool.Positive = fieldValue;
+                            break;
+                        case "Negative":
+                            tool.Negative = fieldValue;
+                            break;
+                        case "Master":
+                            tool.Master = fieldValue;
+                            break;
+                        case "Sim":
+                            tool.Sim = fieldValue;
+                            break;
+                        case "Location":
+                            tool.Location = fieldValue;
+                            break;
                         case "PurchaseOrderQuantity":
                             if (decimal.TryParse(fieldValue, out decimal poQty)) tool.PurchaseOrderQuantity = poQty;
                             break;
@@ -221,6 +238,22 @@ public class ToolService : IToolService
 
             8 => // FLEXO DIE: ToolName + SizeL + SizeH + TotalUps
                 $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeL?.ToString() ?? ""}|{tool.SizeH?.ToString() ?? ""}|{tool.TotalUps?.ToString() ?? ""}",
+
+            13 => // SIM: JobName + SizeL + Positive + Negative + SizeW + UpsAround + UpsAcross + TotalUps + Master + Sim + ReferenceToolNo + Location
+                string.Join("|", new[] {
+                    (tool.JobName?.Trim() ?? "").ToLowerInvariant(),
+                    tool.SizeL?.ToString() ?? "",
+                    (tool.Positive?.Trim() ?? "").ToLowerInvariant(),
+                    (tool.Negative?.Trim() ?? "").ToLowerInvariant(),
+                    tool.SizeW?.ToString() ?? "",
+                    tool.UpsAround?.ToString() ?? "",
+                    tool.UpsAcross?.ToString() ?? "",
+                    tool.TotalUps?.ToString() ?? "",
+                    (tool.Master?.Trim() ?? "").ToLowerInvariant(),
+                    (tool.Sim?.Trim() ?? "").ToLowerInvariant(),
+                    (tool.ReferenceToolNo?.Trim() ?? "").ToLowerInvariant(),
+                    (tool.Location?.Trim() ?? "").ToLowerInvariant()
+                }),
 
             _ => // PLATES and default: ToolName + SizeL + SizeW + TotalUps
                 $"{(tool.ToolName?.Trim() ?? "").ToLowerInvariant()}|{tool.SizeL?.ToString() ?? ""}|{tool.SizeW?.ToString() ?? ""}|{tool.TotalUps?.ToString() ?? ""}"
@@ -310,6 +343,10 @@ public class ToolService : IToolService
                 "UpsAround", "UpsAcross", "TotalUps", "AroundGap", "AcrossGap",
                 "ProductHSNName", "PurchaseUnit", "PurchaseRate", "StockUnit"
             };
+        }
+        else if (toolGroupId == 13) // SIM — no mandatory fields (per requirement)
+        {
+            requiredFields = Array.Empty<string>();
         }
         else // PLATES (ToolGroupId == 1) and default for all other tool groups
         {
@@ -674,6 +711,7 @@ public class ToolService : IToolService
         masterTable.Columns.Add("CreatedBy",           typeof(int));
         masterTable.Columns.Add("CreatedDate",         typeof(DateTime));
         masterTable.Columns.Add("IsDeletedTransaction", typeof(int));
+        masterTable.Columns.Add("ToolLocation",         typeof(string));
 
         object N(object? v) => v ?? DBNull.Value;
 
@@ -693,7 +731,8 @@ public class ToolService : IToolService
                 N(tool.PurchaseUnit), N(tool.PurchaseRate),
                 N(tool.PurchaseUnit), N(tool.EstimateRate ?? tool.PurchaseRate),
                 N(tool.StockUnit),
-                2, 2, 2, DateTime.Now, 0
+                2, 2, 2, DateTime.Now, 0,
+                N(tool.Location)
             );
         }
 
@@ -804,6 +843,12 @@ public class ToolService : IToolService
             if (tool.PurchaseRate.HasValue)        AddDetail("PurchaseRate",        tool.PurchaseRate.ToString());
             AddDetail("StockUnit",             tool.StockUnit);
             AddDetail("ManufecturerItemCode",  tool.ManufecturerItemCode);
+            // SIM / SHIM-specific detail fields (ToolGroupID 13; skipped when empty for other groups)
+            AddDetail("Positive",              tool.Positive);
+            AddDetail("Negative",              tool.Negative);
+            AddDetail("Master",                tool.Master);
+            AddDetail("Sim",                   tool.Sim);
+            // Location goes to ToolMaster.ToolLocation column (above), not details
             if (tool.PurchaseOrderQuantity.HasValue) AddDetail("PurchaseOrderQuantity", tool.PurchaseOrderQuantity.ToString());
             if (shelfLife.HasValue)                AddDetail("ShelfLife",            shelfLife.ToString());
             if (tool.MinimumStockQty.HasValue)     AddDetail("MinimumStockQty",     tool.MinimumStockQty.ToString());

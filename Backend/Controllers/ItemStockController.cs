@@ -112,7 +112,8 @@ public class ItemStockController : ControllerBase
 
             var result = await _itemStockService.ResetItemStockAsync(
                 request.ItemGroupId, request.Username, request.Password, request.Reason,
-                request.ItemIds.Count > 0 ? request.ItemIds : null);
+                request.ItemIds.Count > 0 ? request.ItemIds : null,
+                request.FromDate, request.ToDate);
             return Ok(result);
         }
         catch (UnauthorizedAccessException)
@@ -141,7 +142,8 @@ public class ItemStockController : ControllerBase
                 return BadRequest(new { message = "Username is required" });
 
             var result = await _itemStockService.ResetFloorStockAsync(
-                request.ItemGroupId, request.Username, request.Password, request.Reason);
+                request.ItemGroupId, request.Username, request.Password, request.Reason,
+                request.FromDate, request.ToDate);
             return Ok(result);
         }
         catch (UnauthorizedAccessException)

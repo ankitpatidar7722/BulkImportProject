@@ -21,6 +21,7 @@
         "devextreme-react": "23.2.3",
         "exceljs": "^4.4.0",
         "file-saver": "^2.0.5",
+        "indas-ui": "^0.0.1",
         "lucide-react": "^0.323.0",
         "mathjs": "^15.2.0",
         "react": "^18.2.0",

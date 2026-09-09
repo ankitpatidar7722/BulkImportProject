@@ -50,9 +50,9 @@ public class CompanyService : ICompanyService
                 PWOFlexoPrintRDLC, IsSupplierItemAllocationRequired, ByPassCostApproval, 
                 PWOGangPrintRDLC, QCAndPackingSlip, ItemSalesOrderBookingPrint, 
                 RefCompanyCode, RefSalesOfficeCode, ISOTPREQUIRED, CompanyStaticIP
-            FROM CompanyMaster 
-            WHERE IsDeletedTransaction = 0 
-            ORDER BY CompanyId DESC";
+            FROM CompanyMaster
+            WHERE IsDeletedTransaction = 0
+            ORDER BY CompanyId ASC";
             
         if (_connection.State != System.Data.ConnectionState.Open)
             await _connection.OpenAsync();

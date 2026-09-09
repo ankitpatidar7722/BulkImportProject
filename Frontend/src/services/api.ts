@@ -1116,6 +1116,12 @@ export interface ToolMasterDto {
     minimumStockQty?: number;
     isStandardItem?: boolean;
     isRegularItem?: boolean;
+    // SIM / SHIM-specific fields (ToolGroupID 13)
+    positive?: string;
+    negative?: string;
+    master?: string;
+    sim?: string;
+    location?: string;
     isDeletedTransaction?: boolean;
 }
 
@@ -1310,17 +1316,24 @@ export const loadStockData = async (itemGroupId: number): Promise<ItemStockEnric
 
 export const resetItemStock = async (
     itemGroupId: number, username: string, password: string, reason: string,
-    itemIds?: number[]
+    itemIds?: number[], fromDate?: string, toDate?: string
 ): Promise<ItemStockImportResult> => {
     const response = await api.post('/itemstock/reset-item-stock', {
         itemGroupId, username, password, reason,
-        itemIds: itemIds ?? []
+        itemIds: itemIds ?? [],
+        fromDate: fromDate || null, toDate: toDate || null
     });
     return response.data;
 };
 
-export const resetFloorStock = async (itemGroupId: number, username: string, password: string, reason: string): Promise<ItemStockImportResult> => {
-    const response = await api.post('/itemstock/reset-floor-stock', { itemGroupId, username, password, reason });
+export const resetFloorStock = async (
+    itemGroupId: number, username: string, password: string, reason: string,
+    fromDate?: string, toDate?: string
+): Promise<ItemStockImportResult> => {
+    const response = await api.post('/itemstock/reset-floor-stock', {
+        itemGroupId, username, password, reason,
+        fromDate: fromDate || null, toDate: toDate || null
+    });
     return response.data;
 };
 

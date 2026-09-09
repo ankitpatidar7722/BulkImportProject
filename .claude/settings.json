@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(awk '/type ButtonProps|interface ButtonProps|declare .*Button[ :<\\(]/{p=1} p{print NR\": \"$0} p&&/;\\\\s*$/&&NR>1{c++; if\\(c>3\\)exit}' index.d.ts)"
     ]
   }
 }

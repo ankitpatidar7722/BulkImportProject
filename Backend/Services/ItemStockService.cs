@@ -702,7 +702,7 @@ public class ItemStockService : IItemStockService
     // 1. Query all batch-wise closing stock for the ItemGroup
     // 2. Create a new PHY transaction with IssueQuantity = ClosingQty (zeroes out stock)
     // 3. Update BatchID and call UPDATE_ITEM_STOCK_VALUES
-    public async Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId, string username, string password, string reason, List<int>? itemIds = null)
+    public async Task<ItemStockImportResult> ResetItemStockAsync(int itemGroupId, string username, string password, string reason, List<int>? itemIds = null, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var result = new ItemStockImportResult();
 
@@ -740,9 +740,12 @@ public class ItemStockService : IItemStockService
 
             try
             {
+                var dateRangeLog = (fromDate.HasValue || toDate.HasValue)
+                    ? $" DateRange: {(fromDate?.ToString("yyyy-MM-dd") ?? "ALL")} to {(toDate?.ToString("yyyy-MM-dd") ?? "ALL")}."
+                    : " DateRange: ALL.";
                 await System.IO.File.AppendAllTextAsync(
                     "debug_log.txt",
-                    $"[{DateTime.Now}] ResetItemStock Authorized: user '{username}', ItemGroupId={itemGroupId}. Reason: {reason}\n"
+                    $"[{DateTime.Now}] ResetItemStock Authorized: user '{username}', ItemGroupId={itemGroupId}.{dateRangeLog} Reason: {reason}\n"
                 );
             }
             catch { }
@@ -750,6 +753,12 @@ public class ItemStockService : IItemStockService
             // â”€â”€â”€ 1. Fetch all batch-wise closing stock (same query as VB.NET GetAllBatchStock) â”€
             var hasItemFilter = itemIds != null && itemIds.Count > 0;
             var itemIdFilter = hasItemFilter ? "AND IM.ItemID IN @ItemIds" : "";
+
+            // Optional date-range filter on the transaction VoucherDate.
+            // Both null => reset ALL item stock (legacy behaviour). ToDate is inclusive of the whole day.
+            var dateFilter =
+                "AND (@FromDate IS NULL OR ITM.VoucherDate >= @FromDate) " +
+                "AND (@ToDate   IS NULL OR ITM.VoucherDate <  DATEADD(DAY, 1, @ToDate))";
 
             var batchStock = (await _connection.QueryAsync<dynamic>(
                 $@"SELECT
@@ -783,6 +792,7 @@ public class ItemStockService : IItemStockService
                   WHERE ITD.CompanyID = 2
                     AND IM.ItemGroupID = @GroupId
                     {itemIdFilter}
+                    {dateFilter}
                     AND ISNULL(IM.IsDeletedTransaction, 0) = 0
                   GROUP BY
                     ISNULL(IM.ItemID, 0), ISNULL(ITD.ParentTransactionID, 0),
@@ -795,14 +805,18 @@ public class ItemStockService : IItemStockService
                   - ISNULL(SUM(ISNULL(ITD.IssueQuantity, 0)), 0)
                   - ISNULL(SUM(ISNULL(ITD.RejectedQuantity, 0)), 0), 2) > 0",
                 hasItemFilter
-                    ? (object)new { GroupId = itemGroupId, ItemIds = itemIds }
-                    : new { GroupId = itemGroupId },
+                    ? (object)new { GroupId = itemGroupId, ItemIds = itemIds, FromDate = fromDate, ToDate = toDate }
+                    : new { GroupId = itemGroupId, FromDate = fromDate, ToDate = toDate },
                 commandTimeout: 120)).ToList();
+
+            var rangeSuffix = (fromDate.HasValue || toDate.HasValue)
+                ? $" for the selected date range ({(fromDate?.ToString("dd-MMM-yyyy") ?? "start")} to {(toDate?.ToString("dd-MMM-yyyy") ?? "today")})"
+                : "";
 
             if (batchStock.Count == 0)
             {
                 result.Success = true;
-                result.Message = "No item stock records found to reset.";
+                result.Message = $"No item stock records found to reset{rangeSuffix}.";
                 return result;
             }
 
@@ -906,7 +920,7 @@ public class ItemStockService : IItemStockService
             result.Success = true;
             result.ImportedRows = batchStock.Count;
             result.TotalRows = batchStock.Count;
-            result.Message = $"Item Stock Reset Successful. {batchStock.Count} batch(es) zeroed out.";
+            result.Message = $"Item Stock Reset Successful. {batchStock.Count} batch(es) zeroed out{rangeSuffix}.";
         }
         catch (Exception ex)
         {
@@ -923,7 +937,7 @@ public class ItemStockService : IItemStockService
     // Floor stock = items issued to floor (VoucherID=-19) minus consumed (ItemConsumptionDetail)
     // Reset creates consumption records in ItemConsumptionMain/Detail (NOT ItemTransactionMain!)
     // VoucherPrefix='RTS', VoucherID=-25
-    public async Task<ItemStockImportResult> ResetFloorStockAsync(int itemGroupId, string username, string password, string reason)
+    public async Task<ItemStockImportResult> ResetFloorStockAsync(int itemGroupId, string username, string password, string reason, DateTime? fromDate = null, DateTime? toDate = null)
     {
         var result = new ItemStockImportResult();
 
@@ -961,9 +975,12 @@ public class ItemStockService : IItemStockService
 
             try
             {
+                var dateRangeLog = (fromDate.HasValue || toDate.HasValue)
+                    ? $" DateRange: {(fromDate?.ToString("yyyy-MM-dd") ?? "ALL")} to {(toDate?.ToString("yyyy-MM-dd") ?? "ALL")}."
+                    : " DateRange: ALL.";
                 await System.IO.File.AppendAllTextAsync(
                     "debug_log.txt",
-                    $"[{DateTime.Now}] ResetFloorStock Authorized: user '{username}', ItemGroupId={itemGroupId}. Reason: {reason}\n"
+                    $"[{DateTime.Now}] ResetFloorStock Authorized: user '{username}', ItemGroupId={itemGroupId}.{dateRangeLog} Reason: {reason}\n"
                 );
             }
             catch { }
@@ -974,6 +991,12 @@ public class ItemStockService : IItemStockService
             var itemGroupFilter = itemGroupId > 0
                 ? "AND IM.ItemGroupID = @GroupId"
                 : "";
+
+            // Optional date-range filter on the floor-issue VoucherDate.
+            // Both null => reset ALL floor stock (legacy behaviour). ToDate is inclusive of the whole day.
+            var dateFilter =
+                "AND (@FromDate IS NULL OR ITM.VoucherDate >= @FromDate) " +
+                "AND (@ToDate   IS NULL OR ITM.VoucherDate <  DATEADD(DAY, 1, @ToDate))";
 
             var floorStock = (await _connection.QueryAsync<dynamic>(
                 $@"SELECT
@@ -1030,17 +1053,22 @@ public class ItemStockService : IItemStockService
                     AND CS.CompanyID = ITD.CompanyID
                   WHERE ITM.VoucherID = -19
                     {itemGroupFilter}
+                    {dateFilter}
                     AND ISNULL(ITD.IsDeletedTransaction, 0) <> 1
                     AND ITD.CompanyID = 2
                     AND ROUND((ISNULL(ITD.IssueQuantity, 0) - ISNULL(CS.ConsumedStock, 0)), 3) > 0
                   ORDER BY ITM.TransactionID DESC",
-                new { GroupId = itemGroupId },
+                new { GroupId = itemGroupId, FromDate = fromDate, ToDate = toDate },
                 commandTimeout: 120)).ToList();
+
+            var rangeSuffix = (fromDate.HasValue || toDate.HasValue)
+                ? $" for the selected date range ({(fromDate?.ToString("dd-MMM-yyyy") ?? "start")} to {(toDate?.ToString("dd-MMM-yyyy") ?? "today")})"
+                : "";
 
             if (floorStock.Count == 0)
             {
                 result.Success = true;
-                result.Message = "No floor stock records found to reset.";
+                result.Message = $"No floor stock records found to reset{rangeSuffix}.";
                 return result;
             }
 
@@ -1160,7 +1188,7 @@ public class ItemStockService : IItemStockService
             result.Success = true;
             result.ImportedRows = floorStock.Count;
             result.TotalRows = floorStock.Count;
-            result.Message = $"Floor Stock Reset Successful. {floorStock.Count} floor stock record(s) consumed.";
+            result.Message = $"Floor Stock Reset Successful. {floorStock.Count} floor stock record(s) consumed{rangeSuffix}.";
         }
         catch (Exception ex)
         {
