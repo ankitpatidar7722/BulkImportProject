@@ -1939,6 +1939,17 @@ export const getBackupRestoreStatus = async (operationId: string): Promise<Opera
     return response.data;
 };
 
+// Fresh COPY_ONLY backup of the given DB, compressed to .zip, streamed back for local download.
+// Uses the shared `api` instance so the base URL (VITE_API_BASE_URL) + JWT Bearer are applied.
+export const downloadDatabaseBackup = async (server: string, databaseName: string): Promise<Blob> => {
+    const response = await api.get('/DatabaseBackupRestore/download-backup', {
+        params: { server, databaseName },
+        responseType: 'blob',
+        timeout: 30 * 60 * 1000, // 30 min — large DBs take time to back up + stream
+    });
+    return response.data as Blob;
+};
+
 // ==========================================
 // RECORD COUNT CHECK HELPERS
 // Used by "Clear All Data" to decide whether to show "No Data found" popup

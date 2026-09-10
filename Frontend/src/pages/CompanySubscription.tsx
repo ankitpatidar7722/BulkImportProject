@@ -31,6 +31,7 @@ import {
     getCompanySubscriptionByKey,
     backupAndTransfer,
     getBackupRestoreStatus,
+    downloadDatabaseBackup,
     CompanySubscriptionDto,
     SetupDatabaseRequest,
     SetupDatabaseResponse,
@@ -940,36 +941,51 @@ const CompanySubscription: React.FC = () => {
         }
     };
 
-    // Download compressed backup
-    const handleDownloadBackup = (row: CompanySubscriptionDto) => {
+    // Download compressed backup (fresh COPY_ONLY .bak → .zip, streamed via the API with JWT auth)
+    const handleDownloadBackup = async (row: CompanySubscriptionDto) => {
         if (!row.conn_String) {
             showMessage('error', 'Error', 'Connection string not available for this subscription.');
             return;
         }
 
-        // Extract server from connection string
+        // Extract server + database name from the row's connection string
         const match = row.conn_String.match(/Data Source=([^;]+)/i);
         if (!match) {
             showMessage('error', 'Error', 'Could not extract server from connection string.');
             return;
         }
-
         const server = match[1];
         const dbNameMatch = row.conn_String.match(/Initial Catalog=([^;]+)/i);
         const databaseName = dbNameMatch ? dbNameMatch[1] : row.companyName.replace(/\s+/g, '');
 
-        // Trigger download via browser
-        const downloadUrl = `/api/DatabaseBackupRestore/download-backup?server=${encodeURIComponent(server)}&databaseName=${encodeURIComponent(databaseName)}`;
+        showMessage('info', 'Backup Started', `Creating compressed backup for ${databaseName}. This may take a few minutes...`);
 
-        showMessage('info', 'Download Started', `Creating compressed backup for ${databaseName}. This may take a few minutes...`);
+        try {
+            // Goes through the shared axios instance → correct backend base URL (/bulk/api) + JWT Bearer.
+            const blob = await downloadDatabaseBackup(server, databaseName);
 
-        // Create a hidden link and trigger click
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = `${databaseName}_backup.zip`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${databaseName}_backup.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+
+            showMessage('success', 'Backup Downloaded', `${databaseName} backup downloaded successfully.`);
+        } catch (err: any) {
+            console.error('Backup download failed', err);
+            // The error body is a Blob (responseType: 'blob'); try to read the API's JSON error message.
+            let msg = 'Backup download failed. Please try again.';
+            const data = err?.response?.data;
+            if (data instanceof Blob) {
+                try { msg = JSON.parse(await data.text())?.error || msg; } catch { /* keep default */ }
+            } else if (data?.error) {
+                msg = data.error;
+            }
+            showMessage('error', 'Backup Failed', msg);
+        }
     };
 
     // Load module groups when application changes (Tab 3)
